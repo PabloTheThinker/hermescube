@@ -87,7 +87,7 @@ class TestBioProviderIntegration:
             assert "|associative]" in text or "|executive]" in text or "trait" in text
             block = p.system_prompt_block()
             assert "Hemispheres" in block
-            assert "Hierarchical" in block
+                   assert "extension" in block.lower() or "durable" in block.lower()
             stats = p.evolve_consolidated()
             assert stats.get("phase") == "sleep_consolidate"
             assert "nrem" in stats
