@@ -673,15 +673,22 @@ class CubeMemoryProvider:
     # ── MemoryProvider ABC: system prompt ──────────────────────────
 
     def system_prompt_block(self) -> str:
-        """Return memory capabilities block for system prompt."""
+        """Return memory capabilities block for system prompt (meta-memory)."""
         if not self._cube:
             return ""
 
+        from hermescube import bio_rank
+
         entry_count = self._cube.entry_count
         type_counts = self._cube.count_by_type()
+        try:
+            entries = self._cube.read_l1()
+        except Exception:
+            entries = []
+        meta = bio_rank.meta_memory_report(entries)
 
         lines = [
-            "# HermesCube Memory — Persistent holographic recall across sessions",
+            "# HermesCube Memory — Hierarchical holographic recall",
             f"Stored: {entry_count} memories",
         ]
 
@@ -689,6 +696,16 @@ class CubeMemoryProvider:
             top_types = sorted(type_counts.items(), key=lambda x: -x[1])[:5]
             type_str = ", ".join(f"{t}:{c}" for t, c in top_types)
             lines.append(f"Types: {type_str}")
+
+        layers = meta.get("by_layer") or {}
+        if layers:
+            layer_str = ", ".join(f"{k}:{v}" for k, v in sorted(layers.items()))
+            lines.append(f"Cortical layers: {layer_str}")
+        if meta.get("mean_trust") is not None:
+            lines.append(f"Mean trust: {meta['mean_trust']}")
+        lines.append(
+            "Hemispheres: awake=prefetch/query · sleep=evolve/consolidate (session_end)"
+        )
 
         lines.extend([
             "",
@@ -701,7 +718,7 @@ class CubeMemoryProvider:
             "Guidance:",
             "- Search before answering any question that may depend on prior context",
             "- Store durable facts: user preferences, environment details, tool quirks",
-            "- Store decisions and their rationale",
+            "- Store decisions and their rationale; prefer trait/relationship/landmark types",
             "- DO NOT store: task progress, session outcomes, temporary state",
             "- Write as declarative facts: 'User prefers X' not 'Always do X'",
         ])
@@ -744,10 +761,15 @@ class CubeMemoryProvider:
         if not results:
             return ""
 
+        from hermescube import bio_rank
+
         lines = ["[Relevant memories from past sessions:]"]
         for entry, score in results[:5]:
             ts = entry.timestamp[:10] if entry.timestamp else "unknown"
-            lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
+            layer = bio_rank.cortical_layer(entry.entry_type or "")
+            lines.append(
+                f"- [{ts}] [{entry.entry_type}|{layer}] {entry.description}"
+            )
             if entry.data:
                 for k, v in entry.data.items():
                     if k in ("confidence", "source", "trust"):
@@ -1041,11 +1063,21 @@ class CubeMemoryProvider:
     # ── Evolution: HermesAgent-style consolidation ────────────────
 
     def evolve_consolidated(self) -> dict[str, Any]:
-        """Memory consolidation — k-means + dedup + quality scoring."""
+        """Offline sleep consolidation (unihemispheric — never on prefetch).
+
+        Phases (bio / SCM-inspired):
+        - NREM-like: k-means L2 + β update + dedup (stabilize)
+        - REM-like: topic quality hubs (novel association surface)
+        - Forgetting: superseded weighting via outcome (soft; append-only)
+        """
         if not self._engine or not self._cube:
             return {"note": "not initialized"}
 
+        from hermescube import bio_rank
+
+        # NREM: structural consolidate
         stats = self._engine.evolve()
+        stats["phase"] = "sleep_consolidate"
 
         if self._engine._embedder and self._engine._embedder.is_trained:
             embedder_path = str(Path(self._cube_path).parent / "memory.embedder")
@@ -1054,12 +1086,24 @@ class CubeMemoryProvider:
 
         deduped = self._deduplicate_entries()
         stats["deduped"] = deduped
+        stats["nrem"] = {"clusters": stats.get("clusters"), "deduped": deduped}
 
+        # REM: hub surface
         topics = self._score_topics()
         stats["topics"] = topics
         stats["quality_score"] = round(
             sum(t["quality"] for t in topics) / max(len(topics), 1), 3
         )
+        stats["rem_hubs"] = [
+            {"terms": (t.get("terms") or [])[:4], "quality": t.get("quality")}
+            for t in sorted(topics, key=lambda x: -float(x.get("quality", 0)))[:5]
+        ]
+
+        try:
+            entries = self._cube.read_l1()
+            stats["meta"] = bio_rank.meta_memory_report(entries, topics)
+        except Exception as e:
+            logger.debug("meta_memory_report failed: %s", e)
 
         return stats
 
@@ -1211,9 +1255,24 @@ class CubeMemoryProvider:
     # ── Internal helpers ──────────────────────────────────────────
 
     def _classify_turn(self, user_msg: str, assistant_msg: str) -> str:
-        """Classify conversation turn into entry type."""
+        """Classify conversation turn into entry type (bio / hierarchical)."""
         lower = (user_msg + " " + assistant_msg).lower()
 
+        # Elephant social recognition
+        if any(
+            w in lower
+            for w in (
+                "relationship",
+                "my friend",
+                "my mom",
+                "my partner",
+                "client ",
+                " co-worker",
+                "coworker",
+                "family",
+            )
+        ):
+            return "relationship"
         if any(w in lower for w in ["prefer", "like", "always", "never", "style"]):
             return "trait"
         if any(w in lower for w in ["decided", "conclusion", "learned", "realized"]):
@@ -1224,6 +1283,12 @@ class CubeMemoryProvider:
             return "focus"
         if any(w in lower for w in ["changed", "evolved", "migrated", "refactored"]):
             return "evolution"
+        # Spatial / route (elephant maps)
+        if any(
+            w in lower
+            for w in ("address", "server", "host", "path ", "route", "vps", "domain")
+        ):
+            return "landmark"
         return "landmark"
 
     # ── Tool handlers ─────────────────────────────────────────────

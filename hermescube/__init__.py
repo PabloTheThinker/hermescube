@@ -1,6 +1,6 @@
 """HermesCube — binary columnar archive with holographic associative retrieval."""
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 from hermescube.hrr import (
     Array,
@@ -20,6 +20,7 @@ from hermescube.har import HARQueryEngine
 from hermescube.embed import LearnedEmbedder
 from hermescube.provider import CubeMemoryProvider
 from hermescube.threats import scan_text, has_blockable_threat, sanitize_for_storage
+from hermescube import bio_rank
 
 __all__ = [
     "Array",
@@ -41,4 +42,6 @@ __all__ = [
     "scan_text",
     "has_blockable_threat",
     "sanitize_for_storage",
+    "bio_rank",
+    "__version__",
 ]

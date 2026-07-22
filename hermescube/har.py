@@ -18,6 +18,8 @@ from typing import Any
 from hermescube import hrr
 from hermescube.cube import CubeFile, CubeEntry, L2Bucket
 from hermescube.embed import LearnedEmbedder
+from hermescube import bio_rank
+
 
 # Below this entry count, linear scan beats HAR on current hardware
 # (numpy baseline 2026-07-22: HAR still <1× at N=1000).
@@ -152,12 +154,12 @@ class HARQueryEngine:
                 if eid not in entry_scores:
                     entry = self.cube.read_entry(eid)
                     if entry:
-                        recency = self._recency_weight(entry, now=now_ts)
-                        entry_scores[eid] = (entry, centroid_score * recency)
+                        final = self._rank_entry(entry, float(centroid_score), now=now_ts)
+                        entry_scores[eid] = (entry, final)
 
-        # Sort by score
+        # Sort by score then diversify by cortical layer
         ranked = sorted(entry_scores.values(), key=lambda x: -x[1])
-        return ranked[:top_k]
+        return bio_rank.diversify_by_layer(ranked, top_k)
 
     def _fallback_scan(
         self, text: str, top_k: int
@@ -200,45 +202,62 @@ class HARQueryEngine:
             sims = _np.nan_to_num(sims, nan=0.0, posinf=0.0, neginf=0.0)
             scored: list[tuple[CubeEntry, float]] = []
             for i, entry in enumerate(entries):
-                recency = self._recency_weight(entry, now=now_ts)
-                scored.append((entry, float(sims[i]) * recency))
+                scored.append((entry, self._rank_entry(entry, float(sims[i]), now=now_ts)))
             scored.sort(key=lambda x: -x[1])
-            return scored[:top_k]
+            return bio_rank.diversify_by_layer(scored, top_k)
 
         scored = []
         for entry in entries:
             score = hrr.cosine_sim(q, entry.vector)
-            recency = self._recency_weight(entry, now=now_ts)
-            scored.append((entry, score * recency))
+            scored.append((entry, self._rank_entry(entry, float(score), now=now_ts)))
         scored.sort(key=lambda x: -x[1])
-        return scored[:top_k]
+        return bio_rank.diversify_by_layer(scored, top_k)
 
     @staticmethod
-    def _recency_weight(entry: CubeEntry, now: str = "") -> float:
-        """Weight more recent entries higher based on actual time delta.
-
-        Args:
-            entry: The entry to weight
-            now: ISO timestamp of the most recent entry (or current time).
-                  If empty, falls back to hour-of-day heuristic.
-        """
+    def _delta_hours(entry: CubeEntry, now: str = "") -> float:
         try:
             ts = entry.timestamp
             if now and len(ts) >= 19 and len(now) >= 19:
-                # Parse timestamps as epoch seconds for actual delta
                 from datetime import datetime
+
                 t_entry = datetime.fromisoformat(ts[:19])
                 t_now = datetime.fromisoformat(now[:19])
-                delta_hours = max(0, (t_now - t_entry).total_seconds() / 3600)
-                # Exponential decay: weight = e^(-delta/48h)
-                # Entries within 6h get ~0.88-1.0, entries 48h old get ~0.37
-                import math
-                return math.exp(-delta_hours / 48.0)
-            # Fallback: hour-of-day heuristic
+                return max(0.0, (t_now - t_entry).total_seconds() / 3600.0)
+        except (ValueError, IndexError, TypeError):
+            pass
+        return 0.0
+
+    @staticmethod
+    def _recency_weight(entry: CubeEntry, now: str = "") -> float:
+        """Type-aware bio decay (elephant social/spatial lasts longer than focus)."""
+        try:
+            delta = HARQueryEngine._delta_hours(entry, now=now)
+            if delta > 0 or (now and entry.timestamp):
+                return bio_rank.recency_weight(delta, entry.entry_type or "")
+            # Fallback: mild hour-of-day jitter when timestamps incomplete
+            ts = entry.timestamp or ""
             hour = int(ts[11:13]) if len(ts) >= 13 else 12
             return 1.0 + (hour % 24) / 100.0
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, TypeError):
             return 1.0
+
+    def _rank_entry(
+        self,
+        entry: CubeEntry,
+        semantic: float,
+        *,
+        now: str = "",
+    ) -> float:
+        trust = None
+        if entry.data and isinstance(entry.data, dict):
+            trust = entry.data.get("trust")
+        return bio_rank.composite_score(
+            semantic,
+            entry_type=entry.entry_type or "",
+            outcome=entry.outcome or "none",
+            trust=trust if isinstance(trust, (int, float)) else None,
+            delta_hours=self._delta_hours(entry, now=now),
+        )
 
     def contradict(
         self,

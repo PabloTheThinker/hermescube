@@ -2,6 +2,17 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.2] - 2026-07-22
+
+### Bio-cognitive memory architecture
+- **`bio_rank` module:** cortical layers (sensory/associative/executive/meta), type-aware half-lives (elephant social/spatial retention), trust×outcome composite scoring, hierarchical layer diversification on query.
+- **Unihemispheric sleep:** `evolve_consolidated` exposes NREM (k-means+dedup) + REM hubs + meta report — still **never** on prefetch hot path.
+- **Prefetch inject:** `[type|layer]` tags; system prompt shows layers + hemisphere policy.
+- **Classify:** relationship + spatial/VPS landmark cues.
+
+### Tests
+- **198+** including `test_bio_rank.py`.
+
 ## [0.3.1] - 2026-07-22
 
 ### Performance (Quicksilver speed spine)

@@ -1,0 +1,249 @@
+"""Bio-inspired ranking and consolidation helpers for HermesCube.
+
+Maps comparative cognition → operational memory policy:
+
+| Species / system | Mechanism | Cube mapping |
+|------------------|-----------|--------------|
+| Human hippocampus | encode / consolidate / index | L1 append + evolve L2 |
+| Human PFC | working / executive control | prefetch top-k budget + FOA |
+| Human neocortex | long-term schema | L2 topics + skills (culture) |
+| Elephant | long spatial/social maps | slow decay on landmark/relationship |
+| Dolphin | auditory + cross-modal + USWS | type routing + unihemispheric offline |
+| Whale | culture + migratory maps | evolution/resolve durable; landmarks |
+
+Hot path stays cheap (Quicksilver). Sleep/consolidation is offline only.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+# Cortical layers (cognitive-web hierarchy → entry types)
+# sensory → associative → executive → meta
+LAYER_OF_TYPE: dict[str, str] = {
+    "enter": "sensory",
+    "leave": "sensory",
+    "landmark": "associative",  # elephant routes / places / events
+    "belief": "associative",
+    "trait": "associative",  # durable prefs
+    "relationship": "associative",  # elephant social graph
+    "focus": "executive",
+    "resolve": "executive",
+    "evolution": "meta",
+    "epoch_transition": "meta",
+}
+
+# Half-life in hours for recency decay (longer = elephant-like retention)
+# score *= exp(-delta_hours / half_life)
+HALF_LIFE_HOURS: dict[str, float] = {
+    "trait": 720.0,  # ~30d — identity-stable
+    "relationship": 2160.0,  # ~90d — social recognition
+    "landmark": 1440.0,  # ~60d — spatial / route memory
+    "belief": 336.0,  # ~14d
+    "resolve": 504.0,  # ~21d decisions
+    "evolution": 720.0,
+    "focus": 48.0,  # working / FOA
+    "enter": 24.0,
+    "leave": 24.0,
+    "epoch_transition": 720.0,
+}
+DEFAULT_HALF_LIFE_HOURS = 48.0
+
+# Layer mix targets for hierarchical prefetch (not pure similarity dump)
+LAYER_QUOTA: dict[str, int] = {
+    "executive": 2,
+    "associative": 5,
+    "meta": 1,
+    "sensory": 1,
+}
+
+# Outcome multipliers
+OUTCOME_WEIGHT: dict[str, float] = {
+    "success": 1.08,
+    "failure": 1.05,  # failures are high value (lessons)
+    "pending": 0.95,
+    "superseded": 0.35,
+    "none": 1.0,
+}
+
+
+def cortical_layer(entry_type: str) -> str:
+    return LAYER_OF_TYPE.get(entry_type or "", "associative")
+
+
+def half_life_hours(entry_type: str) -> float:
+    return float(HALF_LIFE_HOURS.get(entry_type or "", DEFAULT_HALF_LIFE_HOURS))
+
+
+def type_prior(entry_type: str) -> float:
+    """Mild boost for durable social/spatial types (elephant prior)."""
+    return {
+        "trait": 1.12,
+        "relationship": 1.15,
+        "landmark": 1.10,
+        "resolve": 1.08,
+        "belief": 1.05,
+        "evolution": 1.04,
+        "focus": 0.95,
+        "enter": 0.9,
+        "leave": 0.9,
+        "epoch_transition": 1.02,
+    }.get(entry_type or "", 1.0)
+
+
+def trust_multiplier(trust: float | None) -> float:
+    """Map trust in [0,1] → [0.55, 1.25]. Neutral 0.5 → 1.0."""
+    if trust is None:
+        return 1.0
+    try:
+        t = float(trust)
+    except (TypeError, ValueError):
+        return 1.0
+    t = max(0.0, min(1.0, t))
+    return 0.55 + (t * 0.70)
+
+
+def outcome_multiplier(outcome: str) -> float:
+    return float(OUTCOME_WEIGHT.get(outcome or "none", 1.0))
+
+
+def recency_weight(delta_hours: float, entry_type: str) -> float:
+    """Type-aware exponential decay (adaptive consolidation / forgetting)."""
+    hl = half_life_hours(entry_type)
+    if hl <= 1e-6:
+        return 1.0
+    d = max(0.0, float(delta_hours))
+    return math.exp(-d / hl)
+
+
+def composite_score(
+    semantic: float,
+    *,
+    entry_type: str,
+    outcome: str = "none",
+    trust: float | None = None,
+    delta_hours: float = 0.0,
+) -> float:
+    """Combine semantic similarity with bio priors for ranking."""
+    r = recency_weight(delta_hours, entry_type)
+    return (
+        float(semantic)
+        * r
+        * type_prior(entry_type)
+        * trust_multiplier(trust)
+        * outcome_multiplier(outcome)
+    )
+
+
+def diversify_by_layer(
+    scored: list[tuple[Any, float]],
+    top_k: int,
+    entry_type_fn=None,
+) -> list[tuple[Any, float]]:
+    """Hierarchical memory systems: seed every layer, then best remaining.
+
+    scored: list of (entry, score) already sorted by score desc.
+    """
+    if top_k <= 0 or not scored:
+        return []
+    if entry_type_fn is None:
+        entry_type_fn = lambda e: getattr(e, "entry_type", "")  # noqa: E731
+
+    by_layer: dict[str, list[tuple[Any, float]]] = {
+        "sensory": [],
+        "associative": [],
+        "executive": [],
+        "meta": [],
+    }
+    for entry, score in scored:
+        layer = cortical_layer(str(entry_type_fn(entry)))
+        by_layer.setdefault(layer, []).append((entry, score))
+
+    picked: list[tuple[Any, float]] = []
+    used_ids: set[int] = set()
+
+    def _add(item: tuple[Any, float]) -> bool:
+        i = id(item[0])
+        if i in used_ids:
+            return False
+        picked.append(item)
+        used_ids.add(i)
+        return True
+
+    # Pass 1: at least one from each non-empty layer (meta-memory coverage)
+    for layer in ("executive", "meta", "associative", "sensory"):
+        if len(picked) >= top_k:
+            break
+        bucket = by_layer.get(layer) or []
+        if bucket:
+            _add(bucket[0])
+
+    # Pass 2: layer quotas (remaining)
+    for layer, n in LAYER_QUOTA.items():
+        if len(picked) >= top_k:
+            break
+        have = sum(
+            1
+            for e, _ in picked
+            if cortical_layer(str(entry_type_fn(e))) == layer
+        )
+        for item in by_layer.get(layer) or []:
+            if have >= n or len(picked) >= top_k:
+                break
+            if _add(item):
+                have += 1
+
+    # Pass 3: pure score fill
+    for item in scored:
+        if len(picked) >= top_k:
+            break
+        _add(item)
+    return picked[:top_k]
+
+
+def meta_memory_report(entries: list[Any], topics: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Self-reflective / meta-memory snapshot for system prompt & tools."""
+    type_counts: dict[str, int] = {}
+    layer_counts: dict[str, int] = {}
+    trust_vals: list[float] = []
+    superseded = 0
+    for e in entries:
+        et = getattr(e, "entry_type", "") or "unknown"
+        type_counts[et] = type_counts.get(et, 0) + 1
+        layer = cortical_layer(et)
+        layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        data = getattr(e, "data", None) or {}
+        if isinstance(data, dict) and "trust" in data:
+            try:
+                trust_vals.append(float(data["trust"]))
+            except (TypeError, ValueError):
+                pass
+        if getattr(e, "outcome", "") == "superseded":
+            superseded += 1
+
+    hubs = []
+    if topics:
+        hubs = sorted(topics, key=lambda t: -float(t.get("quality", 0)))[:5]
+        hubs = [
+            {
+                "terms": (t.get("terms") or [])[:4],
+                "quality": t.get("quality"),
+                "entries": t.get("entries"),
+            }
+            for t in hubs
+        ]
+
+    return {
+        "entry_count": len(entries),
+        "by_type": type_counts,
+        "by_layer": layer_counts,
+        "mean_trust": round(sum(trust_vals) / len(trust_vals), 3) if trust_vals else None,
+        "superseded": superseded,
+        "hubs": hubs,
+        "policy": {
+            "hot_path": "query/prefetch (awake hemisphere)",
+            "sleep_path": "evolve_consolidated / session_end (offline hemisphere)",
+            "rewrite_default": False,
+        },
+    }
