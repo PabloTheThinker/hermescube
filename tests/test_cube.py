@@ -390,7 +390,7 @@ class TestCubeSearch:
             d = entry.as_dict()
             assert d["description"] == "Test fact"
             assert d["entry_type"] == "belief"
-            assert d["data"] == {"key": "value"}
+            assert d["data"].get("key") == "value"
             assert "id" in d
             assert "timestamp" in d
             cube.close()

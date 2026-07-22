@@ -8,10 +8,11 @@ import os
 
 
 def test_extract_entities():
-    ents = mirror.extract_entities('Pablo Navarro = Vektra CEO. Path $HERMES_HOME/memories')
+    ents = mirror.extract_entities("Pablo Navarro = Vektra CEO. Path $HERMES_HOME/memories")
     low = {e.lower() for e in ents}
+    blob = " ".join(ents)
     assert any("pablo" in e for e in low)
-    assert any("hermes_home" in e or "$HERMES_HOME" in ents or "HERMES_HOME" in "".join(ents))
+    assert "HERMES_HOME" in blob or "hermes_home" in low
 
 
 def test_mirror_expand_pulls_coentity():
@@ -32,14 +33,14 @@ def test_mirror_expand_pulls_coentity():
     out = mirror.mirror_expand([(a, 1.0)], [a, b, c], top_k=3, entity_index=idx)
     ids = [e.id for e, _ in out]
     assert "a" in ids
-    assert "b" in ids  # co-entity Mission Zero
+    assert "b" in ids
 
 
 def test_har_mirror_integration():
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "t.cube")
         cube = CubeFile.create(path)
-        e1 = cube.append("relationship", "Pablo Navarro = Vektra CEO")
+        cube.append("relationship", "Pablo Navarro = Vektra CEO")
         cube.append("landmark", "Pablo Navarro Mission Zero cash-first board")
         cube.append("belief", "Unrelated cryptography paper notes")
         eng = HARQueryEngine(cube)

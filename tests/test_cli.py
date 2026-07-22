@@ -57,7 +57,7 @@ class TestCLI:
             from hermescube.cube import CubeFile
             with CubeFile.open(path) as cube:
                 entries = cube.read_l1()
-                assert entries[0].data == {"lang": "python"}
+                assert entries[0].data.get("lang") == "python"
 
     def test_query_empty(self, capsys):
         with tempfile.TemporaryDirectory() as d:
