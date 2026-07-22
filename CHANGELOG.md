@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.6.1] - 2026-07-22
+
+### Day-to-day durability + MEMORY.md extension
+- **sync_turn is WAL-sync** (append before return) — no async drop of chat
+- **on_memory_write** mirrors MEMORY.md/USER.md into cube as durable extension
+- system_prompt positions Cube as extension of hot memory, not replacement
+- docs/DAY_TO_DAY.md · tests/test_day_to_day.py
+
 ## [0.6.0] - 2026-07-22
 
 ### Hyper-memory (surpass holographic latency class)

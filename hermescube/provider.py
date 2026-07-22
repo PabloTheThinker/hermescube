@@ -680,8 +680,10 @@ class CubeMemoryProvider:
         meta = bio_rank.meta_memory_report(entries)
 
         lines = [
-            "# HermesCube Memory — Hierarchical holographic recall",
-            f"Stored: {entry_count} memories",
+            "# HermesCube — durable extension of agent memory",
+            "Works **with** hot MEMORY.md/USER.md (not instead of them).",
+            "Layering: MEMORY.md (short doctrine) → Cube (long archive + chat recall).",
+            f"Stored: {entry_count} memories in cube",
         ]
 
         if type_counts:
@@ -696,23 +698,26 @@ class CubeMemoryProvider:
         if meta.get("mean_trust") is not None:
             lines.append(f"Mean trust: {meta['mean_trust']}")
         lines.append(
+            "Day-to-day: every turn is WAL-persisted; built-in memory tool writes are mirrored into the cube."
+        )
+        lines.append(
             "Hemispheres: awake=prefetch/query · sleep=evolve/consolidate (session_end)"
         )
 
         lines.extend([
             "",
             "Tools:",
-            "- hermescube_search: semantic search over all past conversations",
-            "- hermescube_manage: add/remove durable facts and preferences",
-            "- hermescube_feedback: rate a retrieved entry as helpful/unhelpful",
-            "- Context auto-injected before each turn from relevant memories",
+            "- hermescube_search: deep recall across past sessions",
+            "- hermescube_probe: entity focus (person/project/path)",
+            "- hermescube_manage: durable facts (also use built-in memory tool — both stay in sync)",
+            "- hermescube_feedback: train trust on retrieved entries",
+            "- Context auto-injected each turn from cube (plus MEMORY.md in system)",
             "",
             "Guidance:",
-            "- Search before answering any question that may depend on prior context",
-            "- Store durable facts: user preferences, environment details, tool quirks",
-            "- Store decisions and their rationale; prefer trait/relationship/landmark types",
-            "- DO NOT store: task progress, session outcomes, temporary state",
-            "- Write as declarative facts: 'User prefers X' not 'Always do X'",
+            "- Prefer built-in memory tool for short always-on doctrine; Cube keeps the long tail",
+            "- Search cube before answering history-shaped questions",
+            "- Store durable facts as declarative: 'User prefers X'",
+            "- DO NOT store temp todos / session fluff",
         ])
 
         return "\n".join(lines)
@@ -778,7 +783,11 @@ class CubeMemoryProvider:
         session_id: str = "",
         messages: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Store completed conversation turn in cube (non-blocking)."""
+        """Store completed conversation turn — durable (sync append).
+
+        Day-to-day contract: turns hit cubelog WAL **before** return so a
+        crash does not drop the exchange. Heavy evolve stays background.
+        """
         if not self._cube or self._should_skip_writes():
             return
 
@@ -802,13 +811,11 @@ class CubeMemoryProvider:
             "timestamp": time.time(),
             "platform": self._platform,
             "agent_context": self._agent_context,
+            "source": "sync_turn",
         }
 
         entry_type = self._classify_turn(user_clean, assistant_clean)
 
-        # Everyday IR: don't index the *question* as the memory surface when we
-        # have an answer — questions pollute recall ("who is Pablo?" beats the
-        # durable relationship fact). Prefer assistant summary; keep Q in data.
         uq = (user_clean or "").strip()
         aq = (assistant_clean or "").strip()
         is_question = uq.endswith("?") or uq.lower().startswith(
@@ -818,11 +825,9 @@ class CubeMemoryProvider:
             desc = aq[:200]
             data["question"] = uq[:200]
             data["indexed_from"] = "assistant"
-            # answers are still useful but secondary to explicit manage/seed facts
             data.setdefault("trust", 0.45)
         else:
             data.setdefault("trust", 0.55)
-            data["source"] = "sync_turn"
 
         outcome = "none"
         if assistant_clean:
@@ -832,33 +837,23 @@ class CubeMemoryProvider:
             elif any(w in lower for w in ["failed", "error", "couldn't", "unable"]):
                 outcome = "failure"
 
-        cube = self._cube
-        engine = self._engine
-        evolve_interval = self._evolve_interval
-        char_limit = self._char_limit
-
-        # Light durable facts from assistant (no LLM)
         try:
             from hermescube import bio_rank as _br
             fact_lines = _br.extract_fact_lines(aq or assistant_clean or "")
         except Exception:
             fact_lines = []
 
-        def _do_sync() -> None:
-            nonlocal outcome, entry_type, desc, data
-            if cube is None:
-                return
-            added = cube.append(
+        # SYNC durable write — cubelog is O(1); do not queue this
+        try:
+            added = self._cube.append(
                 entry_type=entry_type,
                 description=desc,
                 data=data,
                 outcome=outcome,
             )
-
-            # Promote extracted facts as durable channel
             for fet, fdesc in fact_lines:
                 try:
-                    cube.append(
+                    self._cube.append(
                         entry_type=fet,
                         description=fdesc,
                         data={
@@ -871,17 +866,26 @@ class CubeMemoryProvider:
                     )
                 except Exception:
                     pass
+            if self._engine and added.vector is not None:
+                try:
+                    self._engine.update_beta_on_append(added.vector)
+                except Exception:
+                    if self._engine:
+                        self._engine.invalidate_cache()
+            self._prefetch_cache.clear()
+        except Exception as e:
+            logger.error("sync_turn durable write failed: %s", e)
+            return
 
-            # β update from the entry we just appended (capture return value)
-            if engine and added.vector is not None:
-                engine.update_beta_on_append(added.vector)
-
-            self._entries_since_evolve += 1
-            if (
-                evolve_interval > 0
-                and self._entries_since_evolve >= evolve_interval
-                and not self._is_evolve_breaker_open()
-            ):
+        # Background: evolve only (never block the agent turn)
+        self._entries_since_evolve += 1
+        evolve_interval = self._evolve_interval
+        if (
+            evolve_interval > 0
+            and self._entries_since_evolve >= evolve_interval
+            and not self._is_evolve_breaker_open()
+        ):
+            def _bg_evolve() -> None:
                 try:
                     self.evolve_consolidated()
                     self._entries_since_evolve = 0
@@ -889,12 +893,9 @@ class CubeMemoryProvider:
                     self._record_evolve_success()
                 except Exception as e:
                     self._record_evolve_failure()
-                    logger.warning("auto-evolve failed (breaker: %s): %s",
-                                   self._is_evolve_breaker_open(), e)
+                    logger.warning("auto-evolve failed: %s", e)
 
-            self._prefetch_cache.clear()
-
-        self._sync_queue.submit(_do_sync)
+            self._sync_queue.submit(_bg_evolve)
 
     # ── MemoryProvider ABC: lifecycle hooks ───────────────────────
 
@@ -1028,36 +1029,47 @@ class CubeMemoryProvider:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Mirror built-in memory writes to cube.
+        """Mirror built-in MEMORY.md / USER.md writes into the cube (extension layer).
 
-        Captures provenance metadata (write_origin, execution_context,
-        session_id, platform) for audit trails.
+        Hermes keeps hot MEMORY.md; Cube is the larger durable archive.
+        Day-to-day: when the agent uses the built-in memory tool, Cube
+        receives a durable copy so nothing lives only in the short file.
         """
         if not self._cube or self._should_skip_writes():
             return
 
-        if action == "add" and content:
+        if action == "remove":
+            # Soft-mark only — cube is append-only
+            return
+
+        if action in ("add", "replace") and content:
             threats = scan_text(content)
             if any(t.severity == "block" for t in threats):
                 return
 
-            entry_type = "belief" if target == "memory" else "trait"
-            cube = self._cube
+            entry_type = "trait" if target == "user" else "belief"
             safe_content = sanitize_for_storage(content, self._char_limit)
             write_meta = dict(metadata or {})
-
-            def _do_mirror() -> None:
-                cube.append(
+            # SYNC durable — same day-to-day no-loss contract as sync_turn
+            try:
+                self._cube.append(
                     entry_type=entry_type,
                     description=safe_content,
                     data={
                         "source": f"builtin_{target}",
                         "mirror": True,
+                        "durable": True,
+                        "trust": 0.85,
+                        "extension_of": "MEMORY.md" if target == "memory" else "USER.md",
                         "provenance": write_meta,
+                        "action": action,
                     },
                 )
-
-            self._sync_queue.submit(_do_mirror)
+                if self._engine:
+                    self._engine.invalidate_cache()
+                self._prefetch_cache.clear()
+            except Exception as e:
+                logger.error("on_memory_write durable mirror failed: %s", e)
 
     def on_delegation(
         self,
