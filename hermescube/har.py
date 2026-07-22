@@ -162,14 +162,50 @@ class HARQueryEngine:
     def _fallback_scan(
         self, text: str, top_k: int
     ) -> list[tuple[CubeEntry, float]]:
-        """Brute-force linear scan when HAR confidence is low."""
+        """Brute-force linear scan when HAR confidence is low.
+
+        Quicksilver: batch cosine via numpy matmul when available (N×d · d),
+        instead of N separate norm/dot loops.
+        """
         if self._embedder and self._embedder.is_trained:
             q = self._embedder.embed(text)
         else:
             q = hrr.embed_text(text)
         entries = self.cube.read_l1()
+        if not entries:
+            return []
         now_ts = entries[-1].timestamp if entries else ""
-        scored: list[tuple[CubeEntry, float]] = []
+
+        if hrr.has_numpy():
+            import numpy as _np
+
+            mat = _np.asarray(
+                [e.vector for e in entries],
+                dtype=_np.float64,
+            )
+            if mat.ndim != 2 or mat.shape[0] == 0:
+                return []
+            qv = _np.asarray(q, dtype=_np.float64).reshape(-1)
+            norms = _np.linalg.norm(mat, axis=1)
+            norms = _np.where(norms < 1e-12, 1.0, norms)
+            qn = float(_np.linalg.norm(qv))
+            if qn < 1e-12:
+                # Degenerate query embed — retry hash
+                qv = _np.asarray(hrr.embed_text(text), dtype=_np.float64).reshape(-1)
+                qn = float(_np.linalg.norm(qv))
+                if qn < 1e-12:
+                    return []
+            sims = (mat @ qv) / (norms * qn)
+            # NaN-safe
+            sims = _np.nan_to_num(sims, nan=0.0, posinf=0.0, neginf=0.0)
+            scored: list[tuple[CubeEntry, float]] = []
+            for i, entry in enumerate(entries):
+                recency = self._recency_weight(entry, now=now_ts)
+                scored.append((entry, float(sims[i]) * recency))
+            scored.sort(key=lambda x: -x[1])
+            return scored[:top_k]
+
+        scored = []
         for entry in entries:
             score = hrr.cosine_sim(q, entry.vector)
             recency = self._recency_weight(entry, now=now_ts)

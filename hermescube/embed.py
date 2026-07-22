@@ -214,8 +214,10 @@ class LearnedEmbedder:
         if weight_sum > 1e-12:
             for d in range(self.dim):
                 vec[d] /= weight_sum
+            return hrr.normalize(vec)
 
-        return hrr.normalize(vec)
+        # No in-vocab weight (OOV query) — hash path, never return zero vector
+        return hrr.embed_text(text)
 
     def embed_query(self, text: str) -> hrr.Array:
         """Embed a query (same as embed, but explicit for clarity)."""

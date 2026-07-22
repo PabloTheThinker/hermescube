@@ -1,5 +1,5 @@
 name: hermescube
-version: "0.3.0"
+version: "0.3.1"
 description: >
   Binary columnar archive with holographic associative retrieval (HAR)
   for persistent agent memory. Stores conversation turns in a .cube
@@ -19,6 +19,12 @@ requires:
 config:
   auto_extract:
     description: Auto-extract facts from conversations at session end
+    type: bool
+    default: false
+  query_rewrite:
+    description: >-
+      LLM query rewrite before HAR (slow; off by default — Quicksilver hot path).
+      Env override: HERMESCUBE_QUERY_REWRITE=1
     type: bool
     default: false
   dim:

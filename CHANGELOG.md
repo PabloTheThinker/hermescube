@@ -2,6 +2,20 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.1] - 2026-07-22
+
+### Performance (Quicksilver speed spine)
+- **Prefetch hot path:** LLM query-rewrite is **off by default** (was ~4–5s per call via aux LLM). Opt-in: `HERMESCUBE_QUERY_REWRITE=1` or `plugins.hermescube.query_rewrite: true`.
+- **Linear scan:** batch cosine via numpy matmul (N×d · d) instead of N separate norm/dot loops.
+- **Learned embedder:** OOV / zero-weight queries fall back to hash embed (never return zero vector after tiny evolve).
+
+### Fixed
+- Config load respects session `hermes_home` (tests no longer inherit operator live config).
+- Cross-session search after evolve on small corpora.
+
+### Tests
+- **192** passed.
+
 ## [0.3.0] - 2026-07-20
 
 ### Added

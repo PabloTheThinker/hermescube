@@ -97,16 +97,30 @@ def _load_plugin_config(hermes_home: str | None = None) -> dict[str, Any]:
         return {}
 
 
-def _try_query_rewrite(message: str) -> str:
-    """Attempt HermesAgent-style query rewrite for better retrieval.
+def _query_rewrite_enabled(config: dict[str, Any] | None = None) -> bool:
+    """Quicksilver: LLM rewrite is OFF on the hot path by default.
 
-    Uses the provider-agnostic ``rewrite_memory_query()`` if available.
-    Falls back to the raw message on any failure (same contract as the
-    HermesAgent MemoryManager).
-
-    Returns the rewritten query, or the original message if rewrite
-    isn't available or fails.
+    One aux LLM call was ~4–5s per prefetch on live ILO — worse than any HAR
+    math. Opt in with HERMESCUBE_QUERY_REWRITE=1 or plugins.hermescube.query_rewrite.
     """
+    env = os.environ.get("HERMESCUBE_QUERY_REWRITE", "").strip().lower()
+    if env in {"1", "true", "yes", "on"}:
+        return True
+    if env in {"0", "false", "no", "off"}:
+        return False
+    if config:
+        return _coerce_bool(config.get("query_rewrite"), False)
+    return False
+
+
+def _try_query_rewrite(message: str, *, enabled: bool = False) -> str:
+    """Optional HermesAgent-style query rewrite (slow — LLM).
+
+    Default path returns ``message`` unchanged. When enabled, uses
+    ``rewrite_memory_query()`` if available; failures fall back to raw.
+    """
+    if not enabled:
+        return message
     try:
         from plugins.memory.query_rewrite import rewrite_memory_query
         rewritten = rewrite_memory_query(message)
@@ -127,8 +141,12 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
         return bool(value)
     if isinstance(value, str):
         text = value.strip().lower()
-        return text in {"1", "true", "yes", "on"}
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off", ""}:
+            return False
     return default
+
 
 # Auto-extract regex patterns (mirrors Holographic provider's approach)
 _AUTO_EXTRACT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -229,6 +247,7 @@ class CubeMemoryProvider:
         self._evolve_interval = evolve_interval
         self._memory_nudge_interval = memory_nudge_interval
         self._auto_extract = auto_extract
+        self._query_rewrite = False
 
         self._cube: CubeFile | None = None
         self._engine: HARQueryEngine | None = None
@@ -308,6 +327,7 @@ class CubeMemoryProvider:
             self._auto_extract = _coerce_bool(
                 plugin_config.get("auto_extract"), self._auto_extract
             )
+            self._query_rewrite = _query_rewrite_enabled(plugin_config)
             self._evolve_interval = int(
                 plugin_config.get("evolve_interval", self._evolve_interval)
             )
@@ -317,6 +337,8 @@ class CubeMemoryProvider:
             self._char_limit = int(
                 plugin_config.get("char_limit", self._char_limit)
             )
+        else:
+            self._query_rewrite = _query_rewrite_enabled(None)
 
         # Resolve cube path — scoped per identity/workspace when available
         if self._hermes_home:
@@ -691,17 +713,18 @@ class CubeMemoryProvider:
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         """Recall relevant memories for the current query.
 
-        Attempts HermesAgent-style query rewrite before retrieval
-        (same pattern used by the MemoryManager for all providers).
-        Falls back to raw query if rewrite is unavailable or fails.
+        Quicksilver speed spine: no LLM query-rewrite on the default path
+        (opt-in via HERMESCUBE_QUERY_REWRITE / config query_rewrite).
         """
         if not self._engine or not self._snapshot:
             return ""
         if not query or not query.strip():
             return ""
 
-        # Query rewrite: turn conversational message into retrieval query
-        retrieval_query = _try_query_rewrite(query)
+        # Hot path: raw query. Optional slow rewrite only when enabled.
+        retrieval_query = _try_query_rewrite(
+            query, enabled=bool(getattr(self, "_query_rewrite", False))
+        )
 
         cache_key = hashlib.md5(retrieval_query.encode()).hexdigest()
         if cache_key in self._prefetch_cache:
