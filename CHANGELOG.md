@@ -2,6 +2,15 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.6] - 2026-07-22
+
+### Update system (Hermes-aligned)
+- `hermescube update` — git pull installed plugin + pip reinstall (cube data untouched)
+- `hermescube update --check` — compare local vs remote
+- `scripts/update.sh` — same flow for shell
+- Docs: use with `hermes plugins update hermescube` (git-only) or full `hermescube update`
+- Project tree cleanup: stronger `.gitignore` (no cubes/pycache/egg-info)
+
 ## [0.3.5] - 2026-07-22
 
 ### Hermes-native user install (end-user workflow)

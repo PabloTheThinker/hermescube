@@ -206,10 +206,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Override HERMES_HOME",
     )
 
+    # update — pull + reinstall into user Hermes home (like hermes plugins update)
+    p_up = sub.add_parser(
+        "update",
+        help="Update HermesCube install (git pull plugin + pip reinstall; cube data untouched)",
+    )
+    p_up.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Override HERMES_HOME",
+    )
+    p_up.add_argument(
+        "--check",
+        action="store_true",
+        help="Only report whether update is available (no install)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
         return cmd_doctor(args)
+    if args.command == "update":
+        return cmd_update(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -284,7 +302,91 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if provider != "hermescube":
         print("  hint: hermes config set memory.provider hermescube")
         print("        or: ./scripts/install_hermes.sh")
+    print("  update: hermescube update   # or: hermes plugins update hermescube")
     return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    """Update user install — delegates to scripts/update.sh (git + pip).
+
+    Integrates with Hermes:
+      hermes plugins update hermescube   # git pull only
+      hermescube update                  # git pull + pip reinstall
+    """
+    import os
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    home = Path(
+        args.hermes_home
+        or os.environ.get("HERMES_HOME")
+        or (Path.home() / ".hermes")
+    )
+    plugin = home / "plugins" / "hermescube"
+    env = os.environ.copy()
+    env["HERMES_HOME"] = str(home)
+
+    if args.check:
+        if not (plugin / ".git").is_dir():
+            print(f"check: no git plugin at {plugin}")
+            print("  install with: hermes plugins install PabloTheThinker/hermescube")
+            return 1
+        r = subprocess.run(
+            ["git", "-C", str(plugin), "fetch", "--quiet"],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        if r.returncode != 0:
+            print(f"check: fetch failed: {(r.stderr or r.stdout).strip()}")
+            return 1
+        local = subprocess.check_output(
+            ["git", "-C", str(plugin), "rev-parse", "HEAD"], text=True
+        ).strip()
+        remote = subprocess.check_output(
+            ["git", "-C", str(plugin), "rev-parse", "@{u}"], text=True, stderr=subprocess.DEVNULL
+        ).strip() if subprocess.run(
+            ["git", "-C", str(plugin), "rev-parse", "@{u}"], capture_output=True
+        ).returncode == 0 else ""
+        if not remote:
+            # try origin/main
+            for ref in ("origin/main", "origin/master"):
+                rr = subprocess.run(
+                    ["git", "-C", str(plugin), "rev-parse", ref],
+                    capture_output=True,
+                    text=True,
+                )
+                if rr.returncode == 0:
+                    remote = rr.stdout.strip()
+                    break
+        print(f"local:  {local[:12]}")
+        print(f"remote: {(remote or 'unknown')[:12]}")
+        if remote and local != remote:
+            print("update available → run: hermescube update")
+            return 0
+        print("already up to date")
+        return 0
+
+    # Locate update.sh next to package or under plugin tree
+    candidates = [
+        plugin / "scripts" / "update.sh",
+        Path(__file__).resolve().parent.parent / "scripts" / "update.sh",
+    ]
+    script = next((p for p in candidates if p.is_file()), None)
+    if script is None:
+        # Fallback: hermes plugins update only
+        print("scripts/update.sh not found — trying: hermes plugins update hermescube")
+        hermes = shutil.which("hermes")
+        if not hermes:
+            print("ERROR: hermes CLI not found and no update.sh", file=sys.stderr)
+            return 1
+        r = subprocess.run([hermes, "plugins", "update", "hermescube"], env=env)
+        return r.returncode
+
+    print(f"→ {script}")
+    r = subprocess.run(["bash", str(script)], env=env)
+    return r.returncode
 
 
 if __name__ == "__main__":

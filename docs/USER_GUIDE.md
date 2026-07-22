@@ -39,6 +39,16 @@ hermescube info            # defaults to $HERMES_HOME/memories/memory.cube
 hermes memory status
 ```
 
+### Update
+
+```bash
+hermescube update              # git pull + pip reinstall (recommended)
+hermescube update --check      # dry check
+hermes plugins update hermescube   # Hermes git-only plugin pull
+```
+
+Does **not** modify `$HERMES_HOME/memories/memory.cube`.
+
 See also [after-install.md](../after-install.md) (shown after `hermes plugins install`).
 
 ### Library-only (no Hermes)

@@ -48,6 +48,25 @@ hermes memory status
 | `$HERMES_HOME/memories/memory.cube` | **Your** memory data |
 | `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` |
 
+### Update
+
+```bash
+# Full update (recommended): pull plugin + reinstall package
+hermescube update
+# or
+cd "${HERMES_HOME:-$HOME/.hermes}/plugins/hermescube" && ./scripts/update.sh
+
+# Hermes-native git-only pull (same as other plugins)
+hermes plugins update hermescube
+# then reinstall package if needed:
+hermescube update
+```
+
+`hermes update` updates the **Hermes Agent** core only. Cube is a plugin —
+use `hermes plugins update hermescube` and/or `hermescube update`.
+
+User memory at `$HERMES_HOME/memories/memory.cube` is **never** overwritten by update.
+
 ---
 
 ## Why

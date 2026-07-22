@@ -1,31 +1,43 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
+.eggs/
 dist/
 build/
 *.egg
 .pytest_cache/
-*.pyc
-*.pyo
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
 *.so
 
-# Env
+# Env / venv
 .env
-.venv
+.env.*
+.venv/
 venv/
 virtualenv/
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Project
+# Runtime memory — NEVER ship user cubes
 *.cube
-.coverage
+*.cubelog
+*.embedder
+memory.cube*
+memories/
+
+# Local ops noise
+*.log
+tmp/
+.cache/

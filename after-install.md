@@ -31,6 +31,17 @@ hermescube info
 hermes memory status
 ```
 
+## Update
+
+```bash
+hermescube update
+# equivalent pieces:
+hermes plugins update hermescube
+./scripts/update.sh
+```
+
+Cube data at `$HERMES_HOME/memories/memory.cube` is left alone.
+
 ## Everyday
 
 - Hermes auto-calls `prefetch` / `sync_turn` when `memory.provider: hermescube`

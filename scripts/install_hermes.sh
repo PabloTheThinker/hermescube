@@ -88,6 +88,19 @@ else
   if [[ -f "$ROOT/after-install.md" ]]; then
     cp -f "$ROOT/after-install.md" "$DEST/after-install.md"
   fi
+  # update/install scripts for hermescube update
+  mkdir -p "$DEST/scripts"
+  cp -f "$ROOT/scripts/install_hermes.sh" "$DEST/scripts/install_hermes.sh" 2>/dev/null || true
+  cp -f "$ROOT/scripts/update.sh" "$DEST/scripts/update.sh" 2>/dev/null || true
+  chmod +x "$DEST/scripts/"*.sh 2>/dev/null || true
+  # full tree pieces needed for pip -e from plugin dir
+  if [[ ! -f "$DEST/pyproject.toml" ]]; then
+    cp -f "$ROOT/pyproject.toml" "$DEST/pyproject.toml"
+    # copy package source if not symlink
+    if [[ ! -e "$DEST/hermescube" ]]; then
+      cp -a "$ROOT/hermescube" "$DEST/hermescube"
+    fi
+  fi
 fi
 
 # 3) Wire config.yaml — only set provider if unset (don't clobber user's choice)
