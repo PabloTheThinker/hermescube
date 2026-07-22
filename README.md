@@ -201,6 +201,16 @@ User data path is always `$HERMES_HOME/memories/memory.cube`.
 
 ---
 
+## Real-use bench (for operators)
+
+```bash
+# Results land in ~/.hermes/hermescube-lab/results/ — not the repo
+PYTHONPATH=. python3 benchmarks/real_use_bench.py
+hermescube update   # after pull
+```
+
+Gates: durable facts beat noise, prefetch p50 &lt; 25ms, questions don't bury facts, cross-session OK.
+
 ## Benchmarks
 
 HAR query latency scales logarithmically with archive size.

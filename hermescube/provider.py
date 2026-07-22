@@ -834,6 +834,7 @@ class CubeMemoryProvider:
             data.setdefault("trust", 0.45)
         else:
             data.setdefault("trust", 0.55)
+            data["source"] = "sync_turn"
 
         outcome = "none"
         if assistant_clean:
@@ -848,6 +849,13 @@ class CubeMemoryProvider:
         evolve_interval = self._evolve_interval
         char_limit = self._char_limit
 
+        # Light durable facts from assistant (no LLM)
+        try:
+            from hermescube import bio_rank as _br
+            fact_lines = _br.extract_fact_lines(aq or assistant_clean or "")
+        except Exception:
+            fact_lines = []
+
         def _do_sync() -> None:
             nonlocal outcome, entry_type, desc, data
             if cube is None:
@@ -858,6 +866,23 @@ class CubeMemoryProvider:
                 data=data,
                 outcome=outcome,
             )
+
+            # Promote extracted facts as durable channel
+            for fet, fdesc in fact_lines:
+                try:
+                    cube.append(
+                        entry_type=fet,
+                        description=fdesc,
+                        data={
+                            "source": "extract",
+                            "trust": 0.7,
+                            "durable": True,
+                            "session_id": session_id or self._session_id,
+                        },
+                        outcome="none",
+                    )
+                except Exception:
+                    pass
 
             # β update from the entry we just appended (capture return value)
             if engine and added.vector is not None:

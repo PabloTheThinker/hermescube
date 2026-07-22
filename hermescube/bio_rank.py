@@ -202,6 +202,61 @@ def recency_weight(delta_hours: float, entry_type: str) -> float:
     return math.exp(-d / hl)
 
 
+def source_boost(data: dict | None) -> float:
+    """Durable channels (manage/seed) outrank ephemeral turns."""
+    if not data or not isinstance(data, dict):
+        return 1.0
+    src = str(data.get("source") or data.get("indexed_from") or "").lower()
+    if src in ("seed", "manage", "user", "import", "cli", "hermescube_manage", "extract"):
+        return 1.35
+    if src in ("assistant", "turn", "sync_turn"):
+        return 0.85
+    if data.get("durable") is True:
+        return 1.35
+    if data.get("question"):
+        return 0.80
+    return 1.0
+
+
+def extract_fact_lines(assistant: str, *, max_facts: int = 3) -> list[tuple[str, str]]:
+    """Regex fact lines from assistant text — no LLM.
+
+    Returns list of (entry_type, description).
+    """
+    if not assistant:
+        return []
+    lines = []
+    text = assistant.strip()
+    # "Name = role" / "X is Y" short definitions
+    for m in re.finditer(
+        r"(?m)^[\s\-\*]*([A-Z][\w .'-]{1,40})\s*=\s*([^\n.]{3,80})",
+        text,
+    ):
+        lines.append(("relationship", f"{m.group(1).strip()} = {m.group(2).strip()}"))
+    for m in re.finditer(
+        r"(?i)\b(?:user |they |he |she )?(?:prefer(?:s)?|likes?|wants?)\s+([^\n.]{3,60})",
+        text,
+    ):
+        lines.append(("trait", f"Prefers {m.group(1).strip()}"))
+    for m in re.finditer(
+        r"(?i)\b(?:path|lives? at|stored at|file)\s*[:=]?\s*(\$[\w{/}./-]+|~/?[\w./-]+|/[\w./-]+)",
+        text,
+    ):
+        lines.append(("landmark", f"Path: {m.group(1).strip()}"))
+    # de-dupe preserve order
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for et, d in lines:
+        key = d.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((et, d[:200]))
+        if len(out) >= max_facts:
+            break
+    return out
+
+
 def composite_score(
     semantic: float,
     *,
@@ -211,6 +266,7 @@ def composite_score(
     delta_hours: float = 0.0,
     lexical: float = 0.0,
     description: str = "",
+    data: dict | None = None,
 ) -> float:
     """Combine hybrid similarity with bio priors for ranking."""
     sim = hybrid_semantic(semantic, lexical)
@@ -221,6 +277,7 @@ def composite_score(
         * type_prior(entry_type)
         * trust_multiplier(trust)
         * outcome_multiplier(outcome)
+        * source_boost(data)
     )
     # Downrank raw question-shaped surfaces (legacy turn noise)
     d = (description or "").strip()

@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.8] - 2026-07-22
+
+### Real-use quality (long exp)
+- **Durable channel boost:** seed/manage/extract outrank sync_turn in ranking
+- **Fact extract (no LLM):** `Name = role`, prefers…, path lines → durable entries
+- **`benchmarks/real_use_bench.py`:** public-benefit gates (hit rate, latency, Q-index, persistence, IR) — results under `$HERMES_HOME/hermescube-lab/` not git tree
+- Long-run 8×197-entry exp: hit_frac **1.0**, prefetch ~**8.6 ms** avg
+
 ## [0.3.7] - 2026-07-22
 
 ### Dogfood fix (fresh install experience)

@@ -259,6 +259,7 @@ class HARQueryEngine:
         if entry.data and isinstance(entry.data, dict):
             trust = entry.data.get("trust")
         lex = bio_rank.lexical_score(query, entry.description or "") if query else 0.0
+        data = entry.data if isinstance(entry.data, dict) else None
         return bio_rank.composite_score(
             semantic,
             entry_type=entry.entry_type or "",
@@ -267,6 +268,7 @@ class HARQueryEngine:
             delta_hours=self._delta_hours(entry, now=now),
             lexical=lex,
             description=entry.description or "",
+            data=data,
         )
 
     def contradict(
