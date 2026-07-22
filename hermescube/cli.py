@@ -38,6 +38,15 @@ def cmd_info(args: argparse.Namespace) -> None:
               f"{info['l2_buckets']['non_empty']} non-empty")
         print(f"File size: {info['file_size']} bytes")
         print(f"Backend: {'numpy' if info['has_numpy'] else 'pure-python'}")
+        try:
+            dens = cube.density_stats()
+            print("\nDensity (archive packing):")
+            print(f"  bytes/entry: {dens['bytes_per_entry']:.0f}")
+            print(f"  text+data share: {dens['text_plus_data_share']*100:.1f}%")
+            print(f"  vec estimate: {dens['vec_bytes_estimate']} bytes "
+                  f"({dens['note']})")
+        except Exception as e:
+            print(f"\nDensity: n/a ({e})")
 
         types = cube.count_by_type()
         if types:

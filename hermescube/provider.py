@@ -1266,6 +1266,17 @@ class CubeMemoryProvider:
         for msg in messages:
             if msg.get("role") != "user":
                 continue
+            # Hermes 0.19 holo fix class: skip compaction handoff "user" summaries
+            try:
+                from agent.context_compressor import is_compaction_summary_message
+                if is_compaction_summary_message(msg):
+                    continue
+            except Exception:
+                content0 = msg.get("content", "")
+                if isinstance(content0, str) and content0.lstrip().startswith(
+                    ("[Context compression", "[Compressed", "Summary of conversation")
+                ):
+                    continue
             content = msg.get("content", "")
             if not isinstance(content, str) or len(content) < 10:
                 continue

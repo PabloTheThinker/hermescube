@@ -369,6 +369,36 @@ class CubeFile:
         self.entry_count += self._cubelog_count
         return self
 
+    def density_stats(self) -> dict:
+        """Archive density report (how much of the file is signal vs vectors)."""
+        import os as _os
+        n = int(self.entry_count or 0)
+        path_size = _os.path.getsize(self.path) if self.path and _os.path.isfile(self.path) else 0
+        log_size = 0
+        if getattr(self, "_cubelog_path", None) and _os.path.isfile(self._cubelog_path):
+            log_size = _os.path.getsize(self._cubelog_path)
+        try:
+            ents = self.read_l1() or []
+            text_b = sum(len((e.description or "").encode()) for e in ents)
+            data_b = sum(len(__import__("json").dumps(e.data or {}).encode()) for e in ents)
+        except Exception:
+            text_b = data_b = 0
+        total = path_size + log_size
+        vec_b = n * self.dim * 8
+        return {
+            "version": 1,
+            "entries": n,
+            "cube_bytes": path_size,
+            "cubelog_bytes": log_size,
+            "total_bytes": total,
+            "bytes_per_entry": (total / n) if n else 0,
+            "text_bytes": text_b,
+            "data_bytes": data_b,
+            "vec_bytes_estimate": vec_b,
+            "text_plus_data_share": ((text_b + data_b) / total) if total else 0,
+            "note": "v1 float64 vectors dominate; dense f16 migration tracked for 0.7",
+        }
+
     def close(self) -> None:
         with self._lock:
             self._release_flock()

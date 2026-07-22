@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.6.2] - 2026-07-22
+
+### Hermes 0.19 RE + dense archive packing
+- Align auto_extract with holo: skip compaction-summary "user" messages
+- `density_stats` + `hermescube info` packing report
+- `hermescube.dense` export/import gzip JSONL (zip-class text archive; live cube keeps vectors)
+- Research: Hermes 0.19 memory batch + provider layering → Cube benefit
+
 ## [0.6.1] - 2026-07-22
 
 ### Day-to-day durability + MEMORY.md extension
