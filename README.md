@@ -99,7 +99,7 @@ for entry, score in results:
 
 ---
 
-See **[Framework housing](docs/FRAMEWORK.md · docs/DAY_TO_DAY.md)** for the full in-cube OS.
+See **[Framework housing](docs/FRAMEWORK.md · docs/DAY_TO_DAY.md · [Assessment](docs/ASSESSMENT.md))** for the full in-cube OS.
 
 ## Colony communication (Cube-native)
 
