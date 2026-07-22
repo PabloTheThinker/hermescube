@@ -619,6 +619,33 @@ class CubeMemoryProvider:
                     "required": ["action", "entry_id"],
                 },
             },
+            {
+                "name": "hermescube_probe",
+                "description": (
+                    "Entity-focused recall (agent hyper-memory). "
+                    "probe: everything about a person/place/thing. "
+                    "related: neighbors via entity graph + colony trails."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["probe", "related"],
+                            "description": "probe=about entity; related=graph neighbors",
+                        },
+                        "entity": {
+                            "type": "string",
+                            "description": "Entity name (person, project, path token)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 8)",
+                        },
+                    },
+                    "required": ["action", "entity"],
+                },
+            },
         ]
 
     def handle_tool_call(
@@ -631,6 +658,8 @@ class CubeMemoryProvider:
             return self._handle_manage(args)
         elif tool_name == "hermescube_feedback":
             return self._handle_feedback(args)
+        elif tool_name == "hermescube_probe":
+            return self._handle_probe(args)
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
     # ── MemoryProvider ABC: system prompt ──────────────────────────
@@ -1321,6 +1350,35 @@ class CubeMemoryProvider:
             })
 
         return json.dumps({"results": formatted, "count": len(formatted)})
+
+    def _handle_probe(self, args: dict[str, Any]) -> str:
+        """Entity probe/related — agent hyper-memory tools."""
+        action = args.get("action", "probe")
+        entity = (args.get("entity") or "").strip()
+        limit = int(args.get("limit") or 8)
+        if not entity:
+            return json.dumps({"error": "entity is required"})
+        if not self._engine:
+            return json.dumps({"error": "Memory not initialized"})
+        if action == "related" and hasattr(self._engine, "related"):
+            results = self._engine.related(entity, top_k=limit)
+        else:
+            results = self._engine.query(entity, top_k=limit)
+        formatted = []
+        for entry, score in results:
+            formatted.append({
+                "id": entry.id,
+                "type": entry.entry_type,
+                "description": entry.description,
+                "score": round(float(score), 4),
+                "entities": (entry.data or {}).get("entities") if entry.data else [],
+            })
+        return json.dumps({
+            "action": action,
+            "entity": entity,
+            "results": formatted,
+            "count": len(formatted),
+        })
 
     def _handle_manage(self, args: dict[str, Any]) -> str:
         """Handle hermescube_manage tool call."""

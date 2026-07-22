@@ -37,6 +37,13 @@ class HARQueryEngine:
         self._embedder: LearnedEmbedder | None = (
             LearnedEmbedder(dim=cube.dim) if use_learned_embeddings else None
         )
+        # Hyper resident cache (lex + matrix) — surpass holo latency class
+        self._cache_n: int = -1
+        self._entries: list[CubeEntry] = []
+        self._by_id: dict[str, CubeEntry] = {}
+        self._mat = None
+        self._lex = None
+        self._colony = None
 
     # ── β vector management ───────────────────────────────────────
 
@@ -86,6 +93,36 @@ class HARQueryEngine:
     def _invalidate_centroids(self) -> None:
         self._l2_centroids = None
 
+
+    def invalidate_cache(self) -> None:
+        self._cache_n = -1
+        self._entries = []
+        self._by_id = {}
+        self._mat = None
+
+    def refresh_cache(self, force: bool = False) -> None:
+        n = int(getattr(self.cube, "entry_count", 0) or 0)
+        if not force and n == self._cache_n and self._entries:
+            return
+        entries = self.cube.read_l1() or []
+        self._entries = entries
+        self._by_id = {e.id: e for e in entries}
+        self._cache_n = len(entries)
+        try:
+            from hermescube.framework.lexindex import LexIndex
+            self._lex = LexIndex()
+            self._lex.build(entries)
+        except Exception:
+            self._lex = None
+        if hrr.has_numpy() and entries:
+            import numpy as _np
+            try:
+                self._mat = _np.asarray([e.vector for e in entries], dtype=_np.float64)
+            except Exception:
+                self._mat = None
+        else:
+            self._mat = None
+
     # ── Query ─────────────────────────────────────────────────────
 
     def query(
@@ -112,6 +149,10 @@ class HARQueryEngine:
         When provided, the engine's live state is not modified (avoids
         races with concurrent background updates).
         """
+        # ── Hyper path (default): lex candidates + batch score ──
+        return self._hyper_query(text, top_k=top_k, min_score=min_score)
+
+        # legacy HAR path retained below (unreachable) for reference/tests of internals
         # Use learned embedder if trained, otherwise hash-based
         if self._embedder and self._embedder.is_trained:
             q = self._embedder.embed_query(text)
@@ -302,6 +343,103 @@ class HARQueryEngine:
             data=data,
         )
 
+    def _hyper_query(
+        self,
+        text: str,
+        *,
+        top_k: int = 10,
+        min_score: float = 0.0,
+    ) -> list[tuple[CubeEntry, float]]:
+        """Lex-first two-stage retrieval — holo-class speed, Cube store."""
+        if not text or not str(text).strip():
+            return []
+        self.refresh_cache()
+        if not self._entries:
+            return []
+        n = len(self._entries)
+        limit = min(160, max(48, top_k * 12))
+        if n <= 48:
+            cands = list(self._entries)
+        else:
+            ids = self._lex.candidate_ids(text, limit=limit) if self._lex else None
+            if ids:
+                cands = [self._by_id[i] for i in ids if i in self._by_id]
+            else:
+                cands = list(self._entries[-limit:])
+            if not cands:
+                cands = list(self._entries)
+        now_ts = self._entries[-1].timestamp if self._entries else ""
+        if self._embedder and self._embedder.is_trained:
+            q = self._embedder.embed_query(text)
+        else:
+            q = hrr.embed_text(text)
+        scored: list[tuple[CubeEntry, float]] = []
+        if hrr.has_numpy():
+            import numpy as _np
+            mat = _np.asarray([e.vector for e in cands], dtype=_np.float64)
+            qv = _np.asarray(q, dtype=_np.float64).reshape(-1)
+            norms = _np.linalg.norm(mat, axis=1)
+            norms = _np.where(norms < 1e-12, 1.0, norms)
+            qn = float(_np.linalg.norm(qv))
+            if qn < 1e-12:
+                qv = _np.asarray(hrr.embed_text(text), dtype=_np.float64).reshape(-1)
+                qn = float(_np.linalg.norm(qv))
+            if qn >= 1e-12 and mat.size:
+                sims = _np.nan_to_num((mat @ qv) / (norms * qn), nan=0.0)
+                for i, entry in enumerate(cands):
+                    scored.append(
+                        (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
+                    )
+        if not scored:
+            for entry in cands:
+                s = hrr.cosine_sim(q, entry.vector)
+                scored.append(
+                    (entry, self._rank_entry(entry, float(s), now=now_ts, query=text))
+                )
+        if min_score > 0:
+            scored = [(e, s) for e, s in scored if s >= min_score]
+        scored.sort(key=lambda x: -x[1])
+        primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
+        idx = mirror_mod.build_entity_index(self._entries)
+        return mirror_mod.mirror_expand(
+            primary,
+            self._entries,
+            top_k=top_k,
+            entity_index=idx,
+            colony=getattr(self, "_colony", None),
+        )
+
+    def probe_entity(self, entity: str, top_k: int = 10) -> list[tuple[CubeEntry, float]]:
+        return self.query(entity, top_k=top_k)
+
+    def related(self, entity: str, top_k: int = 10) -> list[tuple[CubeEntry, float]]:
+        self.refresh_cache()
+        key = entity.strip().lower()
+        if not key:
+            return []
+        idx = mirror_mod.build_entity_index(self._entries)
+        seeds = list(idx.get(key) or [])
+        if not seeds:
+            for k, ents in idx.items():
+                if key in k or k in key:
+                    seeds.extend(ents)
+        if not seeds:
+            return self.query(entity, top_k=top_k)
+        seen = set()
+        uniq = []
+        for e in seeds:
+            if e.id not in seen:
+                seen.add(e.id)
+                uniq.append((e, 1.0))
+        return mirror_mod.mirror_expand(
+            uniq[:top_k],
+            self._entries,
+            top_k=top_k,
+            entity_index=idx,
+            colony=getattr(self, "_colony", None),
+        )
+
+
     def contradict(
         self,
         text: str,
@@ -341,6 +479,7 @@ class HARQueryEngine:
     # ── Evolution ─────────────────────────────────────────────────
 
     def evolve(self, k: int | None = None) -> dict[str, Any]:
+        self.invalidate_cache()
         """Recluster L2 centroids, update β, return stats.
 
         Steps:

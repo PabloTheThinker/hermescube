@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.6.0] - 2026-07-22
+
+### Hyper-memory (surpass holographic latency class)
+- **Lex-first two-stage query**: candidate gen → batch vector+bio rank only on candidates
+- Resident engine cache (entries + lex + matrix) — no full rescan every turn
+- **hermescube_probe** tool: probe/related entity graph (agent-focused)
+- Goal: beat stock holographic prefetch while keeping Cube auto-turn + colony + void
+
 ## [0.5.0] - 2026-07-22
 
 ### Framework housing + review fixes
