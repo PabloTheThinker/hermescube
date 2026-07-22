@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.7.0] - 2026-07-22
+
+### Hermespace module integration
+- `hermescube.space_bridge` — FOA inject strip + seal_to_cube + module_status
+- Dense deep-memory for Space high-load (small char strip, not full archive)
+- docs/HERMESPACE.md — architecture: Space desk + Cube warehouse
+- Hermespace wires soft-import in hermes_bridge + remember_learning seal
+
 ## [0.6.3] - 2026-07-22
 
 ### Ship piece — install/update hardened
