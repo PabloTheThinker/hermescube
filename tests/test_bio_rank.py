@@ -55,6 +55,18 @@ class TestBioRank:
         assert "evolution" in types  # meta quota
         assert len(out) == 5
 
+    def test_lexical_bridge_bugs(self):
+        # paraphrase: query "bugs fixed" should match "Fixed bug in auth"
+        assert bio_rank.lexical_score(
+            "what bugs were fixed?", "Fixed bug in authentication flow"
+        ) > 0.2
+        assert bio_rank.hybrid_semantic(0.05, 0.4) > 0.2
+
+    def test_composite_with_lexical(self):
+        weak = bio_rank.composite_score(0.05, entry_type="landmark", lexical=0.0)
+        strong = bio_rank.composite_score(0.05, entry_type="landmark", lexical=0.5)
+        assert strong > weak
+
 
 class TestBioProviderIntegration:
     def test_prefetch_layer_tags_and_speed(self):

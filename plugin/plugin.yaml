@@ -1,5 +1,5 @@
 name: hermescube
-version: "0.3.2"
+version: "0.3.3"
 description: >
   Binary columnar archive with holographic associative retrieval (HAR)
   for persistent agent memory. Stores conversation turns in a .cube

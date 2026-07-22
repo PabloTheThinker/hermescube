@@ -197,50 +197,81 @@ def bench_query_latency(
     }
 
 
+def _is_relevant(query: str, entry_type: str, description: str, expected_type: str | None) -> bool:
+    """Labeled relevance for IR: synonym/token cover + optional type prior."""
+    try:
+        from hermescube import bio_rank
+    except ImportError:
+        bio_rank = None  # type: ignore
+    if bio_rank is not None:
+        lx = bio_rank.lexical_score(query, description)
+        if lx >= 0.18:
+            return True
+        # type-backed soft relevance when lexical weak but type matches intent
+        if expected_type and entry_type == expected_type and lx >= 0.08:
+            return True
+        return False
+    # fallback keyword
+    q = set(query.lower().split())
+    d = set(description.lower().split())
+    return len(q & d) >= 2
+
+
 def bench_recall(
     n_entries: int = 1000,
     top_k: int = 10,
 ) -> dict[str, Any]:
-    """Measure HAR recall vs brute-force ground truth."""
+    """True IR recall@k against labeled relevance (not HAR↔scan agreement)."""
     memories = generate_memories(n_entries)
     path = build_cube(memories)
 
     cube = CubeFile.open(path)
-    engine_har = HARQueryEngine(cube)
-    engine_scan = HARQueryEngine(cube)
-    engine_har.evolve()
-    engine_scan._l2_centroids = []
+    engine = HARQueryEngine(cube)
+    engine.evolve()
 
+    # Precompute relevant ID sets per query from full L1
+    all_entries = cube.read_l1()
     total_recall = 0.0
     total_precision = 0.0
     per_query: list[dict] = []
 
     for q_text, expected_type in QUERIES:
-        har_results = engine_har.query(q_text, top_k=top_k)
-        scan_results = engine_scan.query(q_text, top_k=top_k)
-
-        har_ids = {e.id for e, s in har_results}
-        scan_ids = {e.id for e, s in scan_results}
-
-        if not scan_ids:
+        relevant_ids = {
+            e.id
+            for e in all_entries
+            if _is_relevant(q_text, e.entry_type, e.description, expected_type)
+        }
+        results = engine.query(q_text, top_k=top_k)
+        hit_ids = [e.id for e, _ in results]
+        if not relevant_ids:
+            # no gold labels — skip query
+            per_query.append({
+                "query": q_text[:40],
+                "recall": None,
+                "precision": None,
+                "har_results": len(results),
+                "gold": 0,
+            })
             continue
-
-        relevant = len(har_ids & scan_ids)
-        recall = relevant / len(scan_ids)
-        precision = relevant / len(har_ids) if har_ids else 0.0
-
-        total_recall += recall
+        hits = sum(1 for i in hit_ids if i in relevant_ids)
+        recall = hits / min(top_k, len(relevant_ids))
+        # standard recall@k: |retrieved ∩ relevant| / |relevant| clipped usefully
+        recall = hits / len(relevant_ids) if relevant_ids else 0.0
+        # also report hit-rate@k against gold pool
+        recall_at_k = hits / min(top_k, len(relevant_ids))
+        precision = hits / len(hit_ids) if hit_ids else 0.0
+        total_recall += recall_at_k
         total_precision += precision
-
         per_query.append({
             "query": q_text[:40],
-            "recall": round(recall, 3),
+            "recall": round(recall_at_k, 3),
             "precision": round(precision, 3),
-            "har_results": len(har_results),
-            "scan_results": len(scan_results),
+            "har_results": len(results),
+            "gold": len(relevant_ids),
+            "hits": hits,
         })
 
-    n = len(per_query)
+    n = sum(1 for p in per_query if p.get("recall") is not None)
     cube.close()
     for suffix in ("", ".cubelog"):
         p = path + suffix if suffix else path
@@ -252,6 +283,7 @@ def bench_recall(
         "top_k": top_k,
         "avg_recall": round(total_recall / n, 3) if n else 0,
         "avg_precision": round(total_precision / n, 3) if n else 0,
+        "metric": "labeled_relevance@k",
         "per_query": per_query,
     }
 

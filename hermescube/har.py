@@ -154,7 +154,9 @@ class HARQueryEngine:
                 if eid not in entry_scores:
                     entry = self.cube.read_entry(eid)
                     if entry:
-                        final = self._rank_entry(entry, float(centroid_score), now=now_ts)
+                        final = self._rank_entry(
+                            entry, float(centroid_score), now=now_ts, query=text
+                        )
                         entry_scores[eid] = (entry, final)
 
         # Sort by score then diversify by cortical layer
@@ -202,14 +204,18 @@ class HARQueryEngine:
             sims = _np.nan_to_num(sims, nan=0.0, posinf=0.0, neginf=0.0)
             scored: list[tuple[CubeEntry, float]] = []
             for i, entry in enumerate(entries):
-                scored.append((entry, self._rank_entry(entry, float(sims[i]), now=now_ts)))
+                scored.append(
+                    (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
+                )
             scored.sort(key=lambda x: -x[1])
             return bio_rank.diversify_by_layer(scored, top_k)
 
         scored = []
         for entry in entries:
             score = hrr.cosine_sim(q, entry.vector)
-            scored.append((entry, self._rank_entry(entry, float(score), now=now_ts)))
+            scored.append(
+                (entry, self._rank_entry(entry, float(score), now=now_ts, query=text))
+            )
         scored.sort(key=lambda x: -x[1])
         return bio_rank.diversify_by_layer(scored, top_k)
 
@@ -247,16 +253,19 @@ class HARQueryEngine:
         semantic: float,
         *,
         now: str = "",
+        query: str = "",
     ) -> float:
         trust = None
         if entry.data and isinstance(entry.data, dict):
             trust = entry.data.get("trust")
+        lex = bio_rank.lexical_score(query, entry.description or "") if query else 0.0
         return bio_rank.composite_score(
             semantic,
             entry_type=entry.entry_type or "",
             outcome=entry.outcome or "none",
             trust=trust if isinstance(trust, (int, float)) else None,
             delta_hours=self._delta_hours(entry, now=now),
+            lexical=lex,
         )
 
     def contradict(

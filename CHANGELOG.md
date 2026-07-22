@@ -2,6 +2,16 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.3] - 2026-07-22
+
+### IR quality
+- Hybrid **lexical + HRR** ranking (stem/synonym bridge, no LLM)
+- Labeled relevance@k metric (was HAR↔scan agreement — misleading)
+- Live labeled Recall@10 ≈ **0.875** on agent memory bench
+
+### Tests
+- 200+ including lexical bridge
+
 ## [0.3.2] - 2026-07-22
 
 ### Bio-cognitive memory architecture

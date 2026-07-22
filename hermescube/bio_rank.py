@@ -17,6 +17,7 @@ Hot path stays cheap (Quicksilver). Sleep/consolidation is offline only.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 # Cortical layers (cognitive-web hierarchy → entry types)
@@ -66,6 +67,78 @@ OUTCOME_WEIGHT: dict[str, float] = {
     "superseded": 0.35,
     "none": 1.0,
 }
+
+# Cheap IR: expand query stems without LLM (paraphrase bridge)
+_SYN_GROUPS: tuple[frozenset[str], ...] = (
+    frozenset({"bug", "bugs", "fixed", "fix", "hotfix", "patch", "debug", "debugged"}),
+    frozenset({"prefer", "prefers", "preference", "preferences", "habit", "habits", "like", "likes", "style"}),
+    frozenset({"auth", "authentication", "login", "security", "secure", "password", "oauth"}),
+    frozenset({"deploy", "deployed", "deployment", "production", "prod", "release", "shipped"}),
+    frozenset({"decide", "decided", "decision", "decisions", "chose", "choice", "conclusion"}),
+    frozenset({"performance", "perf", "latency", "slow", "optimize", "optimized", "profiling"}),
+    frozenset({"priority", "prioritizing", "attention", "focus", "sprint", "urgent", "needs"}),
+    frozenset({"complete", "completed", "done", "finished", "resolved", "shipped"}),
+    frozenset({"evolved", "evolution", "changed", "architecture", "migrated", "refactored"}),
+    frozenset({"database", "db", "storage", "schema", "sql", "persist"}),
+    frozenset({"monitor", "monitoring", "alert", "alerts", "logging", "logs"}),
+    frozenset({"lesson", "lessons", "learned", "learning", "insight"}),
+    frozenset({"user", "client", "customer"}),
+    frozenset({"memory", "recall", "remember", "cube", "har"}),
+)
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
+
+
+def _stem(tok: str) -> str:
+    t = tok.lower()
+    for sfx in ("ing", "tion", "ness", "ment", "ies", "ied", "ed", "es", "s"):
+        if len(t) > len(sfx) + 2 and t.endswith(sfx):
+            return t[: -len(sfx)]
+    return t
+
+
+def tokenize(text: str) -> set[str]:
+    raw = _TOKEN_RE.findall(text or "")
+    out: set[str] = set()
+    for t in raw:
+        if len(t) < 2:
+            continue
+        out.add(t.lower())
+        out.add(_stem(t))
+    # synonym closure
+    expanded = set(out)
+    for g in _SYN_GROUPS:
+        if out & g:
+            expanded |= g
+            expanded |= {_stem(x) for x in g}
+    return expanded
+
+
+def lexical_score(query: str, document: str) -> float:
+    """Jaccard-ish overlap after stem+synonym expand. Range ~[0,1]."""
+    q = tokenize(query)
+    d = tokenize(document)
+    if not q or not d:
+        return 0.0
+    inter = len(q & d)
+    if inter == 0:
+        return 0.0
+    # asymmetric: how much of the query is covered
+    cover = inter / max(len(q), 1)
+    jacc = inter / max(len(q | d), 1)
+    return min(1.0, 0.65 * cover + 0.35 * jacc)
+
+
+def hybrid_semantic(semantic: float, lexical: float, *, lex_weight: float = 0.55) -> float:
+    """Blend HRR cosine with lexical bridge. Lexical dominates misses on hash embeds."""
+    s = max(0.0, float(semantic))
+    lx = max(0.0, min(1.0, float(lexical)))
+    w = max(0.0, min(1.0, lex_weight))
+    # when lexical is strong, lift weak semantic (paraphrase rescue)
+    base = (1.0 - w) * s + w * lx
+    if lx >= 0.25 and s < 0.15:
+        base = max(base, 0.45 * lx + 0.2)
+    return base
 
 
 def cortical_layer(entry_type: str) -> str:
@@ -124,11 +197,13 @@ def composite_score(
     outcome: str = "none",
     trust: float | None = None,
     delta_hours: float = 0.0,
+    lexical: float = 0.0,
 ) -> float:
-    """Combine semantic similarity with bio priors for ranking."""
+    """Combine hybrid similarity with bio priors for ranking."""
+    sim = hybrid_semantic(semantic, lexical)
     r = recency_weight(delta_hours, entry_type)
     return (
-        float(semantic)
+        float(sim)
         * r
         * type_prior(entry_type)
         * trust_multiplier(trust)
