@@ -2,6 +2,15 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.6.3] - 2026-07-22
+
+### Ship piece — install/update hardened
+- `install_hermes.sh`: git-first layout, origin stamps, `--from-git`
+- `update.sh`: pull via plugin git · source pin · or origin cache; rsync code only
+- Never touches user `memory.cube` / colony data
+- doctor reports ship layout path
+- after-install.md rewritten for everyday ops
+
 ## [0.6.2] - 2026-07-22
 
 ### Hermes 0.19 RE + dense archive packing

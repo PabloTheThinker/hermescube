@@ -308,10 +308,22 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     except Exception as e:
         print(f"  package: NOT IMPORTABLE ({e})")
         return 1
+    # Ship layout stamps
+    origin = plugin / ".hermescube-origin"
+    pin = plugin / ".hermescube-source-root"
+    if (plugin / ".git").is_dir():
+        print("  ship layout: git checkout (hermes plugins update OK)")
+    elif pin.is_file():
+        print(f"  ship layout: pinned source → {pin.read_text().strip()}")
+    elif origin.is_file():
+        print(f"  ship layout: origin stamp → {origin.read_text().strip()}")
+        print("               hermescube update fetches via cache")
+    else:
+        print("  ship layout: copy (run install_hermes.sh to stamp origin)")
     if provider != "hermescube":
         print("  hint: hermes config set memory.provider hermescube")
-        print("        or: ./scripts/install_hermes.sh")
-    print("  update: hermescube update   # or: hermes plugins update hermescube")
+        print("        or: ./scripts/install_hermes.sh --from-git")
+    print("  update: hermescube update   # code only — never wipes cube")
     return 0
 
 
