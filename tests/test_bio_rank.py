@@ -41,6 +41,7 @@ class TestBioRank:
                 self.entry_type = t
                 self.description = d
 
+        # Score order must win everyday path
         scored = [
             (E("landmark", "a"), 0.9),
             (E("landmark", "b"), 0.8),
@@ -50,10 +51,10 @@ class TestBioRank:
             (E("trait", "t1"), 0.4),
         ]
         out = bio_rank.diversify_by_layer(scored, top_k=5)
-        types = [e.entry_type for e, _ in out]
-        assert "focus" in types  # executive quota
-        assert "evolution" in types  # meta quota
+        assert out[0][0].description == "a"
         assert len(out) == 5
+        # weak executive must not jump above stronger landmarks
+        assert out[0][1] >= out[1][1] >= out[2][1]
 
     def test_lexical_bridge_bugs(self):
         # paraphrase: query "bugs fixed" should match "Fixed bug in auth"

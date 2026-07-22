@@ -2,6 +2,13 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.4] - 2026-07-22
+
+### Everyday ops
+- Rank **score-first** (stop layer quotas burying gold hits)
+- Lexical **stopword filter** so "who is X" matches names, not "is" in unrelated lines
+- Skill rewritten for daily dogfood checklist
+
 ## [0.3.3] - 2026-07-22
 
 ### IR quality

@@ -87,6 +87,14 @@ _SYN_GROUPS: tuple[frozenset[str], ...] = (
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
+_STOP = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "to", "of", "in", "on", "for", "and", "or", "but", "with", "as", "at",
+    "by", "from", "that", "this", "it", "its", "we", "you", "they", "i",
+    "me", "my", "our", "your", "what", "who", "how", "when", "where", "why",
+    "do", "does", "did", "can", "could", "should", "would", "will", "just",
+    "about", "into", "over", "after", "before", "than", "then", "also",
+})
 
 
 def _stem(tok: str) -> str:
@@ -101,9 +109,13 @@ def tokenize(text: str) -> set[str]:
     raw = _TOKEN_RE.findall(text or "")
     out: set[str] = set()
     for t in raw:
-        if len(t) < 2:
+        tl = t.lower()
+        if len(tl) < 2 or tl in _STOP:
             continue
-        out.add(t.lower())
+        # drop pure numbers / dates noise
+        if tl.isdigit():
+            continue
+        out.add(tl)
         out.add(_stem(t))
     # synonym closure
     expanded = set(out)
@@ -216,65 +228,47 @@ def diversify_by_layer(
     top_k: int,
     entry_type_fn=None,
 ) -> list[tuple[Any, float]]:
-    """Hierarchical memory systems: seed every layer, then best remaining.
+    """Everyday IR: trust score order first.
 
-    scored: list of (entry, score) already sorted by score desc.
+    Only soft-inject one missing executive/meta item if its score is within
+    60% of the leader — never shove low-relevance “layer fillers” above gold.
     """
     if top_k <= 0 or not scored:
         return []
     if entry_type_fn is None:
         entry_type_fn = lambda e: getattr(e, "entry_type", "")  # noqa: E731
 
-    by_layer: dict[str, list[tuple[Any, float]]] = {
-        "sensory": [],
-        "associative": [],
-        "executive": [],
-        "meta": [],
-    }
-    for entry, score in scored:
-        layer = cortical_layer(str(entry_type_fn(entry)))
-        by_layer.setdefault(layer, []).append((entry, score))
+    # Primary: pure rank (hybrid score already applied)
+    head = list(scored[:top_k])
+    if len(scored) <= top_k:
+        return head
 
-    picked: list[tuple[Any, float]] = []
-    used_ids: set[int] = set()
+    top_score = float(scored[0][1]) if scored else 0.0
+    if top_score <= 0:
+        return head
 
-    def _add(item: tuple[Any, float]) -> bool:
-        i = id(item[0])
-        if i in used_ids:
-            return False
-        picked.append(item)
-        used_ids.add(i)
-        return True
-
-    # Pass 1: at least one from each non-empty layer (meta-memory coverage)
-    for layer in ("executive", "meta", "associative", "sensory"):
-        if len(picked) >= top_k:
-            break
-        bucket = by_layer.get(layer) or []
-        if bucket:
-            _add(bucket[0])
-
-    # Pass 2: layer quotas (remaining)
-    for layer, n in LAYER_QUOTA.items():
-        if len(picked) >= top_k:
-            break
-        have = sum(
-            1
-            for e, _ in picked
-            if cortical_layer(str(entry_type_fn(e))) == layer
-        )
-        for item in by_layer.get(layer) or []:
-            if have >= n or len(picked) >= top_k:
+    present = {cortical_layer(str(entry_type_fn(e))) for e, _ in head}
+    used = {id(e) for e, _ in head}
+    # Soft fill only if a strong-ish candidate exists outside head
+    for want in ("executive", "meta"):
+        if want in present or len(head) >= top_k:
+            continue
+        for entry, score in scored[top_k: top_k + 40]:
+            if id(entry) in used:
+                continue
+            if cortical_layer(str(entry_type_fn(entry))) != want:
+                continue
+            if float(score) < 0.60 * top_score:
                 break
-            if _add(item):
-                have += 1
-
-    # Pass 3: pure score fill
-    for item in scored:
-        if len(picked) >= top_k:
+            # replace weakest head item if weaker
+            head.sort(key=lambda x: -x[1])
+            if float(score) > float(head[-1][1]):
+                head[-1] = (entry, score)
+                used.add(id(entry))
+                present.add(want)
             break
-        _add(item)
-    return picked[:top_k]
+    head.sort(key=lambda x: -x[1])
+    return head[:top_k]
 
 
 def meta_memory_report(entries: list[Any], topics: list[dict[str, Any]] | None = None) -> dict[str, Any]:
