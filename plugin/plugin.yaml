@@ -1,0 +1,52 @@
+name: hermescube
+version: "0.3.0"
+description: >
+  Binary columnar archive with holographic associative retrieval (HAR)
+  for persistent agent memory. Stores conversation turns in a .cube
+  file with 256-dim HRR vectors, k-means topic clustering, learned
+  embeddings, and cross-session persistence. No network deps — pure
+  local storage.
+
+author: PabloTheThinker
+license: MIT
+homepage: https://github.com/PabloTheThinker/hermescube
+
+platforms: [linux, macos, windows]
+
+requires:
+  python: ">=3.11"
+
+config:
+  auto_extract:
+    description: Auto-extract facts from conversations at session end
+    type: bool
+    default: false
+  dim:
+    description: HRR vector dimension
+    type: int
+    default: 256
+  l2_buckets:
+    description: Number of L2 topic buckets
+    type: int
+    default: 64
+  char_limit:
+    description: Maximum characters per memory entry
+    type: int
+    default: 2200
+  evolve_interval:
+    description: Auto-evolve after N entries (0 to disable)
+    type: int
+    default: 50
+  memory_nudge_interval:
+    description: Remind agent to review memory every N turns
+    type: int
+    default: 10
+
+tools:
+  - hermescube_search
+  - hermescube_manage
+  - hermescube_feedback
+
+setup:
+  type: pip
+  package: hermescube

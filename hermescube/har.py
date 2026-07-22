@@ -1,0 +1,500 @@
+"""HAR — Holographic Associative Retrieval engine.
+
+Query protocol:
+1. Embed query text → 256-dim vector q
+2. Bind q with β (attention state) → qβ
+3. Cosine-match qβ against L2 topic centroids
+4. Retrieve L1 entries for matched buckets
+5. Rank by combined centroid score + recency
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from collections import Counter
+from typing import Any
+
+from hermescube import hrr
+from hermescube.cube import CubeFile, CubeEntry, L2Bucket
+from hermescube.embed import LearnedEmbedder
+
+# Below this entry count, linear scan beats HAR on current hardware
+# (numpy baseline 2026-07-22: HAR still <1× at N=1000).
+LINEAR_SCAN_MAX_N = 1200
+
+
+class HARQueryEngine:
+    """HAR query engine wrapping a .cube file."""
+
+    def __init__(self, cube: CubeFile, use_learned_embeddings: bool = True) -> None:
+        self.cube = cube
+        self._beta: hrr.Array | None = None
+        self._l2_centroids: list[L2Bucket] | None = None
+        self._embedder: LearnedEmbedder | None = (
+            LearnedEmbedder(dim=cube.dim) if use_learned_embeddings else None
+        )
+
+    # ── β vector management ───────────────────────────────────────
+
+    @property
+    def beta(self) -> hrr.Array:
+        if self._beta is None:
+            self._beta = self.cube.read_l3()
+        return self._beta
+
+    def update_beta(self, new_beta: hrr.Array) -> None:
+        self._beta = new_beta
+        self.cube.write_l3(new_beta)
+
+    def apply_beta_decay(self, factor: float = 0.995) -> None:
+        b = self.beta
+        if hrr.has_numpy():
+            import numpy as _np
+            decayed = _np.asarray(b, dtype=_np.float64) * factor
+            self._beta = hrr.normalize(decayed)
+        else:
+            decayed = [float(x) * factor for x in b]
+            self._beta = hrr.normalize(decayed)
+        self.cube.write_l3(self._beta)
+
+    def update_beta_on_append(self, entry_vector: hrr.Array) -> None:
+        """Light online β update (weight=0.1)."""
+        b = self.beta
+        if hrr.has_numpy():
+            import numpy as _np
+            b_arr = _np.asarray(b, dtype=_np.float64)
+            ev_arr = _np.asarray(entry_vector, dtype=_np.float64)
+            self._beta = hrr.normalize(b_arr + 0.1 * ev_arr)
+        else:
+            b_list = list(b)
+            ev_list = list(entry_vector)
+            summed = [b_list[i] + 0.1 * ev_list[i] for i in range(len(b_list))]
+            self._beta = hrr.normalize(summed)
+        self.cube.write_l3(self._beta)
+
+    # ── L2 centroid cache ─────────────────────────────────────────
+
+    def _load_centroids(self) -> list[L2Bucket]:
+        if self._l2_centroids is None:
+            self._l2_centroids = self.cube.read_l2()
+        return self._l2_centroids
+
+    def _invalidate_centroids(self) -> None:
+        self._l2_centroids = None
+
+    # ── Query ─────────────────────────────────────────────────────
+
+    def query(
+        self,
+        text: str,
+        top_k: int = 10,
+        min_score: float = 0.0,
+        fallback_threshold: float = 0.3,
+        beta: hrr.Array | None = None,
+        centroids: list[L2Bucket] | None = None,
+    ) -> list[tuple[CubeEntry, float]]:
+        """HAR query: return (entry, score) pairs ranked by relevance.
+
+        Steps:
+        1. Embed query, bind with β
+        2. Match against L2 centroids
+        3. Retrieve entries for top buckets
+        4. Rank by (centroid_score * recency_weight)
+
+        If max centroid score < fallback_threshold, falls back to
+        brute-force linear scan against all entry vectors.
+
+        beta / centroids: optional overrides for session-stable prefetch.
+        When provided, the engine's live state is not modified (avoids
+        races with concurrent background updates).
+        """
+        # Use learned embedder if trained, otherwise hash-based
+        if self._embedder and self._embedder.is_trained:
+            q = self._embedder.embed_query(text)
+        else:
+            q = hrr.embed_text(text)
+        # Use provided beta (snapshot) or engine's live beta
+        effective_beta = beta if beta is not None else self.beta
+        q_beta = hrr.bind(q, effective_beta)
+
+        # Use provided centroids (snapshot) or load from cube
+        effective_centroids = centroids if centroids is not None else self._load_centroids()
+
+        # Score each centroid
+        scored_buckets: list[tuple[float, L2Bucket, int]] = []
+        for idx, bucket in enumerate(effective_centroids):
+            score = hrr.cosine_sim(q_beta, bucket.centroid)
+            if score > min_score:
+                scored_buckets.append((score, bucket, idx))
+
+        scored_buckets.sort(key=lambda x: -x[0])
+
+        # Fallback if confidence too low or archive is empty
+        max_score = scored_buckets[0][0] if scored_buckets else 0.0
+        if max_score < fallback_threshold or not scored_buckets:
+            return self._fallback_scan(text, top_k)
+
+        # Quicksilver: don't pay L1 full-read + bucket walk when scan is faster.
+        # bench (numpy, 2026-07-22): scan still wins through N≈1000;
+        # use cheap entry_count and linear path below LINEAR_SCAN_MAX_N.
+        n_entries = int(getattr(self.cube, "entry_count", 0) or 0)
+        if n_entries > 0 and n_entries < LINEAR_SCAN_MAX_N:
+            return self._fallback_scan(text, top_k)
+
+        # Collect entries from top buckets
+        entry_scores: dict[str, tuple[CubeEntry, float]] = {}
+        n_buckets = max(3, top_k // 2)
+        all_entries = self.cube.read_l1()
+        now_ts = all_entries[-1].timestamp if all_entries else ""
+        for centroid_score, bucket, _ in scored_buckets[:n_buckets]:
+            for eid in bucket.entry_ids:
+                if eid not in entry_scores:
+                    entry = self.cube.read_entry(eid)
+                    if entry:
+                        recency = self._recency_weight(entry, now=now_ts)
+                        entry_scores[eid] = (entry, centroid_score * recency)
+
+        # Sort by score
+        ranked = sorted(entry_scores.values(), key=lambda x: -x[1])
+        return ranked[:top_k]
+
+    def _fallback_scan(
+        self, text: str, top_k: int
+    ) -> list[tuple[CubeEntry, float]]:
+        """Brute-force linear scan when HAR confidence is low."""
+        if self._embedder and self._embedder.is_trained:
+            q = self._embedder.embed(text)
+        else:
+            q = hrr.embed_text(text)
+        entries = self.cube.read_l1()
+        now_ts = entries[-1].timestamp if entries else ""
+        scored: list[tuple[CubeEntry, float]] = []
+        for entry in entries:
+            score = hrr.cosine_sim(q, entry.vector)
+            recency = self._recency_weight(entry, now=now_ts)
+            scored.append((entry, score * recency))
+        scored.sort(key=lambda x: -x[1])
+        return scored[:top_k]
+
+    @staticmethod
+    def _recency_weight(entry: CubeEntry, now: str = "") -> float:
+        """Weight more recent entries higher based on actual time delta.
+
+        Args:
+            entry: The entry to weight
+            now: ISO timestamp of the most recent entry (or current time).
+                  If empty, falls back to hour-of-day heuristic.
+        """
+        try:
+            ts = entry.timestamp
+            if now and len(ts) >= 19 and len(now) >= 19:
+                # Parse timestamps as epoch seconds for actual delta
+                from datetime import datetime
+                t_entry = datetime.fromisoformat(ts[:19])
+                t_now = datetime.fromisoformat(now[:19])
+                delta_hours = max(0, (t_now - t_entry).total_seconds() / 3600)
+                # Exponential decay: weight = e^(-delta/48h)
+                # Entries within 6h get ~0.88-1.0, entries 48h old get ~0.37
+                import math
+                return math.exp(-delta_hours / 48.0)
+            # Fallback: hour-of-day heuristic
+            hour = int(ts[11:13]) if len(ts) >= 13 else 12
+            return 1.0 + (hour % 24) / 100.0
+        except (ValueError, IndexError):
+            return 1.0
+
+    def contradict(
+        self,
+        text: str,
+        top_k: int = 5,
+        min_opposition: float = -0.1,
+    ) -> list[tuple[CubeEntry, float]]:
+        """Find entries semantically distant from the query.
+
+        Uses ``unbind`` (circular correlation) to decompose the entry
+        vector against the query, then measures how dissimilar the
+        residue is. Entries with the most negative cosine similarity
+        to the query are ranked first — these are semantically most
+        distant, potentially contradictory.
+
+        This gives ``unbind()`` a real use case: finding *conflicting*
+        or *superseded* memories alongside matching ones.
+        """
+        if self._embedder and self._embedder.is_trained:
+            q = self._embedder.embed_query(text)
+        else:
+            q = hrr.embed_text(text)
+
+        entries = self.cube.read_l1()
+        scored: list[tuple[CubeEntry, float]] = []
+        for entry in entries:
+            # unbind decomposes entry vector w.r.t query
+            residue = hrr.unbind(entry.vector, q)
+            # How well does the residue point back to q?
+            # Negative = entry vector points away from q → contradict
+            opposition = hrr.cosine_sim(residue, q)
+            if opposition <= min_opposition:
+                scored.append((entry, opposition))
+
+        scored.sort(key=lambda x: x[1])  # most negative first
+        return scored[:top_k]
+
+    # ── Evolution ─────────────────────────────────────────────────
+
+    def evolve(self, k: int | None = None) -> dict[str, Any]:
+        """Recluster L2 centroids, update β, return stats.
+
+        Steps:
+        1. Read all entries with vectors
+        2. Run k-means on entry vectors (k = l2_bucket_count)
+        3. Assign each entry to nearest centroid
+        4. Compute new β: normalize(old β + topic means)
+        5. Apply β decay
+        6. Write updated L2 + L3
+        """
+        num_clusters = k or self.cube.l2_bucket_count
+        entries = self.cube.read_l1()
+
+        if not entries:
+            return {"clusters": 0, "entries": 0, "note": "no entries"}
+
+        # Collect entry vectors
+        vecs = []
+        for e in entries:
+            v = e.vector
+            if hrr.has_numpy():
+                import numpy as _np
+                vecs.append(_np.asarray(v, dtype=_np.float64))
+            else:
+                vecs.append(list(v))
+
+        # k-means: use existing centroids if available (incremental),
+        # otherwise k-means++ init from scratch.
+        # Incremental requires buckets that were previously populated —
+        # a fresh cube has 64 empty buckets with zero centroids, which
+        # are degenerate as k-means initialization.
+        existing_centroids = self._load_centroids()
+        has_populated = any(b.entry_ids for b in existing_centroids)
+        if has_populated and len(existing_centroids) == num_clusters:
+            # Incremental: use existing centroids, single refinement pass
+            centroids = [b.centroid for b in existing_centroids]
+            centroids = self._kmeans_iteration(vecs, centroids, num_clusters)
+        else:
+            # Full: k-means++ init, up to 10 iterations (early stop on convergence)
+            centroids = self._kmeans_init(vecs, num_clusters)
+            for _iter in range(10):
+                new_centroids = self._kmeans_iteration(vecs, centroids, num_clusters)
+                # Convergence check: max centroid movement
+                max_delta = max(
+                    1.0 - hrr.cosine_sim(c, nc)
+                    for c, nc in zip(centroids, new_centroids)
+                )
+                centroids = new_centroids
+                if max_delta < 0.001:  # converged
+                    break
+
+        # Assign entries to nearest centroid
+        assignments: list[list[int]] = [[] for _ in range(num_clusters)]
+        for idx, vec in enumerate(vecs):
+            best_c = -1
+            best_d = -1.0
+            for c_idx, cent in enumerate(centroids):
+                d = hrr.cosine_sim(vec, cent)
+                if d > best_d:
+                    best_d = d
+                    best_c = c_idx
+            assignments[best_c].append(idx)
+
+        # Build L2 buckets
+        buckets: list[L2Bucket] = []
+        topic_vectors: list[hrr.Array] = []
+        for c_idx in range(num_clusters):
+            member_ids = [entries[i].id for i in assignments[c_idx]]
+            centroid = centroids[c_idx]
+
+            # Extract top terms from member descriptions
+            terms = self._extract_terms(
+                [entries[i].description for i in assignments[c_idx]]
+            )
+
+            bucket = L2Bucket(
+                centroid=centroid,
+                entry_ids=member_ids,
+                terms=terms[:8],
+            )
+            buckets.append(bucket)
+
+            if member_ids:
+                topic_vectors.append(centroid)
+
+        # Update β: blend old β with topic mean, then decay
+        old_beta = self.beta
+        if topic_vectors:
+            topic_mean = hrr.superpose(topic_vectors)
+            if hrr.has_numpy():
+                import numpy as _np
+                old = _np.asarray(old_beta, dtype=_np.float64)
+                mean = _np.asarray(topic_mean, dtype=_np.float64)
+                new_beta = hrr.normalize(0.7 * old + 0.3 * mean)
+            else:
+                old = list(old_beta)
+                mean = list(topic_mean)
+                blended = [
+                    0.7 * old[i] + 0.3 * mean[i] for i in range(len(old))
+                ]
+                new_beta = hrr.normalize(blended)
+        else:
+            new_beta = old_beta
+
+        # Decay
+        if hrr.has_numpy():
+            import numpy as _np
+            new_beta = hrr.normalize(_np.asarray(new_beta, dtype=_np.float64) * 0.995)
+        else:
+            new_beta = hrr.normalize([float(x) * 0.995 for x in new_beta])
+
+        # Write
+        self.cube.write_l2(buckets)
+        self.update_beta(new_beta)
+        self._invalidate_centroids()
+
+        # Train learned embedder on all descriptions
+        embedder_stats: dict[str, Any] = {}
+        if self._embedder:
+            descriptions = [e.description for e in entries]
+            embedder_stats = self._embedder.train(descriptions)
+
+        return {
+            "clusters": num_clusters,
+            "entries": len(entries),
+            "non_empty_buckets": sum(1 for b in buckets if b.entry_ids),
+            "beta_norm": round(float(hrr.norm(new_beta)), 6),
+            "embedder": embedder_stats,
+        }
+
+    # ── k-means helpers ───────────────────────────────────────────
+
+    def _kmeans_init(
+        self, vectors: list[Any], k: int
+    ) -> list[hrr.Array]:
+        """k-means++ initialization."""
+        if k <= 0:
+            return []
+        if len(vectors) <= k:
+            # Pad with copies + noise to reach k.
+            # Seed the noise deterministically from the input vectors so
+            # initialization is reproducible per-input (not at the mercy
+            # of the process-global RNG).
+            seed_material = "|".join(
+                str(round(sum(v), 6)) for v in vectors
+            ).encode()
+            seed = int.from_bytes(
+                hashlib.sha256(seed_material).digest()[:4], "big"
+            )
+            if hrr.has_numpy():
+                import numpy as _np_np
+                rng = _np_np.random.RandomState(seed)
+                result = list(vectors)
+                while len(result) < k:
+                    src = result[len(result) % len(vectors)]
+                    noise = rng.randn(len(src)) * 0.01
+                    padded = hrr.normalize(_np_np.asarray(src, dtype=_np_np.float64) + noise)
+                    result.append(padded)
+                return result
+            else:
+                import random as _random
+                rng = _random.Random(seed)
+                result = [list(v) for v in vectors]
+                while len(result) < k:
+                    src = result[len(result) % len(vectors)]
+                    noise = [rng.gauss(0, 0.01) for _ in src]
+                    padded = hrr.normalize([src[i] + noise[i] for i in range(len(src))])
+                    result.append(padded)
+                return result
+
+        centroids: list[hrr.Array] = []
+        if hrr.has_numpy():
+            import numpy as _np
+            centroids.append(_np.asarray(vectors[0], dtype=_np.float64).copy())
+        else:
+            centroids.append(list(vectors[0]))
+
+        for _ in range(1, k):
+            dists = []
+            for vec in vectors:
+                v_arr = _np.asarray(vec) if hrr.has_numpy() else vec
+                min_d = min(hrr.cosine_sim(v_arr, c) for c in centroids)
+                dists.append(1.0 - min_d + 1e-12)
+            total = sum(dists)
+            r = (hashlib.sha256(str(total).encode()).digest()[0] / 255.0) * total
+            cumulative = 0.0
+            chosen = vectors[-1]
+            for i, d in enumerate(dists):
+                cumulative += d
+                if cumulative >= r:
+                    chosen = vectors[i]
+                    break
+            if hrr.has_numpy():
+                centroids.append(_np.asarray(chosen, dtype=_np.float64).copy())
+            else:
+                centroids.append(list(chosen))
+        return centroids
+
+    def _kmeans_iteration(
+        self, vectors: list[Any], centroids: list[hrr.Array], k: int
+    ) -> list[hrr.Array]:
+        """One k-means iteration: assign → recompute means."""
+        assignments: list[list[int]] = [[] for _ in range(k)]
+        for idx, vec in enumerate(vectors):
+            best_c = -1
+            best_d = -1.0
+            for c_idx in range(k):
+                d = hrr.cosine_sim(vec, centroids[c_idx])
+                if d > best_d:
+                    best_d = d
+                    best_c = c_idx
+            assignments[best_c].append(idx)
+
+        if hrr.has_numpy():
+            import numpy as _np
+            new_centroids = []
+            for c_idx in range(k):
+                if not assignments[c_idx]:
+                    new_centroids.append(_np.asarray(centroids[c_idx], dtype=_np.float64).copy())
+                else:
+                    cluster_vecs = [_np.asarray(vectors[i], dtype=_np.float64) for i in assignments[c_idx]]
+                    mean = _np.mean(cluster_vecs, axis=0)
+                    new_centroids.append(hrr.normalize(mean))
+            return new_centroids
+        else:
+            new_centroids = []
+            for c_idx in range(k):
+                if not assignments[c_idx]:
+                    new_centroids.append(list(centroids[c_idx]))
+                else:
+                    cluster_vecs = [vectors[i] for i in assignments[c_idx]]
+                    dim = len(cluster_vecs[0])
+                    mean = [0.0] * dim
+                    for vec in cluster_vecs:
+                        for i in range(dim):
+                            mean[i] += vec[i]
+                    mean = [x / len(cluster_vecs) for x in mean]
+                    new_centroids.append(hrr.normalize(mean))
+            return new_centroids
+
+    # ── Term extraction ───────────────────────────────────────────
+
+    @staticmethod
+    def _extract_terms(descriptions: list[str], max_terms: int = 8) -> list[str]:
+        stopwords = frozenset(
+            "the a an and or to of for in on at is was with from that this "
+            "into via set goal enter sealed none".split()
+        )
+        counter: Counter = Counter()
+        for desc in descriptions:
+            toks = re.findall(r"[a-z][a-z0-9_\-]{2,}", desc.lower())
+            for t in toks:
+                if t not in stopwords:
+                    counter[t] += 1
+        return [t for t, _ in counter.most_common(max_terms)]
