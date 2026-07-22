@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from hermescube.cube import CubeFile
@@ -168,13 +169,17 @@ def main(argv: list[str] | None = None) -> int:
     p_append.add_argument("--outcome", default="none",
                           choices=["none", "success", "failure", "pending", "superseded"])
 
-    # query — text is primary; cube path via --cube (defaults to user Hermes home)
+    # query — [cube_path] query words…  OR  query words… --cube PATH
     p_query = sub.add_parser("query", help="HAR query")
-    p_query.add_argument("text", nargs="?", default="", help="Query text")
+    p_query.add_argument(
+        "args",
+        nargs="*",
+        help="Optional cube path (.cube) then query text",
+    )
     p_query.add_argument(
         "--cube",
-        dest="path",
-        default=default_path,
+        dest="cube_opt",
+        default=None,
         help=f"Cube path (default: {default_path})",
     )
     p_query.add_argument("--top", type=int, default=10)
@@ -205,6 +210,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "doctor":
         return cmd_doctor(args)
+
+    if args.command == "query":
+        # Parse [path.cube] query words… compatibility with tests + everyday CLI
+        qargs = list(args.args or [])
+        path = args.cube_opt or default_path
+        if qargs and (
+            qargs[0].endswith(".cube")
+            or qargs[0].endswith(".CUBE")
+            or (os.path.sep in qargs[0] and os.path.exists(qargs[0]))
+        ):
+            path = qargs[0]
+            text = " ".join(qargs[1:])
+        else:
+            text = " ".join(qargs)
+        args.path = path
+        args.text = text
 
     # Ensure parent dir for default user cube on init
     if args.command == "init":
