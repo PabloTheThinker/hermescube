@@ -1,6 +1,6 @@
 """HermesCube — binary columnar archive with holographic associative retrieval."""
 
-__version__ = "0.3.8"
+__version__ = "0.3.9"
 
 from hermescube.hrr import (
     Array,

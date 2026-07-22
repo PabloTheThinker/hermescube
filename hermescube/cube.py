@@ -499,6 +499,9 @@ class CubeFile:
         causal_parents: list[str] | None = None,
         outcome: str = "none",
     ) -> CubeEntry:
+        from hermescube.mirror import annotate_entities_on_append
+
+        data = annotate_entities_on_append(description, data)
         with self._lock:
             return self._append_unlocked(
                 entry_type, description, data, causal_parents, outcome

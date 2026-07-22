@@ -19,6 +19,7 @@ from hermescube import hrr
 from hermescube.cube import CubeFile, CubeEntry, L2Bucket
 from hermescube.embed import LearnedEmbedder
 from hermescube import bio_rank
+from hermescube import mirror as mirror_mod
 
 
 # Below this entry count, linear scan beats HAR on current hardware
@@ -159,9 +160,24 @@ class HARQueryEngine:
                         )
                         entry_scores[eid] = (entry, final)
 
-        # Sort by score then diversify by cortical layer
+        # Sort by score then diversify by cortical layer, then mirror-expand
         ranked = sorted(entry_scores.values(), key=lambda x: -x[1])
-        return bio_rank.diversify_by_layer(ranked, top_k)
+        primary = bio_rank.diversify_by_layer(ranked, max(top_k, 3))
+        return self._mirror_finish(primary, all_entries, top_k)
+
+    def _mirror_finish(
+        self,
+        primary: list[tuple[CubeEntry, float]],
+        all_entries: list[CubeEntry],
+        top_k: int,
+    ) -> list[tuple[CubeEntry, float]]:
+        """Reflect related memories (entity/parent graph) into the hit set."""
+        if not primary:
+            return []
+        idx = mirror_mod.build_entity_index(all_entries)
+        return mirror_mod.mirror_expand(
+            primary, all_entries, top_k=top_k, entity_index=idx
+        )
 
     def _fallback_scan(
         self, text: str, top_k: int
@@ -208,7 +224,8 @@ class HARQueryEngine:
                     (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
                 )
             scored.sort(key=lambda x: -x[1])
-            return bio_rank.diversify_by_layer(scored, top_k)
+            primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
+            return self._mirror_finish(primary, entries, top_k)
 
         scored = []
         for entry in entries:
@@ -217,7 +234,8 @@ class HARQueryEngine:
                 (entry, self._rank_entry(entry, float(score), now=now_ts, query=text))
             )
         scored.sort(key=lambda x: -x[1])
-        return bio_rank.diversify_by_layer(scored, top_k)
+        primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
+        return self._mirror_finish(primary, entries, top_k)
 
     @staticmethod
     def _delta_hours(entry: CubeEntry, now: str = "") -> float:

@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.9] - 2026-07-22
+
+### Mirror infrastructure (holographic RE + bio)
+- New `hermescube/mirror.py`: entity extract, entity index, **mirror_expand** (co-entity + causal parent resonance)
+- HAR query finishes with mirror expand — related memories co-activate
+- Append annotates `data.entities`
+- Research: holographic reverse-engineer note; skill workflow update
+
 ## [0.3.8] - 2026-07-22
 
 ### Real-use quality (long exp)
