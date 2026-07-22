@@ -77,6 +77,9 @@ class ColonyGraph:
         self.edges: dict[str, dict[str, float]] = defaultdict(dict)  # a -> b -> weight
         self.updated: dict[str, float] = {}  # edge key -> unix ts
         self.dances: dict[str, dict[str, Any]] = {}  # entry_id -> dance
+        self._last_board_write: float = 0.0
+        self._board_dirty: bool = False
+        self._recalls_since_board: int = 0
         if self.path and self.path.is_file():
             self.load()
 
@@ -230,3 +233,34 @@ class ColonyGraph:
     def write_markdown_board(self, md_path: str | Path) -> None:
         Path(md_path).parent.mkdir(parents=True, exist_ok=True)
         Path(md_path).write_text(self.render_markdown(), encoding="utf-8")
+        self._last_board_write = _now()
+        self._board_dirty = False
+        self._recalls_since_board = 0
+
+    def mark_dirty(self) -> None:
+        self._board_dirty = True
+        self._recalls_since_board += 1
+
+    def maybe_write_markdown_board(
+        self,
+        md_path: str | Path,
+        *,
+        min_interval_s: float = 120.0,
+        every_n_recalls: int = 8,
+        force: bool = False,
+    ) -> bool:
+        """Throttle COLONY.md writes (review H3/M3)."""
+        if force:
+            self.write_markdown_board(md_path)
+            return True
+        if not self._board_dirty and self._recalls_since_board == 0:
+            return False
+        now = _now()
+        if (
+            self._recalls_since_board >= every_n_recalls
+            or (now - self._last_board_write) >= min_interval_s
+            or self._last_board_write <= 0
+        ):
+            self.write_markdown_board(md_path)
+            return True
+        return False

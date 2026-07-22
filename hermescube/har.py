@@ -195,6 +195,18 @@ class HARQueryEngine:
         entries = self.cube.read_l1()
         if not entries:
             return []
+        # Lexindex candidate shrink (framework) when large
+        lex = getattr(self, "_lexindex", None)
+        if lex is not None and len(entries) > 64:
+            try:
+                ids = lex.candidate_ids(text, limit=min(120, max(48, len(entries) // 4)))
+                if ids:
+                    by_id = {e.id: e for e in entries}
+                    narrowed = [by_id[i] for i in ids if i in by_id]
+                    if narrowed:
+                        entries = narrowed
+            except Exception:
+                pass
         now_ts = entries[-1].timestamp if entries else ""
 
         if hrr.has_numpy():

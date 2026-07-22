@@ -58,59 +58,13 @@ _EVOLVE_BREAKER_THRESHOLD = 3
 _EVOLVE_BREAKER_COOLDOWN_SECS = 300
 
 
-# ── Config loading (HermesAgent plugin pattern) ─────────────────────
+# ── Config loading (framework housing) ─────────────────────────────
 
-def _load_plugin_config(hermes_home: str | None = None) -> dict[str, Any]:
-    """Read hermescube config from ``plugins.hermescube`` in config.yaml.
-
-    Mirrors the Holographic provider's ``_load_plugin_config()`` pattern.
-    Returns empty dict on any failure (the provider works with defaults).
-
-    Prefer the session ``hermes_home`` when provided so tests and alternate
-    profiles do not inherit the operator's live ``~/.hermes/config.yaml``.
-    """
-    try:
-        from pathlib import Path as _Path
-        if hermes_home:
-            config_path = _Path(hermes_home) / "config.yaml"
-        else:
-            try:
-                from hermes_constants import get_hermes_home as _get_home
-                config_path = _Path(str(_get_home())) / "config.yaml"
-            except Exception:
-                config_path = _Path.home() / ".hermes" / "config.yaml"
-        if not config_path.exists():
-            return {}
-        import yaml
-        with open(config_path, encoding="utf-8-sig") as f:
-            all_config = yaml.safe_load(f) or {}
-        # Navigate to the memory.hermescube block
-        memory = all_config.get("memory", {})
-        if isinstance(memory, dict) and "hermescube" in memory:
-            return dict(memory["hermescube"])
-        # Fallback: legacy plugins.hermescube path
-        plugins = all_config.get("plugins", {})
-        if isinstance(plugins, dict) and "hermescube" in plugins:
-            return dict(plugins["hermescube"])
-        return {}
-    except Exception:
-        return {}
-
-
-def _query_rewrite_enabled(config: dict[str, Any] | None = None) -> bool:
-    """Quicksilver: LLM rewrite is OFF on the hot path by default.
-
-    One aux LLM call was ~4–5s per prefetch on live ILO — worse than any HAR
-    math. Opt in with HERMESCUBE_QUERY_REWRITE=1 or plugins.hermescube.query_rewrite.
-    """
-    env = os.environ.get("HERMESCUBE_QUERY_REWRITE", "").strip().lower()
-    if env in {"1", "true", "yes", "on"}:
-        return True
-    if env in {"0", "false", "no", "off"}:
-        return False
-    if config:
-        return _coerce_bool(config.get("query_rewrite"), False)
-    return False
+from hermescube.framework.config import (  # noqa: E402
+    coerce_bool as _coerce_bool,
+    load_plugin_config as _load_plugin_config,
+    query_rewrite_enabled as _query_rewrite_enabled,
+)
 
 
 def _try_query_rewrite(message: str, *, enabled: bool = False) -> str:
@@ -131,24 +85,7 @@ def _try_query_rewrite(message: str, *, enabled: bool = False) -> str:
     return message
 
 
-def _coerce_bool(value: Any, default: bool = False) -> bool:
-    """Coerce a config value to bool (holographic/byterover pattern)."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in {"1", "true", "yes", "on"}:
-            return True
-        if text in {"0", "false", "no", "off", ""}:
-            return False
-    return default
-
-
-# Auto-extract regex patterns (mirrors Holographic provider's approach)
+# Auto-extract regex patterns (Hermes provider style — Cube-owned patterns)
 _AUTO_EXTRACT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("user_pref", re.compile(
         r"\bI\s+(?:prefer|like|love|use|want|need|always|never|usually)\s+(.+)",
@@ -274,6 +211,8 @@ class CubeMemoryProvider:
 
         # Colony stigmergy (ants/bees) — original Cube layer
         self._colony = None
+        self._void = None
+        self._paths = None
 
         # Turn tracking
         self._turn_count: int = 0
@@ -324,7 +263,7 @@ class CubeMemoryProvider:
         self._agent_workspace = kwargs.get("agent_workspace", "")
         self._skip_memory = kwargs.get("skip_memory", False)
 
-        # Load plugin config from this session's hermes_home (holographic pattern)
+        # Load plugin config from this session's hermes_home
         plugin_config = _load_plugin_config(self._hermes_home or None)
         if plugin_config:
             self._auto_extract = _coerce_bool(
@@ -343,20 +282,19 @@ class CubeMemoryProvider:
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
 
-        # Resolve cube path — scoped per identity/workspace when available
-        if self._hermes_home:
-            cube_dir = Path(self._hermes_home) / "memories"
-        else:
-            cube_dir = Path.home() / ".hermes" / "memories"
+        # Framework path housing
+        from hermescube.framework.paths import resolve_cube_paths
+        from hermescube.framework.void import CubeVoid
+        from hermescube.colony import ColonyGraph
 
-        # Per-profile scoping: if agent_identity is set, isolate cube files
-        if self._agent_identity:
-            cube_dir = cube_dir / "profiles" / self._agent_identity
-        if self._agent_workspace:
-            cube_dir = cube_dir / self._agent_workspace
-
-        cube_dir.mkdir(parents=True, exist_ok=True)
-        self._cube_path = str(cube_dir / "memory.cube")
+        self._paths = resolve_cube_paths(
+            self._hermes_home or None,
+            agent_identity=self._agent_identity,
+            agent_workspace=self._agent_workspace,
+        )
+        self._paths.ensure()
+        cube_dir = self._paths.memories_dir
+        self._cube_path = str(self._paths.cube)
 
         # Open or create
         if os.path.isfile(self._cube_path):
@@ -370,26 +308,30 @@ class CubeMemoryProvider:
 
         self._engine = HARQueryEngine(self._cube)
 
-        # Colony board + pheromone graph (under memories/)
+        # Colony + void OS
         try:
-            from hermescube.colony import ColonyGraph
-
-            colony_json = cube_dir / "colony_graph.json"
-            self._colony = ColonyGraph(colony_json)
-            # seed dances lightly from existing L1 (cap)
+            self._colony = ColonyGraph(self._paths.colony_graph)
             try:
                 for e in (self._cube.read_l1() or [])[-80:]:
                     self._colony.register_dance(e)
             except Exception:
                 pass
-            # Let HAR mirror_expand use trail boosts
             setattr(self._engine, "_colony", self._colony)
         except Exception as e:
             logger.debug("colony init skipped: %s", e)
             self._colony = None
 
+        self._void = CubeVoid(
+            self._cube, self._engine, self._paths, colony=self._colony
+        )
+        try:
+            self._void.rebuild_lex()
+            setattr(self._engine, "_lexindex", self._void.lex)
+        except Exception as e:
+            logger.debug("lexindex build: %s", e)
+
         # Load trained embedder from disk if available
-        embedder_path = str(cube_dir / "memory.embedder")
+        embedder_path = str(self._paths.embedder)
         if os.path.isfile(embedder_path):
             from hermescube.embed import LearnedEmbedder
             self._engine._embedder = LearnedEmbedder.load(embedder_path)
@@ -749,17 +691,12 @@ class CubeMemoryProvider:
     # ── MemoryProvider ABC: prefetch ──────────────────────────────
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
-        """Recall relevant memories for the current query.
-
-        Quicksilver speed spine: no LLM query-rewrite on the default path
-        (opt-in via HERMESCUBE_QUERY_REWRITE / config query_rewrite).
-        """
+        """Recall relevant memories via CubeVoid (framework housing)."""
         if not self._engine or not self._snapshot:
             return ""
         if not query or not query.strip():
             return ""
 
-        # Hot path: raw query. Optional slow rewrite only when enabled.
         retrieval_query = _try_query_rewrite(
             query, enabled=bool(getattr(self, "_query_rewrite", False))
         )
@@ -768,12 +705,20 @@ class CubeMemoryProvider:
         if cache_key in self._prefetch_cache:
             results = self._prefetch_cache[cache_key]
         else:
-            results = self._engine.query(
-                retrieval_query,
-                top_k=DEFAULT_PREFETCH_TOP_K,
-                beta=self._snapshot.beta,
-                centroids=self._snapshot.l2_centroids,
-            )
+            if self._void is not None:
+                results = self._void.recall(
+                    retrieval_query,
+                    top_k=DEFAULT_PREFETCH_TOP_K,
+                    beta=self._snapshot.beta,
+                    centroids=self._snapshot.l2_centroids,
+                )
+            else:
+                results = self._engine.query(
+                    retrieval_query,
+                    top_k=DEFAULT_PREFETCH_TOP_K,
+                    beta=self._snapshot.beta,
+                    centroids=self._snapshot.l2_centroids,
+                )
             if len(self._prefetch_cache) >= self._prefetch_cache_max:
                 oldest_key = next(iter(self._prefetch_cache))
                 del self._prefetch_cache[oldest_key]
@@ -781,45 +726,13 @@ class CubeMemoryProvider:
 
         if not results:
             return ""
-
-        from hermescube import bio_rank
-        from hermescube import colony as colony_mod
-        from hermescube import mirror as mirror_mod
-
-        # Colony: register dances + deposit trails on recalled cluster
-        seed_ents: list[str] = []
-        if self._colony is not None:
-            try:
-                for entry, _sc in results[:5]:
-                    d = self._colony.register_dance(entry)
-                    seed_ents.extend(d.get("where") or [])
-                    ents = (entry.data or {}).get("entities") if entry.data else None
-                    if ents:
-                        self._colony.deposit(list(ents), amount=0.2)
-                # query entities also lay scent
-                q_ents = mirror_mod.extract_entities(query)
-                if q_ents:
-                    self._colony.deposit(q_ents + seed_ents[:4], amount=0.15)
-                self._colony.save()
-                board = Path(self._hermes_home or Path.home() / ".hermes") / "memories" / "COLONY.md"
-                if self._agent_identity:
-                    board = Path(self._hermes_home) / "memories" / "profiles" / self._agent_identity / "COLONY.md"
-                self._colony.write_markdown_board(board)
-            except Exception as e:
-                logger.debug("colony prefetch trail: %s", e)
-
+        if self._void is not None:
+            return self._void.format_prefetch(results)
+        # minimal fallback
         lines = ["[Relevant memories from past sessions:]"]
-        for entry, score in results[:5]:
+        for entry, _score in results[:5]:
             ts = entry.timestamp[:10] if entry.timestamp else "unknown"
-            layer = bio_rank.cortical_layer(entry.entry_type or "")
-            kind = colony_mod.resource_kind(entry.entry_type or "", entry.description or "")
-            lines.append(
-                f"- [{ts}] [{entry.entry_type}|{layer}|{kind}] {entry.description}"
-            )
-            if entry.data:
-                for k, v in entry.data.items():
-                    if k in ("confidence", "source", "trust", "entities"):
-                        lines.append(f"  {k}: {v}")
+            lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
         return "\n".join(lines)
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
@@ -1528,20 +1441,29 @@ class CubeMemoryProvider:
         )
 
         # Colony: helpful = reinforce pheromone trail (ant food found)
-        if self._colony is not None and action == "helpful":
-            try:
-                ents = (entry.data or {}).get("entities") if entry.data else None
-                if not ents:
-                    from hermescube import mirror as mirror_mod
-                    ents = mirror_mod.extract_entities(entry.description or "")
-                if ents:
-                    self._colony.deposit(list(ents), amount=0.5)
-                    self._colony.register_dance(entry)
-                    self._colony.save()
-                    board = Path(self._hermes_home or Path.home() / ".hermes") / "memories" / "COLONY.md"
-                    self._colony.write_markdown_board(board)
-            except Exception:
-                pass
+        if action == "helpful":
+            if self._void is not None:
+                try:
+                    self._void.reinforce(entry, amount=0.5)
+                except Exception:
+                    pass
+            elif self._colony is not None:
+                try:
+                    ents = (entry.data or {}).get("entities") if entry.data else None
+                    if not ents:
+                        from hermescube import mirror as mirror_mod
+                        ents = mirror_mod.extract_entities(entry.description or "")
+                    if ents:
+                        self._colony.deposit(list(ents), amount=0.5)
+                        self._colony.register_dance(entry)
+                        self._colony.save()
+                        self._colony.mark_dirty()
+                        if self._paths:
+                            self._colony.maybe_write_markdown_board(
+                                self._paths.colony_board, force=True
+                            )
+                except Exception:
+                    pass
 
         return json.dumps({
             "status": "rated",

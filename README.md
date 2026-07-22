@@ -99,6 +99,8 @@ for entry, score in results:
 
 ---
 
+See **[Framework housing](docs/FRAMEWORK.md)** for the full in-cube OS.
+
 ## Colony communication (Cube-native)
 
 Memories **talk to each other** via stigmergy (inspired by ants/bees + mammal social maps — not a copy of any other plugin):

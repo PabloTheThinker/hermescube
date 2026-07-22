@@ -2,6 +2,16 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.5.0] - 2026-07-22
+
+### Framework housing + review fixes
+- **`hermescube/framework/`**: paths, config, CubeVoid (void OS), LexIndex
+- Provider uses path housing + Void for prefetch/reinforce (thinner adapter)
+- **Entity hygiene**: multiword/$/canon phrases; drop bare Mission/Zero noise
+- **Colony board throttle**: `maybe_write_markdown_board` (not every prefetch)
+- Lexindex candidate shrink on large scans (toward holo-class speed without cloning)
+- Docs: `docs/FRAMEWORK.md` — how memory operates inside the cube
+
 ## [0.4.0] - 2026-07-22
 
 ### Colony communication (original — not a holographic clone)
