@@ -135,46 +135,31 @@ query("what theme?")
 
 ---
 
-## Quick Start
+## Quick Start (library / scratch cube)
+
+For Hermes users, prefer **Install into Hermes Agent** above (user home paths).
 
 ```bash
 pip install hermescube
-```
 
-```bash
-# Create an archive
-hermescube init memory.cube
+# Scratch cube in cwd (explicit path)
+hermescube init ./scratch.cube
+hermescube append ./scratch.cube -t belief -d "User prefers dark mode"
+hermescube evolve ./scratch.cube
+hermescube query ./scratch.cube "what does the user prefer?"
+hermescube info ./scratch.cube
 
-# Store memories
-hermescube append memory.cube -t belief -d "User prefers dark mode"
-hermescube append memory.cube -t trait  -d "Values concise replies"
-hermescube append memory.cube -t resolve -d "Fixed login bug" -o success
-
-# Evolve — builds topic clusters (required before querying)
-hermescube evolve memory.cube
-
-# Search with meaning, not keywords
-hermescube query memory.cube "what does the user prefer?"
-
-# Inspect
-hermescube info memory.cube
-hermescube dump memory.cube --jsonl
+# After Hermes install — defaults to $HERMES_HOME/memories/memory.cube
+hermescube info
+hermescube query "what does the user prefer?"
+hermescube doctor
 ```
 
 ---
 
 ## HermesAgent Integration
 
-Activate as a plugin — add to `$HERMES_HOME/config.yaml`:
-
-```yaml
-memory:
-  provider: hermescube
-  hermescube:
-    auto_extract: true
-```
-
-The agent gets three tools:
+Full install is at the top of this README. After `memory.provider: hermescube`:
 
 | Tool | Purpose |
 |------|---------|
@@ -182,17 +167,18 @@ The agent gets three tools:
 | `hermescube_manage` | Add or remove persistent memories |
 | `hermescube_feedback` | Rate entries helpful/unhelpful (trains trust scores) |
 
-Or use the Python API directly:
-
 ```python
 from hermescube.provider import CubeMemoryProvider
+import os
 
+home = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
 provider = CubeMemoryProvider()
-provider.initialize(session_id="abc123", hermes_home="~/.hermes")
-
-context = provider.prefetch("user's current question")  # recall
-provider.sync_turn(user_msg, assistant_msg)              # store
+provider.initialize(session_id="abc123", hermes_home=home)
+context = provider.prefetch("user's current question")
+provider.sync_turn(user_msg, assistant_msg)
 ```
+
+User data path is always `$HERMES_HOME/memories/memory.cube`.
 
 ---
 

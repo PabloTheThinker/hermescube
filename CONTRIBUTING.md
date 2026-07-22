@@ -15,12 +15,29 @@ pip install -e ".[dev]"
 This installs hermescube in editable mode with numpy, pytest, pytest-cov,
 and pyright.
 
+### Dogfood against a real Hermes home
+
+```bash
+export HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+./scripts/install_hermes.sh
+hermescube doctor
+```
+
+**Never** commit `*.cube` / user memory files. Runtime data belongs only under
+`$HERMES_HOME/memories/`. End-user install:
+
+```text
+hermes plugins install PabloTheThinker/hermescube
+→ $HERMES_HOME/plugins/hermescube/   (code)
+→ $HERMES_HOME/memories/memory.cube  (their data)
+```
+
 ---
 
 ## Running Tests
 
 ```bash
-# Full suite (158 tests)
+# Full suite (200+ tests)
 pytest
 
 # Specific test file

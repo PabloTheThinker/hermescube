@@ -25,6 +25,19 @@ Queries use **HAR (Holographic Associative Retrieval)**:
 
 ---
 
+
+### Hermes Agent deployment (normative for end users)
+
+When used as a Hermes memory provider:
+
+| Artifact | Location |
+|----------|----------|
+| Plugin code | `$HERMES_HOME/plugins/hermescube/` |
+| Cube file | `$HERMES_HOME/memories/memory.cube` |
+| Activation | `memory.provider: hermescube` in `$HERMES_HOME/config.yaml` |
+
+Install: `hermes plugins install PabloTheThinker/hermescube` then `./scripts/install_hermes.sh`.
+
 ## 2. `.cube` Binary Format
 
 ### 2.1 Overall Layout

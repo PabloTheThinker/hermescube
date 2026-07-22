@@ -8,31 +8,63 @@ How-to guides for common HermesCube tasks. For API details, see
 
 ## Installation
 
-```bash
-# From PyPI (when published)
-pip install hermescube
+### Hermes Agent users (recommended)
 
-# From source (development)
+Your cube and plugin live under **your** `$HERMES_HOME` (default `~/.hermes`).
+Nothing user-private is written into the git checkout.
+
+```bash
+# Option A — Hermes plugin installer
+hermes plugins install PabloTheThinker/hermescube
+cd "${HERMES_HOME:-$HOME/.hermes}/plugins/hermescube"
+./scripts/install_hermes.sh
+hermes config set memory.provider hermescube
+
+# Option B — clone then wire into Hermes
 git clone https://github.com/PabloTheThinker/hermescube.git
 cd hermescube
-pip install -e .
-
-# With optional numpy acceleration
-pip install -e ".[dev]"
+./scripts/install_hermes.sh          # uses $HERMES_HOME
+hermes config set memory.provider hermescube
 ```
 
-**Requirements:** Python 3.11+. Zero mandatory dependencies. numpy is
-auto-detected for speed.
+| Path | Purpose |
+|------|---------|
+| `$HERMES_HOME/plugins/hermescube/` | Plugin entry (`plugin.yaml`, `__init__.py`) |
+| `$HERMES_HOME/memories/memory.cube` | **Your** memory archive (created on first use) |
+| `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` |
+
+```bash
+hermescube doctor          # wire check
+hermescube info            # defaults to $HERMES_HOME/memories/memory.cube
+hermes memory status
+```
+
+See also [after-install.md](../after-install.md) (shown after `hermes plugins install`).
+
+### Library-only (no Hermes)
+
+```bash
+pip install hermescube
+# or from source
+git clone https://github.com/PabloTheThinker/hermescube.git
+cd hermescube && pip install -e ".[numpy]"
+```
+
+**Requirements:** Python 3.11+. Zero mandatory deps; numpy auto-detected for speed.
 
 ---
 
 ## Creating a Memory Archive
 
-### CLI
+### CLI (Hermes default path)
 
 ```bash
-hermescube init my_memory.cube
-hermescube init my_memory.cube --dim 512 --buckets 128  # Custom config
+# Uses $HERMES_HOME/memories/memory.cube when path omitted
+hermescube init
+hermescube init --dim 512 --buckets 128
+
+# Explicit path still supported
+hermescube init ./scratch.cube
 ```
 
 ### Python
@@ -61,15 +93,15 @@ Choose the right entry type for each memory:
 ### CLI
 
 ```bash
-# Simple entry
-hermescube append my_memory.cube -t belief -d "User prefers dark mode"
+# Simple entry (default: $HERMES_HOME/memories/memory.cube)
+hermescube append -t belief -d "User prefers dark mode"
 
-# With metadata
-hermescube append my_memory.cube -t resolve -d "Fixed login bug" \
+# Explicit cube path
+hermescube append ./scratch.cube -t resolve -d "Fixed login bug" \
     -o success --data '{"bug_id": "42", "duration": "2h"}'
 
 # With causal lineage
-hermescube append my_memory.cube -t focus -d "Working on auth module" \
+hermescube append -t focus -d "Working on auth module" \
     --parents abc123def456
 ```
 
@@ -177,45 +209,39 @@ hermescube beta my_memory.cube --show  # Print full vector
 
 ## HermesAgent Integration
 
-### Quick Setup (Standalone)
-
-```python
-from hermescube.provider import CubeMemoryProvider
-
-provider = CubeMemoryProvider()
-provider.initialize(session_id="abc123", hermes_home="~/.hermes")
-
-# Before each turn
-context = provider.prefetch("user's current question")
-if context:
-    print(context)
-
-# After each turn
-provider.sync_turn(user_message, assistant_response)
-
-# Cleanup
-provider.shutdown()
-```
-
-### Plugin Setup (Recommended)
-
-1. Copy the `plugin/` directory to `$HERMES_HOME/plugins/memory/hermescube/`:
+### Canonical install (per-user)
 
 ```bash
-cp -r plugin/ ~/.hermes/plugins/memory/hermescube/
+hermes plugins install PabloTheThinker/hermescube
+cd "${HERMES_HOME:-$HOME/.hermes}/plugins/hermescube"
+./scripts/install_hermes.sh
+hermes config set memory.provider hermescube
+hermescube doctor
 ```
 
-2. Activate in `$HERMES_HOME/config.yaml`:
+**Important:** The MemoryProvider writes only under the **user's** Hermes home:
+
+```
+$HERMES_HOME/memories/memory.cube
+```
+
+Do **not** point production data at a project checkout path.
+
+### Config
 
 ```yaml
+# $HERMES_HOME/config.yaml
 memory:
   provider: hermescube
+
+plugins:
   hermescube:
-    auto_extract: true    # Optional: extract facts from conversations
-    evolve_interval: 50    # Optional: auto-evolve every N entries
+    auto_extract: false      # true = regex facts on session end
+    query_rewrite: false     # keep false (fast path)
+    evolve_interval: 50
 ```
 
-3. The agent now has three new tools:
+### Tools (when provider is active)
 
 | Tool | Purpose |
 |------|---------|
@@ -223,21 +249,30 @@ memory:
 | `hermescube_manage` | Add or remove persistent memories |
 | `hermescube_feedback` | Rate retrieved entries (trains trust scores) |
 
-### Per-Profile Isolation
+### Standalone Python API
 
-When running with `hermes --profile coder`, the provider scopes cube files:
+```python
+from hermescube.provider import CubeMemoryProvider
+import os
 
+home = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
+provider = CubeMemoryProvider()
+provider.initialize(session_id="abc123", hermes_home=home)
+
+context = provider.prefetch("user's current question")
+provider.sync_turn(user_message, assistant_response)
+provider.shutdown()
 ```
-~/.hermes/memories/profiles/coder/memory.cube
+
+### CLI against the user cube
+
+```bash
+hermescube info
+hermescube query "what does the user prefer?"
+hermescube dump --jsonl | head
+hermescube doctor
 ```
 
-Different profiles get isolated memory. Without a profile, the cube lives at:
-
-```
-~/.hermes/memories/memory.cube
-```
-
----
 
 ## Security
 

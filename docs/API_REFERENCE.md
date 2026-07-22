@@ -1,3 +1,5 @@
+Default cube path (Hermes provider): `$HERMES_HOME/memories/memory.cube`.
+
 # API Reference
 
 Complete reference for every public module, class, and function in HermesCube.

@@ -4,11 +4,14 @@ All notable changes to HermesCube are documented here.
 
 ## [0.3.5] - 2026-07-22
 
-### Hermes-native user install
-- Root `plugin.yaml` + `__init__.py` for `hermes plugins install PabloTheThinker/hermescube`
-- Install script targets **user** `$HERMES_HOME` (plugin + config); cube only at `$HERMES_HOME/memories/memory.cube`
-- CLI defaults to user cube; `hermescube doctor` wire check
-- `after-install.md` for Hermes plugin installer
+### Hermes-native user install (end-user workflow)
+- **Install path A:** `hermes plugins install PabloTheThinker/hermescube` then `./scripts/install_hermes.sh`
+- **Install path B:** `git clone` + `./scripts/install_hermes.sh` (uses `$HERMES_HOME`)
+- Root `plugin.yaml` + `__init__.py` + `cli.py` so Hermes discovers the repo as a memory provider plugin
+- Install script: pip into Hermes Python, materialize `$HERMES_HOME/plugins/hermescube/`, set `memory.provider` only if unset, verify cube path under user home
+- **User data isolation:** cube always `$HERMES_HOME/memories/memory.cube` — never the project/git tree
+- CLI: path defaults to user cube; `hermescube doctor`; `query [path.cube] text…`
+- Docs: README, USER_GUIDE, CONTRIBUTING, SPEC, ARCHITECTURE, after-install aligned to this workflow
 
 ## [0.3.4] - 2026-07-22
 

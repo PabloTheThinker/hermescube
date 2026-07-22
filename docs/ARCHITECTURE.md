@@ -6,6 +6,17 @@ Design rationale, data flow, and algorithmic choices in HermesCube.
 
 ## Design Philosophy
 
+### Where state lives (Hermes users)
+
+The library can open any path. The **Hermes MemoryProvider** always stores the
+live cube at `$HERMES_HOME/memories/memory.cube` (and optional
+`memory.embedder` beside it). Plugin code is installed under
+`$HERMES_HOME/plugins/hermescube/` via `hermes plugins install` +
+`scripts/install_hermes.sh`. Project checkouts must not be treated as the
+runtime data directory.
+
+## Design Philosophy
+
 HermesCube is built on three principles:
 
 1. **Append-only is the only safe write pattern.** Entries are never deleted
