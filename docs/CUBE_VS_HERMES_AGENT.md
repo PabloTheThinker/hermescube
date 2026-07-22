@@ -1,37 +1,25 @@
 # HermesCube vs Hermes Agent memory (holographic)
 
-Head-to-head after **HermesCube 0.5.0** framework housing (LexIndex + Void).
+Head-to-head on the same 8 core facts + filler scale. Both implement Hermes `MemoryProvider`.
 
-| | Hermes Agent **holographic** | **HermesCube** |
-|--|--|--|
-| Role | Stock fact store (`fact_store`) | User plugin + `.cube` + CubeVoid |
-| Write | Tool-add (sync_turn no-op) | Auto `sync_turn` + manage/seed |
-| Storage | SQLite + HRR | Columnar `.cube` L1/L2/L3 |
-| Install | Bundled | `hermes plugins install` + `hermescube update` |
+**Not included:** hot `MEMORY.md` / `USER.md` inject (always-on Hermes layer, separate from plugins).
 
-_Bench stamp: 2026-07-22T16:26:37.037575+00:00_ · real-use gates: **PASS**
+_Stamp: 2026-07-22T16:31:24.847321+00:00_
 
 ## Prefetch latency & hit rate
 
-| Approx N | Cube avg ms | Holo avg ms | Cube hit | Holo hit |
-|----------|------------:|------------:|---------:|---------:|
-| 8 | 1.227 | 1.095 | 1.0 | 1.0 |
-| 58 | 5.629 | 0.629 | 1.0 | 1.0 |
-| 208 | 1.04 | 1.053 | 1.0 | 1.0 |
-| 508 | 1.529 | 0.611 | 1.0 | 1.0 |
-| 1008 | 2.325 | 0.608 | 1.0 | 1.0 |
+| Approx N | Cube avg ms | Holo avg ms | Cube hit | Holo hit | Cube vs holo (× if >1 Cube faster) |
+|----------|------------:|------------:|---------:|---------:|-------------------------------------:|
+| 8 | 1.265 | 0.679 | 1.0 | 1.0 | 0.54× |
+| 58 | 5.65 | 0.63 | 1.0 | 1.0 | 0.11× |
+| 208 | 1.058 | 1.052 | 1.0 | 1.0 | 0.99× |
+| 508 | 1.591 | 0.615 | 1.0 | 1.0 | 0.39× |
+| 1008 | 2.296 | 0.623 | 1.0 | 1.0 | 0.27× |
 
-## Assessment (0.5.0)
+## Takeaways
 
-- **Hit rate:** tie at 1.0 on core facts through N≈1000.
-- **Latency:** holographic still slightly faster at pure fact lookup; Cube closed the gap hard (was ~40ms @1k → **~2.3ms** with LexIndex).
-- **Cube wins:** conversation capture, durable-vs-noise ranking, colony/mirror void, install/update UX.
-- **Holo wins:** sub-ms fact index, entity probe/reason tools.
-- **Real-use suite:** all operator gates green on 0.5.0.
-
-## Reproduce
-
-```bash
-python3 $HERMES_HOME/hermescube-lab/run_cube_vs_agent.py
-PYTHONPATH=. python3 benchmarks/real_use_bench.py
-```
+1. **Both** can hit core facts when seeded cleanly.
+2. At **small N**, stock holographic is often slightly faster (lean SQLite fact store).
+3. **HermesCube** auto-`sync_turn` (conversation → memory); holographic is tool-add unless auto_extract is on.
+4. Cube: install/update under `$HERMES_HOME`, typed entries, sleep consolidate, durable-vs-noise ranking.
+5. Pick **holographic** for fact_store/entity tools; **hermescube** for always-on turn archive + hierarchical cube.
