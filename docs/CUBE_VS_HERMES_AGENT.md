@@ -1,46 +1,37 @@
 # HermesCube vs Hermes Agent memory (holographic)
 
-Head-to-head: same **8 core facts** + filler scale. Both are Hermes `MemoryProvider` plugins.
+Head-to-head after **HermesCube 0.5.0** framework housing (LexIndex + Void).
 
 | | Hermes Agent **holographic** | **HermesCube** |
 |--|--|--|
-| Role | Stock fact store (`fact_store`) | User plugin + `.cube` archive |
-| Write path | Explicit tool add (sync_turn no-op) | Auto `sync_turn` + manage/seed |
-| Storage | SQLite + HRR (warns SNR at high N) | Columnar `.cube` L1/L2/L3 |
-| Install | Bundled with Hermes | `hermes plugins install` + `hermescube update` |
+| Role | Stock fact store (`fact_store`) | User plugin + `.cube` + CubeVoid |
+| Write | Tool-add (sync_turn no-op) | Auto `sync_turn` + manage/seed |
+| Storage | SQLite + HRR | Columnar `.cube` L1/L2/L3 |
+| Install | Bundled | `hermes plugins install` + `hermescube update` |
 
-**Not scored:** hot `MEMORY.md` / `USER.md` (always-on Hermes inject).
-
-_Bench stamp: 2026-07-22T14:02:48.934341+00:00_
+_Bench stamp: 2026-07-22T16:26:37.037575+00:00_ · real-use gates: **PASS**
 
 ## Prefetch latency & hit rate
 
 | Approx N | Cube avg ms | Holo avg ms | Cube hit | Holo hit |
 |----------|------------:|------------:|---------:|---------:|
-| 8 | 0.663 | 0.584 | 1.0 | 1.0 |
-| 58 | 3.151 | 0.562 | 1.0 | 1.0 |
-| 208 | 9.193 | 0.546 | 1.0 | 1.0 |
-| 508 | 20.943 | 0.655 | 1.0 | 1.0 |
-| 1008 | 40.174 | 0.626 | 1.0 | 1.0 |
+| 8 | 1.227 | 1.095 | 1.0 | 1.0 |
+| 58 | 5.629 | 0.629 | 1.0 | 1.0 |
+| 208 | 1.04 | 1.053 | 1.0 | 1.0 |
+| 508 | 1.529 | 0.611 | 1.0 | 1.0 |
+| 1008 | 2.325 | 0.608 | 1.0 | 1.0 |
 
-## Honest read
+## Assessment (0.5.0)
 
-1. **Hit rate:** both **1.0** on core facts at every N tested (through ~1000).
-2. **Prefetch speed:** holographic wins raw ms (sub-ms even at 1k) — optimized fact index.
-3. **Cube** stays interactive (≈40 ms @1k) but is not the latency champ yet.
-4. **Holographic** emits “HRR near capacity / SNR degrade” warnings as N grows; Cube does not spam that path.
-5. **Product gap Cube wins:** conversation auto-capture, durable-vs-noise ranking, typed layers, `hermescube update` without wiping user cube, sleep consolidate.
-6. **Product gap Holo wins:** entity `probe`/`reason` tools, faster pure fact prefetch.
-
-## Recommendation
-
-- Everyday agent that should **remember chats** → **HermesCube** (`memory.provider: hermescube`).
-- Explicit structured fact graph + algebraic tools → stock **holographic** (or both if Hermes allows — usually one provider).
-- Always keep tight **MEMORY.md** for doctrine either way.
+- **Hit rate:** tie at 1.0 on core facts through N≈1000.
+- **Latency:** holographic still slightly faster at pure fact lookup; Cube closed the gap hard (was ~40ms @1k → **~2.3ms** with LexIndex).
+- **Cube wins:** conversation capture, durable-vs-noise ranking, colony/mirror void, install/update UX.
+- **Holo wins:** sub-ms fact index, entity probe/reason tools.
+- **Real-use suite:** all operator gates green on 0.5.0.
 
 ## Reproduce
 
 ```bash
 python3 $HERMES_HOME/hermescube-lab/run_cube_vs_agent.py
-# results → $HERMES_HOME/hermescube-lab/results/cube-vs-agent-scale.json
+PYTHONPATH=. python3 benchmarks/real_use_bench.py
 ```
