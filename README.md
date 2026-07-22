@@ -99,6 +99,14 @@ for entry, score in results:
 
 ---
 
+## Colony communication (Cube-native)
+
+Memories **talk to each other** via stigmergy (inspired by ants/bees + mammal social maps — not a copy of any other plugin):
+
+- **Ant trails** — entity–entity pheromone edges strengthen when memories are used together
+- **Bee dances** — each entry encodes *what* (kind) + *where* (entities)
+- **Markdown board** — `$HERMES_HOME/memories/COLONY.md` (readable colony song sheet)
+
 ## How It Works
 
 A `.cube` file stores three layers:

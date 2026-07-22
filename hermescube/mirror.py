@@ -120,11 +120,11 @@ def mirror_expand(
     *,
     top_k: int = 5,
     entity_index: dict[str, list[Any]] | None = None,
+    colony: Any = None,
 ) -> list[tuple[Any, float]]:
     """Given primary hits, pull mirrored neighbors (shared entities / parents).
 
-    Returns up to top_k (entry, score) with seeds first, then resonated.
-    Resonated scores are discounted (mirror echo, not primary).
+    Optional *colony* applies ant-trail boosts between entity sets.
     """
     if not seeds:
         return []
@@ -134,6 +134,12 @@ def mirror_expand(
     by_id = {entry_id(e): e for e in all_entries}
     picked: list[tuple[Any, float]] = []
     seen: set[str] = set()
+
+    def _ents(e: Any) -> list[str]:
+        data = getattr(e, "data", None) or {}
+        if isinstance(data, dict) and data.get("entities"):
+            return list(data["entities"])
+        return extract_entities(getattr(e, "description", "") or "")
 
     def _take(e: Any, score: float) -> None:
         eid = entry_id(e)
@@ -147,20 +153,18 @@ def mirror_expand(
         if len(picked) >= top_k:
             return picked[:top_k]
 
-    # Mirror pass: co-entity + causal parents
     for e, sc in list(seeds):
-        data = getattr(e, "data", None) or {}
-        ents = []
-        if isinstance(data, dict):
-            ents = list(data.get("entities") or [])
-        if not ents:
-            ents = extract_entities(getattr(e, "description", "") or "")
+        ents = _ents(e)
         for ent in ents:
             for neigh in entity_index.get(str(ent).lower(), []):
                 if entry_id(neigh) in seen:
                     continue
-                # resonance score
-                echo = float(sc) * 0.72 * (1.0 + 0.1 * min(3, len(ents)))
+                echo = float(sc) * 0.72
+                if colony is not None:
+                    try:
+                        echo *= float(colony.trail_boost(ents, _ents(neigh)))
+                    except Exception:
+                        pass
                 _take(neigh, echo)
                 if len(picked) >= top_k:
                     return picked[:top_k]
@@ -171,7 +175,6 @@ def mirror_expand(
                 if len(picked) >= top_k:
                     return picked[:top_k]
 
-    # Fill remaining from unused high-score seeds already handled
     return picked[:top_k]
 
 

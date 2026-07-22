@@ -2,6 +2,15 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.4.0] - 2026-07-22
+
+### Colony communication (original — not a holographic clone)
+- **`colony.py`:** ant pheromone trails between entities (deposit / evaporate / trail_boost)
+- **Bee waggle dances:** each memory carries kind (pollen type) + where (entities)
+- **Markdown board:** `$HERMES_HOME/memories/COLONY.md` human-readable trail map
+- Prefetch lays scent; helpful feedback reinforces trails; mirror_expand uses trail boost
+- Bio stack: elephant durability + dolphin social co-activation + whale culture sheet + ant/bee stigmergy
+
 ## [0.3.9] - 2026-07-22
 
 ### Mirror infrastructure (holographic RE + bio)

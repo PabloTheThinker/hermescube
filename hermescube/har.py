@@ -175,8 +175,9 @@ class HARQueryEngine:
         if not primary:
             return []
         idx = mirror_mod.build_entity_index(all_entries)
+        colony = getattr(self, "_colony", None)
         return mirror_mod.mirror_expand(
-            primary, all_entries, top_k=top_k, entity_index=idx
+            primary, all_entries, top_k=top_k, entity_index=idx, colony=colony
         )
 
     def _fallback_scan(

@@ -272,6 +272,9 @@ class CubeMemoryProvider:
         self._prefetch_cache: dict[str, list[tuple[CubeEntry, float]]] = {}
         self._prefetch_cache_max = 64
 
+        # Colony stigmergy (ants/bees) — original Cube layer
+        self._colony = None
+
         # Turn tracking
         self._turn_count: int = 0
         self._turns_since_memory: int = 0
@@ -366,6 +369,24 @@ class CubeMemoryProvider:
             )
 
         self._engine = HARQueryEngine(self._cube)
+
+        # Colony board + pheromone graph (under memories/)
+        try:
+            from hermescube.colony import ColonyGraph
+
+            colony_json = cube_dir / "colony_graph.json"
+            self._colony = ColonyGraph(colony_json)
+            # seed dances lightly from existing L1 (cap)
+            try:
+                for e in (self._cube.read_l1() or [])[-80:]:
+                    self._colony.register_dance(e)
+            except Exception:
+                pass
+            # Let HAR mirror_expand use trail boosts
+            setattr(self._engine, "_colony", self._colony)
+        except Exception as e:
+            logger.debug("colony init skipped: %s", e)
+            self._colony = None
 
         # Load trained embedder from disk if available
         embedder_path = str(cube_dir / "memory.embedder")
@@ -762,17 +783,42 @@ class CubeMemoryProvider:
             return ""
 
         from hermescube import bio_rank
+        from hermescube import colony as colony_mod
+        from hermescube import mirror as mirror_mod
+
+        # Colony: register dances + deposit trails on recalled cluster
+        seed_ents: list[str] = []
+        if self._colony is not None:
+            try:
+                for entry, _sc in results[:5]:
+                    d = self._colony.register_dance(entry)
+                    seed_ents.extend(d.get("where") or [])
+                    ents = (entry.data or {}).get("entities") if entry.data else None
+                    if ents:
+                        self._colony.deposit(list(ents), amount=0.2)
+                # query entities also lay scent
+                q_ents = mirror_mod.extract_entities(query)
+                if q_ents:
+                    self._colony.deposit(q_ents + seed_ents[:4], amount=0.15)
+                self._colony.save()
+                board = Path(self._hermes_home or Path.home() / ".hermes") / "memories" / "COLONY.md"
+                if self._agent_identity:
+                    board = Path(self._hermes_home) / "memories" / "profiles" / self._agent_identity / "COLONY.md"
+                self._colony.write_markdown_board(board)
+            except Exception as e:
+                logger.debug("colony prefetch trail: %s", e)
 
         lines = ["[Relevant memories from past sessions:]"]
         for entry, score in results[:5]:
             ts = entry.timestamp[:10] if entry.timestamp else "unknown"
             layer = bio_rank.cortical_layer(entry.entry_type or "")
+            kind = colony_mod.resource_kind(entry.entry_type or "", entry.description or "")
             lines.append(
-                f"- [{ts}] [{entry.entry_type}|{layer}] {entry.description}"
+                f"- [{ts}] [{entry.entry_type}|{layer}|{kind}] {entry.description}"
             )
             if entry.data:
                 for k, v in entry.data.items():
-                    if k in ("confidence", "source", "trust"):
+                    if k in ("confidence", "source", "trust", "entities"):
                         lines.append(f"  {k}: {v}")
         return "\n".join(lines)
 
@@ -1480,6 +1526,22 @@ class CubeMemoryProvider:
             },
             outcome="superseded",
         )
+
+        # Colony: helpful = reinforce pheromone trail (ant food found)
+        if self._colony is not None and action == "helpful":
+            try:
+                ents = (entry.data or {}).get("entities") if entry.data else None
+                if not ents:
+                    from hermescube import mirror as mirror_mod
+                    ents = mirror_mod.extract_entities(entry.description or "")
+                if ents:
+                    self._colony.deposit(list(ents), amount=0.5)
+                    self._colony.register_dance(entry)
+                    self._colony.save()
+                    board = Path(self._hermes_home or Path.home() / ".hermes") / "memories" / "COLONY.md"
+                    self._colony.write_markdown_board(board)
+            except Exception:
+                pass
 
         return json.dumps({
             "status": "rated",
