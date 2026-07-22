@@ -112,26 +112,52 @@ def cmd_beta(args: argparse.Namespace) -> None:
             print(f"β dim: {len(beta)}")
 
 
+def _default_cube_path() -> str:
+    """User Hermes home cube — never the project checkout."""
+    import os
+    from pathlib import Path
+
+    home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    return str(Path(home) / "memories" / "memory.cube")
+
+
 def main(argv: list[str] | None = None) -> int:
+    default_path = _default_cube_path()
     parser = argparse.ArgumentParser(
         prog="hermescube",
-        description="Binary columnar archive with holographic associative retrieval",
+        description=(
+            "Binary columnar archive with holographic associative retrieval. "
+            f"Default path: $HERMES_HOME/memories/memory.cube ({default_path})"
+        ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # init
+    def add_path(p: argparse.ArgumentParser, *, required_create: bool = False) -> None:
+        p.add_argument(
+            "path",
+            nargs="?" if not required_create else None,
+            default=None if required_create else default_path,
+            help=f"Path to .cube (default: {default_path})",
+        )
+
+    # init — still requires path OR defaults to user cube
     p_init = sub.add_parser("init", help="Create empty .cube file")
-    p_init.add_argument("path")
+    p_init.add_argument(
+        "path",
+        nargs="?",
+        default=default_path,
+        help=f"Path to create (default: {default_path})",
+    )
     p_init.add_argument("--dim", type=int, default=256)
     p_init.add_argument("--buckets", type=int, default=64)
 
     # info
     p_info = sub.add_parser("info", help="Show cube stats")
-    p_info.add_argument("path")
+    add_path(p_info)
 
     # append
     p_append = sub.add_parser("append", help="Append an entry")
-    p_append.add_argument("path")
+    add_path(p_append)
     p_append.add_argument("--type", "-t", required=True,
                           choices=["enter", "leave", "landmark", "belief",
                                    "trait", "evolution", "focus",
@@ -142,27 +168,48 @@ def main(argv: list[str] | None = None) -> int:
     p_append.add_argument("--outcome", default="none",
                           choices=["none", "success", "failure", "pending", "superseded"])
 
-    # query
+    # query — text is primary; cube path via --cube (defaults to user Hermes home)
     p_query = sub.add_parser("query", help="HAR query")
-    p_query.add_argument("path")
-    p_query.add_argument("text", nargs="?", default="")
+    p_query.add_argument("text", nargs="?", default="", help="Query text")
+    p_query.add_argument(
+        "--cube",
+        dest="path",
+        default=default_path,
+        help=f"Cube path (default: {default_path})",
+    )
     p_query.add_argument("--top", type=int, default=10)
 
     # evolve
     p_evolve = sub.add_parser("evolve", help="Run evolution cycle")
-    p_evolve.add_argument("path")
+    add_path(p_evolve)
 
     # dump
     p_dump = sub.add_parser("dump", help="List all entries")
-    p_dump.add_argument("path")
+    add_path(p_dump)
     p_dump.add_argument("--jsonl", action="store_true", help="JSONL format")
 
     # beta
     p_beta = sub.add_parser("beta", help="Show β vector stats")
-    p_beta.add_argument("path")
+    add_path(p_beta)
     p_beta.add_argument("--show", action="store_true", help="Print full vector")
 
+    # doctor — hermes wire check
+    p_doc = sub.add_parser("doctor", help="Check Hermes wire + user cube path")
+    p_doc.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Override HERMES_HOME",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "doctor":
+        return cmd_doctor(args)
+
+    # Ensure parent dir for default user cube on init
+    if args.command == "init":
+        from pathlib import Path
+        Path(args.path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
     commands = {
         "init": cmd_init,
@@ -180,8 +227,43 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         if args.command in ("query", "append", "evolve", "info", "dump", "beta"):
-            print("  (is the cube file valid?)", file=sys.stderr)
+            print(f"  path={getattr(args, 'path', '?')}", file=sys.stderr)
+            print("  (is the cube file valid? try: hermescube init)", file=sys.stderr)
         return 1
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    import os
+    from pathlib import Path
+
+    home = Path(args.hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
+    cube = home / "memories" / "memory.cube"
+    plugin = home / "plugins" / "hermescube"
+    cfg = home / "config.yaml"
+    print("HermesCube doctor")
+    print(f"  HERMES_HOME: {home}")
+    print(f"  cube:        {cube}  {'EXISTS' if cube.is_file() else 'missing (ok until first use)'}")
+    print(f"  plugin dir:  {plugin}  {'OK' if (plugin / '__init__.py').is_file() else 'MISSING'}")
+    print(f"  config:      {cfg}  {'OK' if cfg.is_file() else 'MISSING'}")
+    provider = None
+    if cfg.is_file():
+        try:
+            import yaml
+            c = yaml.safe_load(cfg.read_text()) or {}
+            provider = (c.get("memory") or {}).get("provider")
+        except Exception as e:
+            print(f"  config parse error: {e}")
+    print(f"  memory.provider: {provider or '(unset)'}")
+    try:
+        import hermescube
+        print(f"  package: {hermescube.__version__} @ {hermescube.__file__}")
+    except Exception as e:
+        print(f"  package: NOT IMPORTABLE ({e})")
+        return 1
+    if provider != "hermescube":
+        print("  hint: hermes config set memory.provider hermescube")
+        print("        or: ./scripts/install_hermes.sh")
+    return 0
 
 
 if __name__ == "__main__":

@@ -2,6 +2,14 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.5] - 2026-07-22
+
+### Hermes-native user install
+- Root `plugin.yaml` + `__init__.py` for `hermes plugins install PabloTheThinker/hermescube`
+- Install script targets **user** `$HERMES_HOME` (plugin + config); cube only at `$HERMES_HOME/memories/memory.cube`
+- CLI defaults to user cube; `hermescube doctor` wire check
+- `after-install.md` for Hermes plugin installer
+
 ## [0.3.4] - 2026-07-22
 
 ### Everyday ops

@@ -1,47 +1,59 @@
-"""HermesCube memory plugin — register with HermesAgent via register(ctx).
+"""HermesCube plugin shim under plugin/ (legacy install path).
 
-Usage:
-    The plugin is discovered by HermesAgent from either:
-    - Bundled: ``plugins/memory/hermescube/`` (in hermes-agent source tree)
-    - User-installed: ``$HERMES_HOME/plugins/memory/hermescube/``
-
-Activation:
-    Set ``memory.provider: hermescube`` in ``$HERMES_HOME/config.yaml``.
-    The MemoryManager will load, initialize, and wire this provider.
-
-Config is read from ``config.yaml`` under ``plugins.hermescube``
-(or ``memory.hermescube``), following the Holographic provider's pattern.
-
-Tool names:
-    hermescube_search   — HAR-powered semantic search
-    hermescube_manage   — add/remove memories
-    hermescube_feedback — rate entries (trains trust scores)
+Prefer repo-root ``__init__.py`` + ``plugin.yaml`` for
+``hermes plugins install PabloTheThinker/hermescube``.
 """
 
+from __future__ import annotations
+
 import logging
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# plugin/ → repo root
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _ensure_import_path() -> None:
+    root = str(_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+
+def _ensure_package_installed() -> None:
+    _ensure_import_path()
+    try:
+        import hermescube  # noqa: F401
+        return
+    except ImportError:
+        pass
+    import subprocess
+
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-e", f"{_ROOT}[numpy]", "-q"]
+        )
+    except Exception:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "-e", str(_ROOT), "-q"]
+        )
+    _ensure_import_path()
+    import hermescube  # noqa: F401
+
 
 def register(ctx) -> None:
-    """Register HermesCube as a MemoryProvider with the plugin system.
-
-    Called automatically by HermesAgent's plugin loader when this
-    plugin is activated via ``memory.provider: hermescube``.
-
-    Loads config from ``plugins.hermescube`` in config.yaml and
-    passes it to the provider constructor — same pattern as the
-    Holographic provider.
-    """
+    _ensure_package_installed()
     from hermescube.provider import CubeMemoryProvider, _load_plugin_config
 
     config = _load_plugin_config()
-    provider = CubeMemoryProvider(
-        auto_extract=config.get("auto_extract", "false").lower() in ("true", "1", "yes") if isinstance(config.get("auto_extract"), str) else bool(config.get("auto_extract", False)),
-    )
-    ctx.register_memory_provider(provider)
+    auto = config.get("auto_extract", False)
+    if isinstance(auto, str):
+        auto = auto.lower() in ("true", "1", "yes", "on")
+    else:
+        auto = bool(auto)
 
-    logger.info(
-        "HermesCube memory provider registered (3 tools: hermescube_search, "
-        "hermescube_manage, hermescube_feedback)"
-    )
+    provider = CubeMemoryProvider(auto_extract=auto)
+    ctx.register_memory_provider(provider)
+    logger.info("HermesCube memory provider registered (plugin/ shim)")

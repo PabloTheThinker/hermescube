@@ -16,6 +16,40 @@
 
 ---
 
+## Install into Hermes Agent (per-user)
+
+Your cube lives under **your** Hermes home — not the git tree.
+
+```bash
+# Option A — Hermes plugin installer (recommended)
+hermes plugins install PabloTheThinker/hermescube
+cd "$HERMES_HOME/plugins/hermescube"   # usually ~/.hermes/plugins/hermescube
+./scripts/install_hermes.sh            # pip into Hermes Python + wire config
+hermes config set memory.provider hermescube
+
+# Option B — clone then install
+git clone https://github.com/PabloTheThinker/hermescube.git
+cd hermescube
+./scripts/install_hermes.sh
+hermes config set memory.provider hermescube
+```
+
+Verify:
+
+```bash
+hermescube doctor
+hermescube info          # defaults to $HERMES_HOME/memories/memory.cube
+hermes memory status
+```
+
+| Path | Who owns it |
+|------|-------------|
+| `$HERMES_HOME/plugins/hermescube/` | Plugin code (from install) |
+| `$HERMES_HOME/memories/memory.cube` | **Your** memory data |
+| `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` |
+
+---
+
 ## Why
 
 LLM agents forget. Context windows are finite. Cloud memory APIs cost money,
