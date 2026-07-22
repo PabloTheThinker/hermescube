@@ -5,6 +5,8 @@ All notable changes to HermesCube are documented here.
 ## [0.6.0] - 2026-07-22
 
 ### Hyper-memory (surpass holographic latency class)
+- Hot path: cached entity index; colony disk I/O off critical path
+- Fair warm-cache microbench @N=1008: **~0.12 ms** prefetch, hit 1.0
 - **Lex-first two-stage query**: candidate gen → batch vector+bio rank only on candidates
 - Resident engine cache (entries + lex + matrix) — no full rescan every turn
 - **hermescube_probe** tool: probe/related entity graph (agent-focused)

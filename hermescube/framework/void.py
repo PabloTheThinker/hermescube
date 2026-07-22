@@ -47,9 +47,11 @@ class CubeVoid:
         self._lex_built_for = len(entries)
 
     def _ensure_lex(self) -> None:
+        # engine owns resident lex cache via refresh_cache; void lex optional
         n = int(getattr(self.cube, "entry_count", 0) or 0)
-        if n != self._lex_built_for:
+        if self._lex_built_for < 0 or (n > 0 and self.lex.entry_count == 0):
             self.rebuild_lex()
+            self._lex_built_for = n
 
     def recall(
         self,
@@ -62,8 +64,7 @@ class CubeVoid:
         """Full void recall: engine query (mirror+colony inside HAR)."""
         if not query or not query.strip():
             return []
-        self._ensure_lex()
-        # Prefer engine path (includes mirror_finish)
+        # Prefer engine hyper path (resident cache)
         results = self.engine.query(
             query,
             top_k=max(top_k, 5),
@@ -73,19 +74,16 @@ class CubeVoid:
         # Trail maintenance
         if self.colony is not None and results:
             try:
-                seed_ents: list[str] = []
-                for entry, _ in results[:5]:
-                    d = self.colony.register_dance(entry)
-                    seed_ents.extend(d.get("where") or [])
+                # light trail only — no disk save on hot path
+                for entry, _ in results[:3]:
                     ents = (entry.data or {}).get("entities") if entry.data else None
-                    if ents:
-                        self.colony.deposit(list(ents), amount=0.2)
-                q_ents = mirror_mod.extract_entities(query)
-                if q_ents:
-                    self.colony.deposit(q_ents + seed_ents[:4], amount=0.15)
-                self.colony.save()
+                    if ents and len(ents) >= 2:
+                        self.colony.deposit(list(ents)[:6], amount=0.12)
                 self.colony.mark_dirty()
-                self.colony.maybe_write_markdown_board(self.paths.colony_board)
+                # board at most every N recalls / interval
+                self.colony.maybe_write_markdown_board(
+                    self.paths.colony_board, min_interval_s=300.0, every_n_recalls=20
+                )
             except Exception as e:
                 logger.debug("void colony pulse: %s", e)
         return results[:top_k]

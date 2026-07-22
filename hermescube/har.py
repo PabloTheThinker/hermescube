@@ -44,6 +44,7 @@ class HARQueryEngine:
         self._mat = None
         self._lex = None
         self._colony = None
+        self._entity_index = None
 
     # ── β vector management ───────────────────────────────────────
 
@@ -99,6 +100,7 @@ class HARQueryEngine:
         self._entries = []
         self._by_id = {}
         self._mat = None
+        self._entity_index = None
 
     def refresh_cache(self, force: bool = False) -> None:
         n = int(getattr(self.cube, "entry_count", 0) or 0)
@@ -400,7 +402,10 @@ class HARQueryEngine:
             scored = [(e, s) for e, s in scored if s >= min_score]
         scored.sort(key=lambda x: -x[1])
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
-        idx = mirror_mod.build_entity_index(self._entries)
+        # light expand only — entity index cached; skip if tiny result already full
+        idx = self._entity_index
+        if idx is None:
+            return primary[:top_k]
         return mirror_mod.mirror_expand(
             primary,
             self._entries,
