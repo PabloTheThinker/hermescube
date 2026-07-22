@@ -416,7 +416,7 @@ def main():
     print("-" * 75)
     for pq in recall_result["per_query"]:
         print(f"{pq['query']:<42} {pq['recall']:>8.3f} {pq['precision']:>10.3f} "
-              f"{pq['har_results']:>5} {pq['scan_results']:>5}")
+              f"{pq['har_results']:>5}")
     print()
 
     # 5. Type filter

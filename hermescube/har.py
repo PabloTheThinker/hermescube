@@ -266,6 +266,7 @@ class HARQueryEngine:
             trust=trust if isinstance(trust, (int, float)) else None,
             delta_hours=self._delta_hours(entry, now=now),
             lexical=lex,
+            description=entry.description or "",
         )
 
     def contradict(

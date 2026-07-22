@@ -818,6 +818,23 @@ class CubeMemoryProvider:
 
         entry_type = self._classify_turn(user_clean, assistant_clean)
 
+        # Everyday IR: don't index the *question* as the memory surface when we
+        # have an answer — questions pollute recall ("who is Pablo?" beats the
+        # durable relationship fact). Prefer assistant summary; keep Q in data.
+        uq = (user_clean or "").strip()
+        aq = (assistant_clean or "").strip()
+        is_question = uq.endswith("?") or uq.lower().startswith(
+            ("who ", "what ", "where ", "when ", "why ", "how ", "can ", "should ")
+        )
+        if is_question and aq:
+            desc = aq[:200]
+            data["question"] = uq[:200]
+            data["indexed_from"] = "assistant"
+            # answers are still useful but secondary to explicit manage/seed facts
+            data.setdefault("trust", 0.45)
+        else:
+            data.setdefault("trust", 0.55)
+
         outcome = "none"
         if assistant_clean:
             lower = assistant_clean.lower()

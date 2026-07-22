@@ -210,17 +210,23 @@ def composite_score(
     trust: float | None = None,
     delta_hours: float = 0.0,
     lexical: float = 0.0,
+    description: str = "",
 ) -> float:
     """Combine hybrid similarity with bio priors for ranking."""
     sim = hybrid_semantic(semantic, lexical)
     r = recency_weight(delta_hours, entry_type)
-    return (
+    score = (
         float(sim)
         * r
         * type_prior(entry_type)
         * trust_multiplier(trust)
         * outcome_multiplier(outcome)
     )
+    # Downrank raw question-shaped surfaces (legacy turn noise)
+    d = (description or "").strip()
+    if d.endswith("?") or d[:4].lower() in ("who ", "what", "wher", "when", "why ", "how "):
+        score *= 0.55
+    return score
 
 
 def diversify_by_layer(

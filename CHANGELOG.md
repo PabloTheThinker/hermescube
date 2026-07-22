@@ -2,6 +2,13 @@
 
 All notable changes to HermesCube are documented here.
 
+## [0.3.7] - 2026-07-22
+
+### Dogfood fix (fresh install experience)
+- `sync_turn`: index **assistant answer** when user message is a question (stop Q-text polluting IR)
+- Rank penalty for question-shaped descriptions
+- Fresh install dogfood + labeled IR bench note in research canon
+
 ## [0.3.6] - 2026-07-22
 
 ### Update system (Hermes-aligned)
