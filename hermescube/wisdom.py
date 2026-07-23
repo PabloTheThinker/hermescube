@@ -259,12 +259,22 @@ def active_wisdom(
     limit: int = 8,
 ) -> list[Any]:
     """Select active wisdom entries for prompt/prefetch (crystals first)."""
+    # local import avoids circulars; hygiene filter optional
+    try:
+        from hermescube.journey import is_noise_text
+    except Exception:
+        def is_noise_text(t: str) -> bool:  # type: ignore
+            return (t or "").startswith("[CRYSTALIZED]") or (t or "").startswith("[SUPERSEDED]")
+
     scored: list[tuple[float, Any]] = []
     for e in entries:
         if (e.outcome or "") == "superseded":
             continue
         et = (e.entry_type or "").lower()
         if et not in WISDOM_TYPES and et != "belief":
+            continue
+        desc = (e.description or "").strip()
+        if not desc or is_noise_text(desc):
             continue
         d = e.data if isinstance(e.data, dict) else {}
         score = _trust(e)

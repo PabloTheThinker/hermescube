@@ -1,6 +1,6 @@
 name: hermescube
 manifest_version: 1
-version: "0.10.0"
+version: "0.11.0"
 description: >-
   Local holographic .cube memory for Hermes Agent — HAR retrieval,
   MemoryProvider plugin. Per-user cube at $HERMES_HOME/memories/memory.cube.

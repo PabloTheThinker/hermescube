@@ -48,9 +48,14 @@ def log_event(
     summary = (summary or "").strip()
     if not summary or not kind:
         return
-    # skip pure noise kinds
+    # skip pure noise
     if summary.lower() in ("session ended", "ok", "sure"):
         return
+    try:
+        if is_noise_text(summary):
+            return
+    except Exception:
+        pass
     jsonl, _md = default_paths(hermes_home)
     try:
         jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +145,36 @@ def write_markdown(
     return md
 
 
+_NOISE_RE = __import__("re").compile(
+    r"(?i)("
+    r"PERSIST-PROOF|ADHOC-|DURABILITY-MARKER|SUBPROCESS-|hermes-verify|"
+    r"\[CRYSTALIZED\]|\[SUPERSEDED\]|"
+    r"^session ended$|"
+    r"firsthand Cube session|"
+    r"test_token|dogfood-bench|Isolated journey"
+    r")"
+)
+
+
+def is_noise_text(text: str) -> bool:
+    """True if text should not surface as active wisdom / world belief."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    if t.lower() in ("ok", "sure", "session ended", "thanks", "proceed"):
+        return True
+    if _NOISE_RE.search(t):
+        return True
+    # conversational shells / dogfood remember prompts
+    if t.startswith("User said remember:"):
+        return True
+    if t.startswith("Confirm Cube") or t.startswith("Confirm cube"):
+        return True
+    if t.startswith("[HYGIENE]"):
+        return True
+    return False
+
+
 def wisdom_from_cube(
     cube_path: str | Path | None = None,
     *,
@@ -148,6 +183,7 @@ def wisdom_from_cube(
     """(statement, confidence) from crystals + high-trust beliefs.
 
     Prefer `entries` when caller already holds the cube lock (exclusive flock).
+    Filters dogfood/test noise so world + inject stay doctrine-grade.
     """
     try:
         from hermescube.wisdom import active_wisdom
@@ -161,17 +197,188 @@ def wisdom_from_cube(
             with CubeFile.open(str(cube_path)) as c:
                 ents = c.read_l1() or []
         out: list[tuple[str, float]] = []
-        for e in active_wisdom(ents, limit=12):
+        for e in active_wisdom(ents, limit=16):
             d = e.data if isinstance(e.data, dict) else {}
             conf = float(d.get("trust") or 0.7)
             if d.get("crystal"):
                 conf = max(conf, 0.85)
             desc = (e.description or "").strip()
-            if desc and not desc.startswith("[CRYSTALIZED]") and not desc.startswith("[SUPERSEDED]"):
-                out.append((desc, conf))
+            if not desc or is_noise_text(desc):
+                continue
+            out.append((desc, conf))
+            if len(out) >= 12:
+                break
         return out
     except Exception:
         return []
+
+
+def prune_events(
+    hermes_home: str | Path | None = None,
+    *,
+    drop_noise: bool = True,
+    drop_kinds: list[str] | None = None,
+    drop_entry_ids: list[str] | None = None,
+    keep_last: int | None = None,
+) -> dict[str, Any]:
+    """Edit the journey timeline (Nous /journey prune principle).
+
+    Rewrites journey.jsonl in place. Returns counts.
+    """
+    jsonl, _md = default_paths(hermes_home)
+    if not jsonl.is_file():
+        return {"kept": 0, "removed": 0, "path": str(jsonl)}
+    kinds = set(drop_kinds or [])
+    ids = set(drop_entry_ids or [])
+    kept: list[dict[str, Any]] = []
+    removed = 0
+    for e in read_events(hermes_home, limit=50_000):
+        summary = str(e.get("summary") or "")
+        kind = str(e.get("kind") or "")
+        eid = str(e.get("entry_id") or "")
+        drop = False
+        if drop_noise and is_noise_text(summary):
+            drop = True
+        if kind in kinds:
+            drop = True
+        if eid and eid in ids:
+            drop = True
+        if drop:
+            removed += 1
+            continue
+        kept.append(e)
+    if keep_last is not None and keep_last >= 0:
+        if len(kept) > keep_last:
+            removed += len(kept) - keep_last
+            kept = kept[-keep_last:]
+    tmp = jsonl.with_suffix(".jsonl.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for e in kept:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, jsonl)
+    return {"kept": len(kept), "removed": removed, "path": str(jsonl)}
+
+
+def hygiene_cube_noise(
+    cube,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Supersede dogfood/test noise entries still marked active in the cube."""
+    ents = list(cube.read_l1() or [])
+    targets = []
+    for e in ents:
+        if (e.outcome or "") == "superseded":
+            continue
+        desc = e.description or ""
+        if is_noise_text(desc):
+            targets.append(e)
+    if dry_run:
+        return {"would_supersede": len(targets), "ids": [e.id for e in targets[:20]]}
+    n = 0
+    for e in targets:
+        try:
+            cube.append(
+                entry_type=e.entry_type or "landmark",
+                description=f"[HYGIENE] {(desc := (e.description or ''))[:150]}",
+                data={
+                    "supersedes": e.id,
+                    "source": "journey_hygiene",
+                    "trust": 0.1,
+                },
+                outcome="superseded",
+            )
+            n += 1
+        except Exception:
+            continue
+    return {"superseded": n, "scanned": len(ents)}
+
+
+def hygiene_world_beliefs(
+    *,
+    hermespace_home: str | Path | None = None,
+    agent_id: str = "hermes-agent",
+) -> dict[str, Any]:
+    """Drop noise beliefs from Hermespace world (edit surface)."""
+    try:
+        hs_home = Path(
+            hermespace_home
+            or os.environ.get("HERMESPACE_HOME")
+            or (Path.home() / ".hermespace")
+        )
+        os.environ.setdefault("HERMESPACE_HOME", str(hs_home))
+        for cand in (
+            Path.home() / "projects" / "hermespace" / "src",
+            Path("/home/ilo/projects/hermespace/src"),
+        ):
+            if cand.is_dir() and str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+        from hermespace.world import WorldModel  # type: ignore
+
+        wm = WorldModel(agent_id=agent_id)
+        before = list(wm.state.beliefs)
+        kept = [b for b in before if not is_noise_text(getattr(b, "statement", "") or "")]
+        removed = len(before) - len(kept)
+        wm.state.beliefs = kept
+        wm.save()
+        try:
+            if hasattr(wm, "render_markdown"):
+                jp = Path(getattr(wm, "path", ""))
+                if jp.suffix == ".json":
+                    jp.with_name("world.md").write_text(wm.render_markdown(), encoding="utf-8")
+        except Exception:
+            pass
+        return {"removed": removed, "kept": len(kept), "ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def run_hygiene(
+    *,
+    hermes_home: str | Path | None = None,
+    hermespace_home: str | Path | None = None,
+    agent_id: str = "hermes-agent",
+    cube=None,
+    entries: list | None = None,
+    sync_world: bool = True,
+) -> dict[str, Any]:
+    """Full hygiene pass: journey prune + cube noise supersede + world clean + re-push."""
+    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
+    out: dict[str, Any] = {}
+    out["journey"] = prune_events(hh, drop_noise=True)
+    if cube is not None:
+        out["cube"] = hygiene_cube_noise(cube, dry_run=False)
+        ents = list(cube.read_l1() or [])
+    else:
+        ents = list(entries) if entries is not None else None
+        out["cube"] = {"skipped": True}
+    out["world_clean"] = hygiene_world_beliefs(
+        hermespace_home=hermespace_home, agent_id=agent_id
+    )
+    wisdom = wisdom_from_cube(
+        hh / "memories" / "memory.cube" if (hh / "memories" / "memory.cube").is_file() else None,
+        entries=ents,
+    )
+    write_markdown(hh, cube_wisdom=wisdom)
+    if sync_world:
+        out["world_push"] = push_to_hermespace_world(
+            hermes_home=hh,
+            hermespace_home=hermespace_home,
+            agent_id=agent_id,
+            entries=ents,
+        )
+    out["wisdom_n"] = len(wisdom)
+    out["ok"] = True
+    log_event(
+        "hygiene",
+        f"Hygiene: journey_removed={out['journey'].get('removed')} "
+        f"cube={out.get('cube')} wisdom={len(wisdom)}",
+        hermes_home=hh,
+        meta={"journey": out["journey"], "wisdom_n": len(wisdom)},
+    )
+    return out
 
 
 def push_to_hermespace_world(

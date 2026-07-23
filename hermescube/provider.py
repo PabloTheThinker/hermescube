@@ -579,8 +579,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey"],
-                            "description": "add/remove, crystalize duplicates, or journey timeline/world sync",
+                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune"],
+                            "description": "add/remove, crystalize, journey timeline/world sync, hygiene noise, or prune journey",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1475,7 +1475,62 @@ class CubeMemoryProvider:
             return self._handle_manage_crystalize(args)
         elif action == "journey":
             return self._handle_manage_journey(args)
+        elif action == "hygiene":
+            return self._handle_manage_hygiene(args)
+        elif action == "prune":
+            return self._handle_manage_prune(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_hygiene(self, args: dict[str, Any]) -> str:
+        """Prune noise from journey + cube + Hermespace world; re-push clean wisdom."""
+        try:
+            from hermescube.journey import run_hygiene
+
+            if not self._cube:
+                return json.dumps({"error": "Memory not initialized"})
+            out = run_hygiene(
+                hermes_home=self._hermes_home,
+                agent_id=str(args.get("agent_id") or "hermes-agent"),
+                cube=self._cube,
+                sync_world=bool(args.get("sync_world", True)),
+            )
+            self._prefetch_cache.clear()
+            if self._engine:
+                try:
+                    self._engine.invalidate_cache()
+                except Exception:
+                    pass
+            return json.dumps({"status": "hygiene", **out})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_prune(self, args: dict[str, Any]) -> str:
+        """Prune journey timeline events (edit surface)."""
+        try:
+            from hermescube.journey import prune_events, write_markdown, wisdom_from_cube
+
+            kinds = args.get("drop_kinds") or None
+            if isinstance(kinds, str):
+                kinds = [kinds]
+            ids = args.get("drop_entry_ids") or args.get("entry_ids") or None
+            if isinstance(ids, str):
+                ids = [ids]
+            keep_last = args.get("keep_last")
+            if keep_last is not None:
+                keep_last = int(keep_last)
+            stats = prune_events(
+                self._hermes_home,
+                drop_noise=bool(args.get("drop_noise", True)),
+                drop_kinds=kinds,
+                drop_entry_ids=ids,
+                keep_last=keep_last,
+            )
+            ents = list(self._cube.read_l1() or []) if self._cube else []
+            w = wisdom_from_cube(entries=ents)
+            write_markdown(self._hermes_home, cube_wisdom=w)
+            return json.dumps({"status": "pruned", **stats, "wisdom_n": len(w)})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_journey(self, args: dict[str, Any]) -> str:
         """Show journey timeline and optionally push wisdom to Hermespace world."""

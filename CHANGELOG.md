@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0] - 2026-07-23
+
+### Journey prune/edit + wisdom hygiene (Nous /journey edit principle)
+- `is_noise_text` filters dogfood/test tokens from active wisdom + world
+- `hermescube_manage action=hygiene` — prune journey noise, supersede cube test junk, clean world, re-push
+- `action=prune` — edit journey.jsonl (drop noise/kinds/ids, keep_last)
+- Live: PERSIST-PROOF and firsthand meta out of Hermespace beliefs; doctrine-grade wisdom remains
+
 ## [0.10.0] - 2026-07-23
 
 ### Journey Ledger + Hermespace world bridge (original)
