@@ -41,3 +41,7 @@ memories/
 *.log
 tmp/
 .cache/
+
+# Yield learning state (user home only)
+yield_gradient.json
+*.yield.json
