@@ -44,20 +44,34 @@ def cube_recall(
     hermes_home: str | None = None,
     session_id: str = "hermespace",
 ) -> list[tuple[str, float]]:
-    """Return (description, score) from the user's cube for a FOA query."""
+    """Return (description, score) from the user's cube for a FOA query.
+
+    Filters dogfood/test noise so Hermespace inject stays doctrine-grade.
+    """
     if not query or not str(query).strip():
         return []
     hh = hermes_home or _hermes_home()
     try:
         from hermescube.provider import CubeMemoryProvider
+        from hermescube.journey import is_noise_text
 
         p = CubeMemoryProvider()
         p.initialize(session_id=session_id, hermes_home=hh, platform="hermespace")
         if not p._engine:
             p.shutdown()
             return []
-        hits = p._engine.query(query.strip(), top_k=top_k)
-        out = [(e.description or "", float(s)) for e, s in hits if e.description]
+        # over-fetch then filter noise
+        hits = p._engine.query(query.strip(), top_k=max(top_k * 3, 12))
+        out: list[tuple[str, float]] = []
+        for e, s in hits:
+            desc = (e.description or "").strip()
+            if not desc or is_noise_text(desc):
+                continue
+            if (e.outcome or "") == "superseded":
+                continue
+            out.append((desc, float(s)))
+            if len(out) >= top_k:
+                break
         p.shutdown()
         return out
     except Exception as e:
@@ -129,6 +143,12 @@ def build_space_inject(
     """
     if not is_available():
         return ""
+    try:
+        from hermescube.journey import is_noise_text
+    except Exception:
+        def is_noise_text(t: str) -> bool:  # type: ignore
+            return False
+
     cap = max_chars
     if cap is None:
         cap = DEFAULT_HIGH_LOAD_CHARS if high_load else DEFAULT_NORMAL_CHARS
@@ -152,6 +172,8 @@ def build_space_inject(
             except Exception:
                 w = []
             for desc, conf in w[: 2 if high_load else 4]:
+                if is_noise_text(desc):
+                    continue
                 line = f"- {desc.strip()[:160]}"
                 if used + len(line) + 1 > cap:
                     break
@@ -166,6 +188,8 @@ def build_space_inject(
             q, top_k=2 if high_load else 4, hermes_home=hermes_home, session_id=session_id
         )
         for desc, score in hits:
+            if is_noise_text(desc):
+                continue
             line = f"- {desc.strip()[:160]}"
             if used + len(line) + 1 > cap:
                 break

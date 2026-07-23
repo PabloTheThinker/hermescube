@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0] - 2026-07-23
+
+### Inject surface hygiene + Hermespace leave quiet
+- `cube_recall` / `build_space_inject` filter noise + superseded (no PERSIST/firsthand/CRYSTALIZED leak into FOA)
+- Hermespace `leave("session ended")` no longer writes landmark spam; render prefers material landmarks
+- Live: inject LEAK=False; session landmarks cleared on leave cap
+
 ## [0.11.0] - 2026-07-23
 
 ### Journey prune/edit + wisdom hygiene (Nous /journey edit principle)
