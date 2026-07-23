@@ -761,7 +761,7 @@ class TestAgentContextSkip:
                 platform="discord",
                 agent_context="primary",
             )
-            provider.sync_turn("hello", "hi")
+            provider.sync_turn("hello from discord metadata test", "hi — context recorded")
             provider._sync_queue.flush()
 
             entries = provider._cube.read_l1()

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.9.0] - 2026-07-23
+
+### Wisdom Crystalizer (original — true functional memory loop)
+- `wisdom.py`: lexical consensus clusters → `belief` crystals with evidence_ids
+- Active wisdom strip in system prompt + doctor functional_loop metrics
+- `hermescube_manage action=crystalize` (also runs on session_end)
+- `sync_turn` chitchat gate (ok/proceed/thanks) — stops landmark spam
+- Crystals get rank boost (source_boost 1.55)
+- Research: episodic→semantic without LLM; closes Hermes-style learning loop on warehouse
+
 ## [0.8.1] - 2026-07-23
 
 ### Integrity / durability

@@ -344,6 +344,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         try:
             with CubeFile.open(str(cube)) as c:
                 integ = c.integrity_check()
+                ents = list(c.read_l1() or [])
             print("  integrity:")
             print(f"    ok={integ.get('ok')} entries={integ.get('entries_read')} "
                   f"empty={integ.get('empty_descriptions')} "
@@ -353,6 +354,19 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                   f"cubelog={integ.get('cubelog_bytes')}")
             for issue in integ.get("issues") or []:
                 print(f"    ! {issue}")
+            try:
+                from hermescube.wisdom import functional_loop_stats
+
+                loop = functional_loop_stats(ents)
+                print(
+                    f"  functional_loop: crystals={loop.get('crystal_count')} "
+                    f"beliefs={loop.get('belief_count')} "
+                    f"wisdom_ratio={loop.get('wisdom_ratio')} "
+                    f"dup_pressure={loop.get('dup_pressure')} "
+                    f"healthy={loop.get('healthy')}"
+                )
+            except Exception as e:
+                print(f"  functional_loop: n/a ({e})")
             if not integ.get("ok"):
                 return 1
         except Exception as e:

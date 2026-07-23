@@ -206,8 +206,10 @@ def source_boost(data: dict | None) -> float:
     """Durable channels (manage/seed) outrank ephemeral turns."""
     if not data or not isinstance(data, dict):
         return 1.0
+    if data.get("crystal") is True:
+        return 1.55  # active wisdom — consensus crystals
     src = str(data.get("source") or data.get("indexed_from") or "").lower()
-    if src in ("seed", "manage", "user", "import", "cli", "hermescube_manage", "extract"):
+    if src in ("seed", "manage", "user", "import", "cli", "hermescube_manage", "extract", "wisdom_crystalizer"):
         return 1.35
     if src in ("assistant", "turn", "sync_turn"):
         return 0.85

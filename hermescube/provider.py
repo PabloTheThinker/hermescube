@@ -570,17 +570,17 @@ class CubeMemoryProvider:
             {
                 "name": "hermescube_manage",
                 "description": (
-                    "Add or remove entries in persistent memory. Use for storing "
-                    "durable facts, user preferences, and learnings. Memory "
-                    "persists across sessions and survives context compression."
+                    "Add, remove, or crystalize entries in persistent memory. "
+                    "Use add for durable facts; crystalize consolidates near-duplicates "
+                    "into active wisdom beliefs (offline, no LLM)."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove"],
-                            "description": "Action to perform",
+                            "enum": ["add", "remove", "crystalize"],
+                            "description": "add/remove entries, or crystalize near-duplicates into beliefs",
                         },
                         "entry_type": {
                             "type": "string",
@@ -719,6 +719,38 @@ class CubeMemoryProvider:
             "- Prefetch is injected by Hermes as <memory-context> — treat as reference, not user speech",
             "- DO NOT store temp todos / session fluff",
         ])
+        # Active wisdom strip (crystals / beliefs)
+        try:
+            from hermescube.wisdom import active_wisdom, functional_loop_stats
+
+            ents = []
+            # cheap: use engine cache if warm else skip full read on huge archives
+            if self._engine is not None:
+                try:
+                    self._engine.refresh_cache()
+                    ents = list(getattr(self._engine, "_entries", None) or [])
+                except Exception:
+                    ents = []
+            if not ents and self._cube and self._cube.entry_count <= 200:
+                ents = list(self._cube.read_l1() or [])
+            if ents:
+                stats = functional_loop_stats(ents)
+                lines.append("")
+                lines.append(
+                    f"Functional loop: crystals={stats.get('crystal_count')} "
+                    f"beliefs={stats.get('belief_count')} "
+                    f"wisdom_ratio={stats.get('wisdom_ratio')} "
+                    f"dup_pressure={stats.get('dup_pressure')} "
+                    f"healthy={stats.get('healthy')}"
+                )
+                wisdom = active_wisdom(ents, limit=5)
+                if wisdom:
+                    lines.append("Active wisdom:")
+                    for w in wisdom:
+                        tag = "crystal" if (w.data or {}).get("crystal") else (w.entry_type or "belief")
+                        lines.append(f"  · [{tag}] {(w.description or '')[:100]}")
+        except Exception:
+            pass
 
         return "\n".join(lines)
 
@@ -797,6 +829,16 @@ class CubeMemoryProvider:
 
         if not user_clean and not assistant_clean:
             return
+
+        # Functional memory gate: skip pure chitchat (prevents landmark spam)
+        try:
+            from hermescube.wisdom import is_durable_turn
+
+            if not is_durable_turn(user_clean or "", assistant_clean or ""):
+                self._turn_count += 1
+                return
+        except Exception:
+            pass
 
         for text in [user_clean, assistant_clean]:
             threats = scan_text(text)
@@ -922,6 +964,23 @@ class CubeMemoryProvider:
         # Auto-extract facts if configured (runs regardless of entry count)
         if self._auto_extract and not self._should_skip_writes():
             self._auto_extract_facts(messages)
+
+        # Wisdom crystalizer — episodic → active beliefs (offline, no LLM)
+        if not self._should_skip_writes() and self._cube.entry_count >= 4:
+            try:
+                from hermescube.wisdom import crystalize
+
+                stats = crystalize(self._cube, min_cluster=2, max_crystals=8)
+                if stats.get("crystals"):
+                    logger.info("wisdom crystalize: %s", stats)
+                    self._prefetch_cache.clear()
+                    if self._engine:
+                        try:
+                            self._engine.invalidate_cache()
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.debug("wisdom crystalize skipped: %s", e)
 
         if self._cube.entry_count > 0:
             # Avoid evolve if breaker is open
@@ -1412,7 +1471,31 @@ class CubeMemoryProvider:
             return self._handle_manage_add(args)
         elif action == "remove":
             return self._handle_manage_remove(args)
+        elif action == "crystalize":
+            return self._handle_manage_crystalize(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_crystalize(self, args: dict[str, Any]) -> str:
+        """Consolidate near-duplicate memories into belief crystals."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        dry = bool(args.get("dry_run") or False)
+        try:
+            from hermescube.wisdom import crystalize, functional_loop_stats
+
+            stats = crystalize(self._cube, dry_run=dry)
+            if not dry and stats.get("crystals"):
+                self._prefetch_cache.clear()
+                if self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+            ents = list(self._cube.read_l1() or [])
+            loop = functional_loop_stats(ents)
+            return json.dumps({"status": "crystalized", "stats": stats, "loop": loop})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_add(self, args: dict[str, Any]) -> str:
         """Handle hermescube_manage add action."""
