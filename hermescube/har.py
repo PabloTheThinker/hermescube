@@ -45,6 +45,9 @@ class HARQueryEngine:
         self._lex = None
         self._colony = None
         self._entity_index = None
+        # Yield Gradient (query-conditioned payoff) — set by provider
+        self._yield_gradient = None
+        self._yield_map: dict[str, float] = {}
 
     # ── β vector management ───────────────────────────────────────
 
@@ -321,6 +324,17 @@ class HARQueryEngine:
         except (ValueError, IndexError, TypeError):
             return 1.0
 
+    def _prime_yield(self, query: str) -> None:
+        """Load query-local yield boosts (closed learning loop)."""
+        self._yield_map = {}
+        yg = getattr(self, "_yield_gradient", None)
+        if yg is None or not query:
+            return
+        try:
+            self._yield_map = yg.boost_map(query) or {}
+        except Exception:
+            self._yield_map = {}
+
     def _rank_entry(
         self,
         entry: CubeEntry,
@@ -328,12 +342,17 @@ class HARQueryEngine:
         *,
         now: str = "",
         query: str = "",
+        yield_boost: float | None = None,
     ) -> float:
         trust = None
         if entry.data and isinstance(entry.data, dict):
             trust = entry.data.get("trust")
         lex = bio_rank.lexical_score(query, entry.description or "") if query else 0.0
         data = entry.data if isinstance(entry.data, dict) else None
+        yb = yield_boost
+        if yb is None:
+            eid = getattr(entry, "id", None) or ""
+            yb = float(self._yield_map.get(str(eid), 1.0)) if self._yield_map else 1.0
         return bio_rank.composite_score(
             semantic,
             entry_type=entry.entry_type or "",
@@ -343,6 +362,7 @@ class HARQueryEngine:
             lexical=lex,
             description=entry.description or "",
             data=data,
+            yield_boost=float(yb),
         )
 
     def _hyper_query(
@@ -355,6 +375,7 @@ class HARQueryEngine:
         """Lex-first two-stage retrieval — holo-class speed, Cube store."""
         if not text or not str(text).strip():
             return []
+        self._prime_yield(text)
         self.refresh_cache()
         if not self._entries:
             return []

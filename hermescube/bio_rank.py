@@ -267,10 +267,18 @@ def composite_score(
     lexical: float = 0.0,
     description: str = "",
     data: dict | None = None,
+    yield_boost: float = 1.0,
 ) -> float:
-    """Combine hybrid similarity with bio priors for ranking."""
+    """Combine hybrid similarity with bio priors for ranking.
+
+    yield_boost: query-conditioned payoff multiplier from YieldGradient
+    (closed learning loop — what paid off for *similar queries*).
+    """
     sim = hybrid_semantic(semantic, lexical)
     r = recency_weight(delta_hours, entry_type)
+    yb = float(yield_boost) if yield_boost and yield_boost > 0 else 1.0
+    # keep yield influence bounded
+    yb = max(0.75, min(1.40, yb))
     score = (
         float(sim)
         * r
@@ -278,6 +286,7 @@ def composite_score(
         * trust_multiplier(trust)
         * outcome_multiplier(outcome)
         * source_boost(data)
+        * yb
     )
     # Downrank raw question-shaped surfaces (legacy turn noise)
     d = (description or "").strip()

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0] - 2026-07-23
+
+### Yield Gradient (original — Nous learning-loop principle, not a clone)
+- `yield_trail.YieldGradient`: query-token buckets → entry payoff (helpful/unhelpful)
+- Rank multiplies by bounded yield boost (query-local value-of-information)
+- Feedback + last prefetch query train the map; JSON under memories/ (cube untouched)
+- Addresses honest limits: use-conditioned IR, closed loop without LLM/cloud
+- Research: YIELD-GRADIENT-2026-07-23.md · PURPOSE unchanged warehouse framing
+
 ## [0.7.1] - 2026-07-23
 
 ### Purpose lock (Hermes clean v0.19 RE)

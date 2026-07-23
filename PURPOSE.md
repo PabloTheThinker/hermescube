@@ -33,6 +33,10 @@ Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud
 - Not a replacement for MEMORY.md  
 - Not “HAR always beats scan” marketing — lex-first + bio rank; honest benches  
 
+## Yield Gradient (0.8+)
+
+Closed loop: feedback teaches which memories *pay off for similar queries* (query-local, not global trust / not colony trails). Hot path stays multiplicative boost only.
+
 ## Success metrics
 
 1. **No lost day-to-day turns** — WAL sync before return  

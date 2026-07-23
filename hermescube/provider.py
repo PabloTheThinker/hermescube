@@ -212,6 +212,8 @@ class CubeMemoryProvider:
         # Colony stigmergy (ants/bees) — original Cube layer
         self._colony = None
         self._void = None
+        self._yield = None
+        self._last_prefetch_query = ""
         self._paths = None
 
         # Turn tracking
@@ -329,6 +331,16 @@ class CubeMemoryProvider:
             setattr(self._engine, "_lexindex", self._void.lex)
         except Exception as e:
             logger.debug("lexindex build: %s", e)
+
+        # Yield Gradient — query-conditioned learning loop (Nous-inspired principle)
+        try:
+            from hermescube.yield_trail import YieldGradient, default_path
+
+            self._yield = YieldGradient(default_path(self._hermes_home or Path.home() / ".hermes"))
+            setattr(self._engine, "_yield_gradient", self._yield)
+        except Exception as e:
+            logger.debug("yield gradient skipped: %s", e)
+            self._yield = None
 
         # Load trained embedder from disk if available
         embedder_path = str(self._paths.embedder)
@@ -722,6 +734,7 @@ class CubeMemoryProvider:
         retrieval_query = _try_query_rewrite(
             query, enabled=bool(getattr(self, "_query_rewrite", False))
         )
+        self._last_prefetch_query = retrieval_query
 
         cache_key = hashlib.md5(retrieval_query.encode()).hexdigest()
         if cache_key in self._prefetch_cache:
@@ -1533,6 +1546,20 @@ class CubeMemoryProvider:
                             )
                 except Exception:
                     pass
+
+        # Yield Gradient: query-local payoff (closed learning loop)
+        # Prefer last prefetch query so boost is conditioned on *how* it was asked
+        try:
+            q = (
+                args.get("query")
+                or getattr(self, "_last_prefetch_query", None)
+                or (entry.description or "")[:120]
+            )
+            yg = getattr(self, "_yield", None)
+            if yg is not None and q:
+                yg.record(str(q), entry_id, helpful=(action == "helpful"))
+        except Exception:
+            pass
 
         return json.dumps({
             "status": "rated",
