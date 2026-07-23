@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0] - 2026-07-23
+
+### Procedure Forge + functional stand-up (Nous skills-from-experience)
+- `procedure.py`: promote high-trust success resolves → evolution procedures + draft SKILL.md under memories/procedures/
+- `hermescube_manage action=forge` (operator-gated; does not auto-install into ~/.hermes/skills)
+- `scripts/functional_standup.py` — Nous learning-loop capability map on live host
+- Hermespace leave always purges session-ended landmark spam
+
 ## [0.12.0] - 2026-07-23
 
 ### Inject surface hygiene + Hermespace leave quiet

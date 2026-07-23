@@ -579,8 +579,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune"],
-                            "description": "add/remove, crystalize, journey timeline/world sync, hygiene noise, or prune journey",
+                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge"],
+                            "description": "add/remove, crystalize, journey, hygiene, prune, or forge procedures from experience",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1479,7 +1479,56 @@ class CubeMemoryProvider:
             return self._handle_manage_hygiene(args)
         elif action == "prune":
             return self._handle_manage_prune(args)
+        elif action == "forge":
+            return self._handle_manage_forge(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_forge(self, args: dict[str, Any]) -> str:
+        """Promote durable successes into procedure drafts (Nous skills-from-experience)."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.procedure import forge, list_candidates, list_drafts
+
+            dry = bool(args.get("dry_run") or False)
+            limit = int(args.get("limit") or 8)
+            write_drafts = args.get("write_drafts")
+            if write_drafts is None:
+                write_drafts = True
+            ents = list(self._cube.read_l1() or [])
+            cands = list_candidates(ents, limit=limit)
+            stats = forge(
+                self._cube,
+                hermes_home=self._hermes_home,
+                limit=limit,
+                write_drafts=bool(write_drafts),
+                dry_run=dry,
+            )
+            if not dry and stats.get("forged"):
+                self._prefetch_cache.clear()
+                if self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+            return json.dumps(
+                {
+                    "status": "forged",
+                    "stats": stats,
+                    "candidates_preview": [
+                        {
+                            "id": e.id,
+                            "type": e.entry_type,
+                            "description": (e.description or "")[:120],
+                            "outcome": e.outcome,
+                        }
+                        for e in cands[:8]
+                    ],
+                    "drafts_on_disk": list_drafts(self._hermes_home)[:20],
+                }
+            )
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_hygiene(self, args: dict[str, Any]) -> str:
         """Prune noise from journey + cube + Hermespace world; re-push clean wisdom."""
