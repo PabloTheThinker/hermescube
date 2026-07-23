@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1] - 2026-07-23
+
+### Purpose lock (Hermes clean v0.19 RE)
+- PURPOSE.md — warehouse / extension-layer north star
+- system_prompt_block: no full L1 scan on prompt assembly (init-path tax)
+- Prompt states Hermes 0.19 layering + <memory-context> contract
+- Research: HERMES-CLEAN-V019-RE-PURPOSE-2026-07-23.md
+- Study tree: ~/projects/hermes-agent-study @ v2026.7.20
+
 All notable changes to HermesCube are documented here.
 
 ## [0.7.0] - 2026-07-22
