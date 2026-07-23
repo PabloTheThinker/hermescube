@@ -53,6 +53,21 @@ def cmd_info(args: argparse.Namespace) -> None:
             print("\nEntry type breakdown:")
             for t, count in sorted(types.items(), key=lambda x: -x[1]):
                 print(f"  {t}: {count}")
+        try:
+            integ = cube.integrity_check()
+            print("\nIntegrity:")
+            print(f"  ok: {integ.get('ok')}")
+            print(f"  entries_read: {integ.get('entries_read')} "
+                  f"(count={integ.get('entry_count')})")
+            print(f"  empty_descriptions: {integ.get('empty_descriptions')}")
+            print(f"  duplicate_ids: {integ.get('duplicate_ids')}")
+            print(f"  bad_vectors: {integ.get('bad_vectors')}")
+            print(f"  cube_bytes: {integ.get('cube_bytes')} "
+                  f"cubelog_bytes: {integ.get('cubelog_bytes')}")
+            for issue in integ.get("issues") or []:
+                print(f"  ! {issue}")
+        except Exception as e:
+            print(f"\nIntegrity: n/a ({e})")
 
 
 def cmd_append(args: argparse.Namespace) -> None:
@@ -324,6 +339,27 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print("  hint: hermes config set memory.provider hermescube")
         print("        or: ./scripts/install_hermes.sh --from-git")
     print("  update: hermescube update   # code only — never wipes cube")
+    # Live cube integrity (real data check)
+    if cube.is_file():
+        try:
+            with CubeFile.open(str(cube)) as c:
+                integ = c.integrity_check()
+            print("  integrity:")
+            print(f"    ok={integ.get('ok')} entries={integ.get('entries_read')} "
+                  f"empty={integ.get('empty_descriptions')} "
+                  f"dups={integ.get('duplicate_ids')} "
+                  f"bad_vec={integ.get('bad_vectors')}")
+            print(f"    bytes cube={integ.get('cube_bytes')} "
+                  f"cubelog={integ.get('cubelog_bytes')}")
+            for issue in integ.get("issues") or []:
+                print(f"    ! {issue}")
+            if not integ.get("ok"):
+                return 1
+        except Exception as e:
+            print(f"  integrity: FAIL ({e})")
+            return 1
+    else:
+        print("  integrity: skip (no cube yet)")
     return 0
 
 

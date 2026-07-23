@@ -399,6 +399,86 @@ class CubeFile:
             "note": "v1 float64 vectors dominate; dense f16 migration tracked for 0.7",
         }
 
+    def integrity_check(self) -> dict:
+        """Verify on-disk data is real, readable, and count-consistent.
+
+        Returns a report with ok=True when safe to trust the archive.
+        Does not mutate the cube.
+        """
+        from collections import Counter
+
+        report: dict[str, Any] = {
+            "ok": True,
+            "path": self.path,
+            "issues": [],
+        }
+        try:
+            ents = self.read_l1() or []
+        except Exception as e:
+            report["ok"] = False
+            report["issues"].append(f"read_l1_failed: {e}")
+            return report
+
+        n = len(ents)
+        report["entries_read"] = n
+        report["entry_count"] = int(self.entry_count or 0)
+        if n != int(self.entry_count or 0):
+            report["ok"] = False
+            report["issues"].append(
+                f"count_mismatch entry_count={self.entry_count} read_l1={n}"
+            )
+
+        empty = sum(1 for e in ents if not (e.description or "").strip())
+        report["empty_descriptions"] = empty
+        if empty:
+            report["issues"].append(f"empty_descriptions={empty}")
+
+        ids = [e.id for e in ents if e.id]
+        dups = [i for i, c in Counter(ids).items() if c > 1]
+        report["duplicate_ids"] = len(dups)
+        if dups:
+            report["ok"] = False
+            report["issues"].append(f"duplicate_ids={len(dups)}")
+
+        bad_vec = 0
+        for e in ents:
+            v = e.vector
+            if v is None:
+                bad_vec += 1
+                continue
+            try:
+                if hrr.has_numpy():
+                    import numpy as _np
+
+                    arr = _np.asarray(v, dtype=_np.float64)
+                    if arr.size != self.dim or not _np.isfinite(arr).all():
+                        bad_vec += 1
+                    elif float(_np.linalg.norm(arr)) < 1e-9:
+                        bad_vec += 1
+                else:
+                    if len(list(v)) != self.dim:
+                        bad_vec += 1
+            except Exception:
+                bad_vec += 1
+        report["bad_vectors"] = bad_vec
+        if bad_vec:
+            report["ok"] = False
+            report["issues"].append(f"bad_vectors={bad_vec}")
+
+        # cubelog present stats
+        import os as _os
+
+        logp = getattr(self, "_cubelog_path", None) or (self.path + ".cubelog")
+        report["cubelog_bytes"] = (
+            _os.path.getsize(logp) if logp and _os.path.isfile(logp) else 0
+        )
+        report["cube_bytes"] = (
+            _os.path.getsize(self.path) if self.path and _os.path.isfile(self.path) else 0
+        )
+        if not report["issues"]:
+            report["issues"] = []
+        return report
+
     def close(self) -> None:
         with self._lock:
             self._release_flock()

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1] - 2026-07-23
+
+### Integrity / durability
+- `CubeFile.integrity_check()` — count match, empty desc, duplicate ids, vector sanity
+- `hermescube doctor` + `info` report live integrity
+- Tests: close/reopen, evolve-keep, subprocess cold open
+- Proven on ILO live cube: write → shutdown → reopen → evolve → subprocess query OK
+
 ## [0.8.0] - 2026-07-23
 
 ### Yield Gradient (original — Nous learning-loop principle, not a clone)
