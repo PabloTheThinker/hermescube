@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0] - 2026-07-23
+
+### Engram Net — Cube-native neural associative field
+- `engram_net.py`: Hebbian co-activation graph + Hopfield-style pattern bank (no torch)
+- HAR re-ranks with association boosts; shadow-learns on every retrieval set
+- Feedback strengthens/weakens cohort wiring (with last prefetch ids)
+- Persists `memories/engram_net.json`; save on feedback + periodic + shutdown
+- Research spine: Hermes closed-loop learning + CLS + modern associative memory principles (original implementation)
+
 ## [0.13.0] - 2026-07-23
 
 ### Procedure Forge + functional stand-up (Nous skills-from-experience)

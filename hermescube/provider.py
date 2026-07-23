@@ -213,7 +213,9 @@ class CubeMemoryProvider:
         self._colony = None
         self._void = None
         self._yield = None
+        self._engram = None
         self._last_prefetch_query = ""
+        self._last_prefetch_ids: list[str] = []
         self._paths = None
 
         # Turn tracking
@@ -342,6 +344,16 @@ class CubeMemoryProvider:
             logger.debug("yield gradient skipped: %s", e)
             self._yield = None
 
+        # Engram Net — Hebbian + Hopfield-style associative field (Cube-native neural)
+        try:
+            from hermescube.engram_net import EngramNet, default_path as engram_path
+
+            self._engram = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+            setattr(self._engine, "_engram_net", self._engram)
+        except Exception as e:
+            logger.debug("engram net skipped: %s", e)
+            self._engram = None
+
         # Load trained embedder from disk if available
         embedder_path = str(self._paths.embedder)
         if os.path.isfile(embedder_path):
@@ -437,6 +449,16 @@ class CubeMemoryProvider:
             self._sync_queue.flush(timeout=5.0)
         except Exception as e:
             logger.debug("shutdown sync flush failed: %s", e)
+
+        try:
+            net = getattr(self, "_engram", None)
+            if net is not None:
+                net.save()
+            yg = getattr(self, "_yield", None)
+            if yg is not None and hasattr(yg, "save"):
+                yg.save()
+        except Exception as e:
+            logger.debug("shutdown engram/yield save failed: %s", e)
 
         # Close cube (idempotent — close() is safe on None)
         if self._cube:
@@ -767,6 +789,7 @@ class CubeMemoryProvider:
             query, enabled=bool(getattr(self, "_query_rewrite", False))
         )
         self._last_prefetch_query = retrieval_query
+        self._last_prefetch_ids = []
 
         cache_key = hashlib.md5(retrieval_query.encode()).hexdigest()
         if cache_key in self._prefetch_cache:
@@ -793,6 +816,19 @@ class CubeMemoryProvider:
 
         if not results:
             return ""
+        try:
+            self._last_prefetch_ids = [
+                str(getattr(e, "id", "") or "") for e, _ in results if getattr(e, "id", None)
+            ]
+        except Exception:
+            self._last_prefetch_ids = []
+        # periodic engram flush
+        try:
+            net = getattr(self, "_engram", None)
+            if net is not None and self._turn_count % 5 == 0:
+                net.save()
+        except Exception:
+            pass
         if self._void is not None:
             return self._void.format_prefetch(results)
         # minimal fallback
@@ -1807,6 +1843,21 @@ class CubeMemoryProvider:
             yg = getattr(self, "_yield", None)
             if yg is not None and q:
                 yg.record(str(q), entry_id, helpful=(action == "helpful"))
+        except Exception:
+            pass
+
+        # Engram Net: strengthen/weaken co-activation among judged set
+        try:
+            net = getattr(self, "_engram", None)
+            if net is not None:
+                cohort = args.get("cohort_ids") or args.get("entry_ids")
+                ids = [entry_id]
+                if isinstance(cohort, list):
+                    ids.extend(str(x) for x in cohort if x)
+                elif getattr(self, "_last_prefetch_ids", None):
+                    ids.extend(str(x) for x in self._last_prefetch_ids[:12])
+                net.learn_feedback(ids, helpful=(action == "helpful"))
+                net.save()
         except Exception:
             pass
 

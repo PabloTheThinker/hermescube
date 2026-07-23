@@ -48,6 +48,8 @@ class HARQueryEngine:
         # Yield Gradient (query-conditioned payoff) — set by provider
         self._yield_gradient = None
         self._yield_map: dict[str, float] = {}
+        # Engram Net (Hebbian + Hopfield-style field) — set by provider
+        self._engram_net = None
 
     # ── β vector management ───────────────────────────────────────
 
@@ -422,18 +424,69 @@ class HARQueryEngine:
         if min_score > 0:
             scored = [(e, s) for e, s in scored if s >= min_score]
         scored.sort(key=lambda x: -x[1])
+        # Engram Net re-rank: association completion + co-activation (neural field)
+        scored = self._apply_engram(scored, q if isinstance(q, list) else list(q) if q is not None else None)
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
         # light expand only — entity index cached; skip if tiny result already full
         idx = self._entity_index
         if idx is None:
-            return primary[:top_k]
-        return mirror_mod.mirror_expand(
-            primary,
-            self._entries,
-            top_k=top_k,
-            entity_index=idx,
-            colony=getattr(self, "_colony", None),
-        )
+            out = primary[:top_k]
+        else:
+            out = mirror_mod.mirror_expand(
+                primary,
+                self._entries,
+                top_k=top_k,
+                entity_index=idx,
+                colony=getattr(self, "_colony", None),
+            )
+        # weak Hebbian co-activation on retrieved set (shadow learn)
+        try:
+            net = getattr(self, "_engram_net", None)
+            if net is not None and out:
+                ids = [str(getattr(e, "id", "") or "") for e, _ in out if getattr(e, "id", None)]
+                vecs = []
+                for e, _ in out[:8]:
+                    v = getattr(e, "vector", None)
+                    if v is not None:
+                        try:
+                            vecs.append([float(x) for x in list(v)[:512]])
+                        except Exception:
+                            pass
+                if len(ids) >= 2:
+                    net.learn_coactivation(ids, vecs if vecs else None, strength=0.35)
+        except Exception:
+            pass
+        return out
+
+    def _apply_engram(
+        self,
+        scored: list[tuple[CubeEntry, float]],
+        query_vec: list[float] | None,
+    ) -> list[tuple[CubeEntry, float]]:
+        net = getattr(self, "_engram_net", None)
+        if net is None or not scored:
+            return scored
+        try:
+            # pool: top slice for association context
+            pool = scored[: min(48, len(scored))]
+            ids = [str(getattr(e, "id", "") or "") for e, _ in pool]
+            qv = None
+            if query_vec is not None:
+                try:
+                    qv = [float(x) for x in list(query_vec)[:512]]
+                except Exception:
+                    qv = None
+            boosts = net.association_boosts(qv, ids)
+            if not boosts:
+                return scored
+            rescored = [
+                (e, float(s) * float(boosts.get(str(getattr(e, "id", "") or ""), 1.0)))
+                for e, s in scored
+            ]
+            rescored.sort(key=lambda x: -x[1])
+            return rescored
+        except Exception:
+            return scored
 
     def probe_entity(self, entity: str, top_k: int = 10) -> list[tuple[CubeEntry, float]]:
         return self.query(entity, top_k=top_k)
