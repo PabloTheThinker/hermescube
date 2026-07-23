@@ -579,8 +579,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize"],
-                            "description": "add/remove entries, or crystalize near-duplicates into beliefs",
+                            "enum": ["add", "remove", "crystalize", "journey"],
+                            "description": "add/remove, crystalize duplicates, or journey timeline/world sync",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1473,7 +1473,42 @@ class CubeMemoryProvider:
             return self._handle_manage_remove(args)
         elif action == "crystalize":
             return self._handle_manage_crystalize(args)
+        elif action == "journey":
+            return self._handle_manage_journey(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_journey(self, args: dict[str, Any]) -> str:
+        """Show journey timeline and optionally push wisdom to Hermespace world."""
+        try:
+            from hermescube.journey import (
+                read_events,
+                render_markdown,
+                write_markdown,
+                wisdom_from_cube,
+                push_to_hermespace_world,
+            )
+
+            hh = self._hermes_home
+            cube_path = self._cube_path or ""
+            ents = list(self._cube.read_l1() or []) if self._cube else []
+            wisdom = wisdom_from_cube(cube_path, entries=ents)
+            write_markdown(hh, cube_wisdom=wisdom)
+            events = read_events(hh, limit=30)
+            out: dict[str, Any] = {
+                "status": "ok",
+                "events": events[-20:],
+                "wisdom": [{"text": t, "confidence": c} for t, c in wisdom[:10]],
+                "markdown": render_markdown(hh, cube_wisdom=wisdom, limit=20)[:4000],
+            }
+            if args.get("sync_world"):
+                out["world"] = push_to_hermespace_world(
+                    hermes_home=hh,
+                    agent_id=str(args.get("agent_id") or "hermes-agent"),
+                    entries=ents,
+                )
+            return json.dumps(out)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_crystalize(self, args: dict[str, Any]) -> str:
         """Consolidate near-duplicate memories into belief crystals."""
@@ -1493,6 +1528,22 @@ class CubeMemoryProvider:
                         pass
             ents = list(self._cube.read_l1() or [])
             loop = functional_loop_stats(ents)
+            if not dry and stats.get("crystals"):
+                try:
+                    from hermescube.journey import log_event, write_markdown, wisdom_from_cube
+
+                    log_event(
+                        "crystalize",
+                        f"Formed {stats.get('crystals')} crystals from "
+                        f"{stats.get('candidates')} candidates",
+                        hermes_home=self._hermes_home,
+                        meta=stats,
+                    )
+                    cube_path = self._cube_path or ""
+                    w = wisdom_from_cube(cube_path) if cube_path else []
+                    write_markdown(self._hermes_home, cube_wisdom=w)
+                except Exception:
+                    pass
             return json.dumps({"status": "crystalized", "stats": stats, "loop": loop})
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -1534,6 +1585,17 @@ class CubeMemoryProvider:
             },
             outcome=outcome,
         )
+        try:
+            from hermescube.journey import log_event
+
+            log_event(
+                "manage_add",
+                f"[{entry_type}] {content.strip()[:180]}",
+                hermes_home=self._hermes_home,
+                entry_id=entry.id,
+            )
+        except Exception:
+            pass
 
         return json.dumps({
             "status": "added",
@@ -1641,6 +1703,18 @@ class CubeMemoryProvider:
             yg = getattr(self, "_yield", None)
             if yg is not None and q:
                 yg.record(str(q), entry_id, helpful=(action == "helpful"))
+        except Exception:
+            pass
+
+        try:
+            from hermescube.journey import log_event
+
+            log_event(
+                "feedback_" + action,
+                (entry.description or "")[:180],
+                hermes_home=self._hermes_home,
+                entry_id=entry_id,
+            )
         except Exception:
             pass
 

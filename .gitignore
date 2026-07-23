@@ -45,3 +45,6 @@ tmp/
 # Yield learning state (user home only)
 yield_gradient.json
 *.yield.json
+
+journey.jsonl
+journey.md

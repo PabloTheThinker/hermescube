@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0] - 2026-07-23
+
+### Journey Ledger + Hermespace world bridge (original)
+- `journey.py`: playable learn timeline (Nous /journey principle — memory not a black box)
+- JSONL events on manage/crystalize/feedback; `journey.md` human face
+- `hermescube_manage action=journey` (+ `sync_world=true` pushes crystals → Hermespace beliefs)
+- Fixes empty Hermespace "Beliefs (Active Wisdom)" while Cube had crystals
+- space_bridge inject prefers active wisdom strip first
+- Research: Nous journey/memory-graph + closed loop; adapt without cloning
+
 ## [0.9.0] - 2026-07-23
 
 ### Wisdom Crystalizer (original — true functional memory loop)
