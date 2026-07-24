@@ -1105,148 +1105,104 @@ class CubeMemoryProvider:
         return False
 
     def on_session_end(self, messages: list[dict[str, Any]]) -> None:
-        """Session complete — final consolidation + flush sync."""
+        """Session complete — consolidation runs on background thread.
+
+        Heavy operations (wisdom, sleep replay, trajectory observe,
+        session digest, peer card, living pulse) are dispatched to the
+        background sync queue so the session end hook returns immediately.
+        The sync queue is flushed synchronously at the end, so the
+        caller is guaranteed all work landed.
+        """
         if not self._engine or not self._cube:
             return
 
-        # Auto-extract facts if configured (runs regardless of entry count)
-        if self._auto_extract and not self._should_skip_writes():
-            self._auto_extract_facts(messages)
+        # Capture state for the background closure
+        cube = self._cube
+        engine = self._engine
+        hermes_home = self._hermes_home
+        session_id = self._session_id
+        agent_identity = self._agent_identity
+        auto_extract = self._auto_extract
+        replay_enabled = self._replay_on_session_end
+        observe_enabled = self._observe_on_session_end
+        digest_enabled = self._session_digest_enabled
+        pulse_enabled = getattr(self, "_living_pulse_on_session_end", True)
+        peer_cadence = float(self._peer_card_cadence_s or 0)
+        skip = self._should_skip_writes()
+        breaker_open = self._is_evolve_breaker_open()
+        engram = getattr(self, "_engram", None)
 
-        # Wisdom crystalizer — episodic → active beliefs (offline, no LLM)
-        if not self._should_skip_writes() and self._cube.entry_count >= 4:
-            try:
-                from hermescube.wisdom import crystalize
+        def _session_end_work() -> None:
+            # Auto-extract
+            if auto_extract and not skip:
+                self._auto_extract_facts(messages)
 
-                stats = crystalize(self._cube, min_cluster=2, max_crystals=8)
-                if stats.get("crystals"):
-                    logger.info("wisdom crystalize: %s", stats)
-                    self._prefetch_cache.clear()
-                    if self._engine:
-                        try:
-                            self._engine.invalidate_cache()
-                        except Exception:
-                            pass
-            except Exception as e:
-                logger.debug("wisdom crystalize skipped: %s", e)
-
-        # Sleep replay — Engram Net consolidation (CLS offline teaching)
-        if (
-            self._replay_on_session_end
-            and not self._should_skip_writes()
-            and self._cube.entry_count >= 6
-        ):
-            try:
-                net = getattr(self, "_engram", None)
-                if net is not None:
-                    from hermescube.sleep_replay import sleep_replay
-
-                    rstats = sleep_replay(self._cube, net, max_patterns=16)
-                    net.save()
-                    if rstats.get("patterns_added"):
-                        logger.info("sleep_replay: %s", rstats)
-            except Exception as e:
-                logger.debug("sleep_replay skipped: %s", e)
-
-        # Trajectory observe — successful multi-tool chains → procedure drafts
-        if (
-            self._observe_on_session_end
-            and not self._should_skip_writes()
-            and messages
-        ):
-            try:
-                from hermescube.trajectory import observe_messages
-
-                tstats = observe_messages(
-                    self._cube,
-                    messages,
-                    hermes_home=self._hermes_home,
-                    min_tools=3,
-                    max_forge=2,
-                )
-                if tstats.get("forged"):
-                    logger.info("trajectory_observe: %s", tstats)
-                    self._prefetch_cache.clear()
-            except Exception as e:
-                logger.debug("trajectory_observe skipped: %s", e)
-
-        # Session digest (non-LLM narrative) + peer card cadence refresh
-        if not self._should_skip_writes():
-            try:
-                ents = list(self._cube.read_l1() or [])
-                open_i = []
+            # Wisdom crystalize
+            if not skip and cube.entry_count >= 4:
                 try:
-                    from hermescube.prospective import open_focuses
-
-                    open_i = [
-                        (e.description or "")[:80]
-                        for e in open_focuses(ents, limit=3)
-                        if e.description
-                    ]
+                    from hermescube.wisdom import crystalize
+                    crystalize(cube, min_cluster=2, max_crystals=8)
                 except Exception:
                     pass
-                if self._session_digest_enabled and messages:
-                    from hermescube.session_digest import (
-                        digest_messages,
-                        digest_entry_description,
-                    )
 
-                    dig = digest_messages(messages, open_intents=open_i)
-                    self._cube.append(
-                        entry_type="landmark",
-                        description=digest_entry_description(dig),
-                        data={
-                            "source": "session_digest",
-                            "session_id": self._session_id,
-                            "trust": 0.65,
-                            "durable": True,
-                        },
-                        outcome="success",
-                    )
-                from hermescube.peer_card import refresh_card
+            # Sleep replay
+            if replay_enabled and not skip and cube.entry_count >= 6 and engram:
+                try:
+                    from hermescube.sleep_replay import sleep_replay
+                    rstats = sleep_replay(cube, engram, max_patterns=16)
+                    engram.save()
+                    if rstats.get("patterns_added"):
+                        logger.info("sleep_replay: %s", rstats)
+                except Exception:
+                    pass
 
-                refresh_card(
-                    ents,
-                    hermes_home=self._hermes_home,
-                    peer_name=self._agent_identity or "user",
-                    min_interval_s=float(self._peer_card_cadence_s or 0),
-                )
-            except Exception as e:
-                logger.debug("session_digest/peer_card skipped: %s", e)
+            # Trajectory observe
+            if observe_enabled and not skip and messages:
+                try:
+                    from hermescube.trajectory import observe_messages
+                    observe_messages(cube, messages, hermes_home=hermes_home, min_tools=3, max_forge=2)
+                except Exception:
+                    pass
 
-        # Living multi-chamber pulse (catalog + connect dots + doctrine touch)
-        if (
-            getattr(self, "_living_pulse_on_session_end", True)
-            and not self._should_skip_writes()
-            and self._cube.entry_count >= 4
-        ):
-            try:
-                from hermescube.living import chamber_pulse
+            # Session digest + peer card
+            if not skip:
+                try:
+                    ents = list(cube.read_l1() or [])
+                    if digest_enabled and messages:
+                        from hermescube.session_digest import digest_messages, digest_entry_description
+                        dig = digest_messages(messages, open_intents=[])
+                        cube.append(
+                            entry_type="landmark",
+                            description=digest_entry_description(dig),
+                            data={"source": "session_digest", "session_id": session_id, "trust": 0.65, "durable": True},
+                            outcome="success",
+                        )
+                    from hermescube.peer_card import refresh_card
+                    refresh_card(ents, hermes_home=hermes_home, peer_name=agent_identity or "user", min_interval_s=peer_cadence)
+                except Exception:
+                    pass
 
-                preport = chamber_pulse(
-                    self._cube,
-                    hermes_home=self._hermes_home,
-                    engram=getattr(self, "_engram", None),
-                    max_connect=3,
-                    do_crystalize=False,  # already crystalized above
-                    do_peer=False,  # already refreshed above
-                )
-                if preport.get("ok"):
-                    logger.info("living_pulse: %s", preport.get("summary"))
-            except Exception as e:
-                logger.debug("living_pulse skipped: %s", e)
+            # Living pulse
+            if pulse_enabled and not skip and cube.entry_count >= 4:
+                try:
+                    from hermescube.living import chamber_pulse
+                    chamber_pulse(cube, hermes_home=hermes_home, engram=engram, max_connect=3, do_crystalize=False, do_peer=False)
+                except Exception:
+                    pass
 
-        if self._cube.entry_count > 0:
-            # Avoid evolve if breaker is open
-            if not self._is_evolve_breaker_open():
+            # Evolve
+            if cube.entry_count > 0 and not breaker_open:
                 try:
                     self.evolve_consolidated()
                     self._refresh_snapshot()
                     self._record_evolve_success()
-                except Exception as e:
+                except Exception:
                     self._record_evolve_failure()
-                    logger.warning("session-end evolve failed: %s", e)
-        self._sync_queue.flush(timeout=5.0)
+
+            self._prefetch_cache.clear()
+
+        self._sync_queue.submit(_session_end_work)
+        self._sync_queue.flush(timeout=30.0)
 
     def on_session_switch(
         self,
