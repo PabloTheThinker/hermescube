@@ -1824,7 +1824,7 @@ class CubeMemoryProvider:
                 "source": "hermescube_manage",
                 "session_id": self._session_id,
                 "platform": self._platform,
-                "trust": 0.72 if entry_type in ("focus", "resolve") else 0.65,
+                "trust": 0.72 if entry_type in ("focus", "resolve") else 0.5,
             },
             outcome=outcome,
         )
