@@ -16,9 +16,9 @@ from hermescube.provider import CubeMemoryProvider
 
 
 def test_scrub_secrets_and_paths():
-    s = scrub("token=abc123 path=/home/ilo/projects/x")
+    s = scrub("token=abc123 path=/home/user/projects/x")
     assert "abc123" not in s
-    assert "/home/ilo" not in s
+    assert "/home/user" not in s
     assert "$HOME" in s or "***" in s
 
 
