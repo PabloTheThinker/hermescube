@@ -146,7 +146,7 @@ def build_space_inject(
     try:
         from hermescube.journey import is_noise_text
     except Exception:
-        def is_noise_text(t: str) -> bool:  # type: ignore
+        def is_noise_text(text: str) -> bool:  # fallback when journey unavailable
             return False
 
     cap = max_chars

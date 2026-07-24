@@ -263,8 +263,8 @@ def active_wisdom(
     try:
         from hermescube.journey import is_noise_text
     except Exception:
-        def is_noise_text(t: str) -> bool:  # type: ignore
-            return (t or "").startswith("[CRYSTALIZED]") or (t or "").startswith("[SUPERSEDED]")
+        def is_noise_text(text: str) -> bool:  # fallback when journey unavailable
+            return (text or "").startswith("[CRYSTALIZED]") or (text or "").startswith("[SUPERSEDED]")
 
     scored: list[tuple[float, Any]] = []
     for e in entries:
