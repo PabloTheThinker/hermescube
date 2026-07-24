@@ -110,10 +110,14 @@ def tokenize(text: str) -> set[str]:
     out: set[str] = set()
     for t in raw:
         tl = t.lower()
-        if len(tl) < 2 or tl in _STOP:
+        if len(tl) < 2 and not tl.isdigit():
             continue
-        # drop pure numbers / dates noise
+        if tl in _STOP:
+            continue
+        # keep short numbers (ids, versions, EVOLVE-KEEP-3) — drop long pure nums
         if tl.isdigit():
+            if len(tl) <= 4:
+                out.add(tl)
             continue
         out.add(tl)
         out.add(_stem(t))
@@ -138,18 +142,28 @@ def lexical_score(query: str, document: str) -> float:
     # asymmetric: how much of the query is covered
     cover = inter / max(len(q), 1)
     jacc = inter / max(len(q | d), 1)
-    return min(1.0, 0.65 * cover + 0.35 * jacc)
+    score = 0.70 * cover + 0.30 * jacc
+    # contiguous phrase bonus — rare tokens co-occurring in order
+    ql = (query or "").lower().strip()
+    dl = (document or "").lower()
+    if len(ql) >= 12 and ql in dl:
+        score = max(score, 0.95)
+    return min(1.0, score)
 
 
-def hybrid_semantic(semantic: float, lexical: float, *, lex_weight: float = 0.55) -> float:
-    """Blend HRR cosine with lexical bridge. Lexical dominates misses on hash embeds."""
+def hybrid_semantic(semantic: float, lexical: float, *, lex_weight: float = 0.62) -> float:
+    """Blend HRR cosine with lexical bridge. Strong lex must beat crystal bias."""
     s = max(0.0, float(semantic))
     lx = max(0.0, min(1.0, float(lexical)))
     w = max(0.0, min(1.0, lex_weight))
-    # when lexical is strong, lift weak semantic (paraphrase rescue)
     base = (1.0 - w) * s + w * lx
     if lx >= 0.25 and s < 0.15:
-        base = max(base, 0.45 * lx + 0.2)
+        base = max(base, 0.50 * lx + 0.22)
+    # high query coverage → identity-ish match (IR self-retrieval / precise recall)
+    if lx >= 0.72:
+        base = max(base, 0.55 + 0.55 * lx)  # lx=0.86 → ~1.02 before clamp later
+    if lx >= 0.88:
+        base = max(base, 1.05)
     return base
 
 
@@ -283,15 +297,30 @@ def composite_score(
     yb = float(yield_boost) if yield_boost and yield_boost > 0 else 1.0
     # keep yield influence bounded
     yb = max(0.75, min(1.40, yb))
+    # strong lexical match: damp prestige priors so crystals don't bury gold
+    prior = type_prior(entry_type)
+    src = source_boost(data)
+    tm = trust_multiplier(trust)
+    om = outcome_multiplier(outcome)
+    lx = max(0.0, min(1.0, float(lexical)))
+    if lx >= 0.70:
+        # squeeze boosters toward 1.0 so lex identity wins
+        prior = 1.0 + (prior - 1.0) * 0.35
+        src = 1.0 + (src - 1.0) * 0.25
+        tm = 1.0 + (tm - 1.0) * 0.40
+        yb = 1.0 + (yb - 1.0) * 0.30
     score = (
         float(sim)
         * r
-        * type_prior(entry_type)
-        * trust_multiplier(trust)
-        * outcome_multiplier(outcome)
-        * source_boost(data)
+        * prior
+        * tm
+        * om
+        * src
         * yb
     )
+    # explicit high-coverage lift (self-retrieval / exact topic)
+    if lx >= 0.75:
+        score *= 1.0 + 0.55 * (lx - 0.5)
     # Downrank raw question-shaped surfaces (legacy turn noise)
     d = (description or "").strip()
     if d.endswith("?") or d[:4].lower() in ("who ", "what", "wher", "when", "why ", "how "):

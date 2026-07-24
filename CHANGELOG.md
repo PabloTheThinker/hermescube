@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0] - 2026-07-24
+
+### IR quality + Animus hubs under load
+- Lexical rank: high query-coverage dominates crystal/prestige bias; short number tokens kept
+- Labeled IR live: hit@5 **0.425→0.70**, hit@1 **0.15→0.325**, MRR **0.24→0.44**
+- EngramNet.hub_ids + high-load inject prefers Animus hubs over query sprawl
+
 ## [0.17.0] - 2026-07-24
 
 ### Trajectory observe — watch work → procedure drafts

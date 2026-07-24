@@ -164,14 +164,17 @@ def build_space_inject(
         from hermescube.cube import CubeFile
 
         cube = Path(hh) / "memories" / "memory.cube"
+        entries_cache = None
         if cube.is_file():
             # short open — avoid if locked; fall back to empty
             try:
                 with CubeFile.open(str(cube)) as c:
-                    w = wisdom_from_cube(entries=c.read_l1() or [])
+                    entries_cache = list(c.read_l1() or [])
+                    w = wisdom_from_cube(entries=entries_cache)
             except Exception:
                 w = []
-            for desc, conf in w[: 2 if high_load else 4]:
+                entries_cache = None
+            for desc, conf in w[: 1 if high_load else 4]:
                 if is_noise_text(desc):
                     continue
                 line = f"- {desc.strip()[:160]}"
@@ -179,11 +182,42 @@ def build_space_inject(
                     break
                 lines.append(line)
                 used += len(line) + 1
+
+            # High load Animus: engram hubs only (associative core, not full query sprawl)
+            if high_load and entries_cache is not None and used < cap - 40:
+                try:
+                    from hermescube.engram_net import EngramNet, default_path
+
+                    net = EngramNet(default_path(hh))
+                    hubs = net.hub_ids(limit=4)
+                    if hubs:
+                        by_id = {str(e.id): e for e in entries_cache if getattr(e, "id", None)}
+                        lines.append("_Animus hubs (engram)_")
+                        used += len(lines[-1]) + 1
+                        for hid in hubs:
+                            e = by_id.get(str(hid))
+                            if not e:
+                                continue
+                            desc = (e.description or "").strip()
+                            if not desc or is_noise_text(desc):
+                                continue
+                            if desc.startswith("[CLOSED]") or desc.startswith("[PROCEDURE]"):
+                                continue
+                            line = f"- {desc[:140]}"
+                            if used + len(line) + 1 > cap:
+                                break
+                            if any(desc[:40] in x for x in lines):
+                                continue
+                            lines.append(line)
+                            used += len(line) + 1
+                except Exception:
+                    pass
     except Exception:
         pass
 
     q = (query or "").strip()
-    if q and used < cap - 40:
+    # under high load skip broad query hits if hubs already filled strip
+    if q and used < cap - 40 and not (high_load and used > cap * 0.55):
         hits = cube_recall(
             q, top_k=2 if high_load else 4, hermes_home=hermes_home, session_id=session_id
         )

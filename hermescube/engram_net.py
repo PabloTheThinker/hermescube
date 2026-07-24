@@ -278,3 +278,16 @@ class EngramNet:
             "edges": sum(len(v) for v in self._edges.values()),
             "path": str(self.path),
         }
+
+    def hub_ids(self, *, limit: int = 8) -> list[str]:
+        """Top associative hubs by weighted degree (Animus FOA under load)."""
+        if not self._edges:
+            return []
+        scored: list[tuple[float, str]] = []
+        for nid, bucket in self._edges.items():
+            if not bucket:
+                continue
+            wsum = sum(min(2.0, float(w)) for w in bucket.values())
+            scored.append((wsum + 0.15 * len(bucket), str(nid)))
+        scored.sort(key=lambda x: -x[0])
+        return [i for _, i in scored[: max(1, limit)]]
