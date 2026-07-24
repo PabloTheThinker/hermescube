@@ -292,6 +292,7 @@ class TestCubeMemoryProvider:
             time.sleep(0.1)
 
             provider.on_session_end([])
+            provider._sync_queue.flush()
             # Should have evolved (no exception)
             provider.shutdown()
 
@@ -565,6 +566,7 @@ class TestCrossSessionPersistence:
             provider._sync_queue.flush()
             time.sleep(0.1)
             provider.on_session_end([])
+            provider._sync_queue.flush()
 
             # Snapshot should now reflect the entry
             assert provider._snapshot.entry_count >= 1
@@ -820,6 +822,7 @@ class TestAutoExtract:
                 {"role": "assistant", "content": "Noted, I'll remember that."},
             ]
             provider.on_session_end(messages)
+            provider._sync_queue.flush()
 
             entries = provider._cube.read_l1()
             assert any(
@@ -837,6 +840,7 @@ class TestAutoExtract:
                 {"role": "assistant", "content": "Good choice."},
             ]
             provider.on_session_end(messages)
+            provider._sync_queue.flush()
 
             entries = provider._cube.read_l1()
             assert any(
@@ -853,6 +857,7 @@ class TestAutoExtract:
                 {"role": "user", "content": "I prefer dark mode in editors"},
             ]
             provider.on_session_end(messages)
+            provider._sync_queue.flush()
 
             entries = provider._cube.read_l1()
             # session digest may mention the user line; auto-extract beliefs must not
@@ -876,6 +881,7 @@ class TestAutoExtract:
                 {"role": "user", "content": "I prefer dark mode"},
             ]
             provider.on_session_end(messages)
+            provider._sync_queue.flush()
 
             entries = provider._cube.read_l1()
             assert not any(
