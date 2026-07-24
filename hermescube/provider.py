@@ -185,6 +185,12 @@ class CubeMemoryProvider:
         self._memory_nudge_interval = memory_nudge_interval
         self._auto_extract = auto_extract
         self._query_rewrite = False
+        # Cadence knobs (Nous-style cost control — local)
+        self._peer_card_cadence_s = 3600.0  # rebuild peer card at most hourly
+        self._session_digest_enabled = True
+        self._observe_on_session_end = True
+        self._replay_on_session_end = True
+        self._conflict_detect = True
 
         self._cube: CubeFile | None = None
         self._engine: HARQueryEngine | None = None
@@ -282,6 +288,21 @@ class CubeMemoryProvider:
             )
             self._char_limit = int(
                 plugin_config.get("char_limit", self._char_limit)
+            )
+            self._peer_card_cadence_s = float(
+                plugin_config.get("peer_card_cadence_s", self._peer_card_cadence_s)
+            )
+            self._session_digest_enabled = _coerce_bool(
+                plugin_config.get("session_digest"), self._session_digest_enabled
+            )
+            self._observe_on_session_end = _coerce_bool(
+                plugin_config.get("observe_on_session_end"), self._observe_on_session_end
+            )
+            self._replay_on_session_end = _coerce_bool(
+                plugin_config.get("replay_on_session_end"), self._replay_on_session_end
+            )
+            self._conflict_detect = _coerce_bool(
+                plugin_config.get("conflict_detect"), self._conflict_detect
             )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
@@ -520,6 +541,40 @@ class CubeMemoryProvider:
                 "required": False,
                 "default": "10",
             },
+            {
+                "key": "peer_card_cadence_s",
+                "description": "Min seconds between peer-card rebuilds (0=every session_end)",
+                "required": False,
+                "default": "3600",
+            },
+            {
+                "key": "session_digest",
+                "description": "Write a non-LLM session digest landmark on session_end",
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
+            },
+            {
+                "key": "observe_on_session_end",
+                "description": "Auto trajectory-observe on session_end",
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
+            },
+            {
+                "key": "replay_on_session_end",
+                "description": "Auto sleep-replay into Engram on session_end",
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
+            },
+            {
+                "key": "conflict_detect",
+                "description": "Soft-flag contradictions on belief/resolve add",
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
+            },
         ]
 
     def save_config(self, values: dict[str, Any], hermes_home: str) -> None:
@@ -601,8 +656,23 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay", "intents", "observe"],
-                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, replay, intents, or observe trajectories",
+                            "enum": [
+                                "add",
+                                "remove",
+                                "crystalize",
+                                "journey",
+                                "hygiene",
+                                "prune",
+                                "forge",
+                                "replay",
+                                "intents",
+                                "observe",
+                                "promote",
+                                "reject",
+                                "drafts",
+                                "peer",
+                            ],
+                            "description": "warehouse ops + consent promote/reject + peer card",
                         },
                         "entry_type": {
                             "type": "string",
@@ -779,6 +849,16 @@ class CubeMemoryProvider:
                     if strip:
                         lines.append("")
                         lines.append(strip)
+                except Exception:
+                    pass
+                try:
+                    from hermescube.peer_card import load_card, prompt_strip as peer_strip
+
+                    card = load_card(self._hermes_home)
+                    ps = peer_strip(card, max_lines=5)
+                    if ps:
+                        lines.append("")
+                        lines.append(ps)
                 except Exception:
                     pass
         except Exception:
@@ -1029,7 +1109,11 @@ class CubeMemoryProvider:
                 logger.debug("wisdom crystalize skipped: %s", e)
 
         # Sleep replay — Engram Net consolidation (CLS offline teaching)
-        if not self._should_skip_writes() and self._cube.entry_count >= 6:
+        if (
+            self._replay_on_session_end
+            and not self._should_skip_writes()
+            and self._cube.entry_count >= 6
+        ):
             try:
                 net = getattr(self, "_engram", None)
                 if net is not None:
@@ -1043,7 +1127,11 @@ class CubeMemoryProvider:
                 logger.debug("sleep_replay skipped: %s", e)
 
         # Trajectory observe — successful multi-tool chains → procedure drafts
-        if not self._should_skip_writes() and messages:
+        if (
+            self._observe_on_session_end
+            and not self._should_skip_writes()
+            and messages
+        ):
             try:
                 from hermescube.trajectory import observe_messages
 
@@ -1059,6 +1147,50 @@ class CubeMemoryProvider:
                     self._prefetch_cache.clear()
             except Exception as e:
                 logger.debug("trajectory_observe skipped: %s", e)
+
+        # Session digest (non-LLM narrative) + peer card cadence refresh
+        if not self._should_skip_writes():
+            try:
+                ents = list(self._cube.read_l1() or [])
+                open_i = []
+                try:
+                    from hermescube.prospective import open_focuses
+
+                    open_i = [
+                        (e.description or "")[:80]
+                        for e in open_focuses(ents, limit=3)
+                        if e.description
+                    ]
+                except Exception:
+                    pass
+                if self._session_digest_enabled and messages:
+                    from hermescube.session_digest import (
+                        digest_messages,
+                        digest_entry_description,
+                    )
+
+                    dig = digest_messages(messages, open_intents=open_i)
+                    self._cube.append(
+                        entry_type="landmark",
+                        description=digest_entry_description(dig),
+                        data={
+                            "source": "session_digest",
+                            "session_id": self._session_id,
+                            "trust": 0.65,
+                            "durable": True,
+                        },
+                        outcome="success",
+                    )
+                from hermescube.peer_card import refresh_card
+
+                refresh_card(
+                    ents,
+                    hermes_home=self._hermes_home,
+                    peer_name=self._agent_identity or "user",
+                    min_interval_s=float(self._peer_card_cadence_s or 0),
+                )
+            except Exception as e:
+                logger.debug("session_digest/peer_card skipped: %s", e)
 
         if self._cube.entry_count > 0:
             # Avoid evolve if breaker is open
@@ -1578,7 +1710,85 @@ class CubeMemoryProvider:
             return self._handle_manage_intents(args)
         elif action == "observe":
             return self._handle_manage_observe(args)
+        elif action == "promote":
+            return self._handle_manage_promote(args)
+        elif action == "reject":
+            return self._handle_manage_reject(args)
+        elif action == "drafts":
+            return self._handle_manage_drafts(args)
+        elif action == "peer":
+            return self._handle_manage_peer(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_promote(self, args: dict[str, Any]) -> str:
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.consent import promote
+
+            name = str(args.get("name") or args.get("content") or "").strip()
+            if not name:
+                return json.dumps({"error": "name required (draft filename)"})
+            r = promote(name, hermes_home=self._hermes_home, cube=self._cube)
+            return json.dumps({"status": "promote", **r})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_reject(self, args: dict[str, Any]) -> str:
+        try:
+            from hermescube.consent import reject
+
+            name = str(args.get("name") or args.get("content") or "").strip()
+            if not name:
+                return json.dumps({"error": "name required"})
+            r = reject(
+                name,
+                hermes_home=self._hermes_home,
+                reason=str(args.get("reason") or ""),
+            )
+            return json.dumps({"status": "reject", **r})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_drafts(self, args: dict[str, Any]) -> str:
+        try:
+            from hermescube.consent import list_pending
+
+            return json.dumps(
+                {"status": "ok", "pending": list_pending(self._hermes_home)}
+            )
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_peer(self, args: dict[str, Any]) -> str:
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.peer_card import refresh_card, load_card
+
+            force = bool(args.get("force") or args.get("refresh"))
+            ents = list(self._cube.read_l1() or [])
+            if force:
+                r = refresh_card(
+                    ents,
+                    hermes_home=self._hermes_home,
+                    peer_name=self._agent_identity or "user",
+                    min_interval_s=0,
+                )
+            else:
+                card = load_card(self._hermes_home)
+                if not card:
+                    r = refresh_card(
+                        ents,
+                        hermes_home=self._hermes_home,
+                        peer_name=self._agent_identity or "user",
+                        min_interval_s=0,
+                    )
+                else:
+                    r = {"skipped": True, "card": card}
+            return json.dumps({"status": "ok", **{k: v for k, v in r.items() if k != "card"}, "card": r.get("card")})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_observe(self, args: dict[str, Any]) -> str:
         """Forge procedure drafts from tool trajectories in provided messages or last note."""
@@ -1964,6 +2174,45 @@ class CubeMemoryProvider:
         }
         if closed_info and closed_info.get("closed"):
             out["prospective"] = closed_info
+
+        # Soft contradiction flags (belief/resolve)
+        if (
+            self._conflict_detect
+            and entry_type in ("belief", "resolve", "trait")
+            and not self._should_skip_writes()
+        ):
+            try:
+                from hermescube.conflict import find_conflicts, annotate_conflicts
+
+                ents = list(self._cube.read_l1() or [])
+                confs = find_conflicts(content, [e for e in ents if e.id != entry.id])
+                if confs:
+                    n = annotate_conflicts(self._cube, entry, confs)
+                    out["conflicts"] = confs
+                    out["conflict_markers"] = n
+            except Exception:
+                pass
+
+        # Care flag
+        if args.get("care") or args.get("critical"):
+            try:
+                # already written — append care marker linked
+                self._cube.append(
+                    entry_type=entry_type,
+                    description=f"[CARE] {sanitize_for_storage(content, 120)}",
+                    data={
+                        "care": True,
+                        "critical": True,
+                        "care_of": entry.id,
+                        "source": "hermescube_manage",
+                        "trust": 0.9,
+                    },
+                    outcome="success",
+                )
+                out["care"] = True
+            except Exception:
+                pass
+
         return json.dumps(out)
 
     def _handle_manage_remove(self, args: dict[str, Any]) -> str:

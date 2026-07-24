@@ -172,7 +172,35 @@ def cortical_layer(entry_type: str) -> str:
 
 
 def half_life_hours(entry_type: str) -> float:
-    return float(HALF_LIFE_HOURS.get(entry_type or "", DEFAULT_HALF_LIFE_HOURS))
+    """Type-aware half-life for recency decay (hours)."""
+    # Care-critical override handled in recency_weight via data flag
+    return {
+        "trait": 720.0,  # ~30d identity
+        "relationship": 720.0,
+        "belief": 336.0,  # ~14d
+        "landmark": 168.0,  # ~7d
+        "resolve": 504.0,  # ~21d decisions
+        "evolution": 336.0,
+        "focus": 48.0,  # working / FOA
+        "enter": 24.0,
+        "leave": 24.0,
+        "epoch_transition": 720.0,
+    }.get(entry_type or "", 168.0)
+
+
+def recency_weight(delta_hours: float, entry_type: str, *, data: dict | None = None) -> float:
+    """Type-aware exponential decay (adaptive consolidation / forgetting)."""
+    hl = half_life_hours(entry_type)
+    if data and isinstance(data, dict) and (
+        data.get("care") is True
+        or data.get("critical") is True
+        or data.get("care_critical") is True
+    ):
+        hl = max(hl, 2160.0)  # ≥90d for care-critical
+    if hl <= 1e-6:
+        return 1.0
+    d = max(0.0, float(delta_hours))
+    return math.exp(-d / hl)
 
 
 def type_prior(entry_type: str) -> float:
@@ -205,15 +233,6 @@ def trust_multiplier(trust: float | None) -> float:
 
 def outcome_multiplier(outcome: str) -> float:
     return float(OUTCOME_WEIGHT.get(outcome or "none", 1.0))
-
-
-def recency_weight(delta_hours: float, entry_type: str) -> float:
-    """Type-aware exponential decay (adaptive consolidation / forgetting)."""
-    hl = half_life_hours(entry_type)
-    if hl <= 1e-6:
-        return 1.0
-    d = max(0.0, float(delta_hours))
-    return math.exp(-d / hl)
 
 
 def source_boost(data: dict | None) -> float:
@@ -293,7 +312,7 @@ def composite_score(
     (closed learning loop — what paid off for *similar queries*).
     """
     sim = hybrid_semantic(semantic, lexical)
-    r = recency_weight(delta_hours, entry_type)
+    r = recency_weight(delta_hours, entry_type, data=data)
     yb = float(yield_boost) if yield_boost and yield_boost > 0 else 1.0
     # keep yield influence bounded
     yb = max(0.75, min(1.40, yb))

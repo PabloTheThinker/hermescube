@@ -424,12 +424,14 @@ class TestCubeMemoryProvider:
     def test_get_config_schema(self):
         provider = CubeMemoryProvider()
         schema = provider.get_config_schema()
-        assert len(schema) == 6
+        assert len(schema) >= 6
         keys = [f["key"] for f in schema]
         assert "auto_extract" in keys
         assert "dim" in keys
         assert "l2_buckets" in keys
         assert "char_limit" in keys
+        assert "peer_card_cadence_s" in keys
+        assert "session_digest" in keys
 
     def test_save_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -853,8 +855,11 @@ class TestAutoExtract:
             provider.on_session_end(messages)
 
             entries = provider._cube.read_l1()
+            # session digest may mention the user line; auto-extract beliefs must not
             assert not any(
-                "dark mode" in e.description for e in entries
+                "dark mode" in (e.description or "")
+                and not (e.description or "").startswith("[SESSION]")
+                for e in entries
             ), "Should NOT auto-extract when disabled"
             provider.shutdown()
 

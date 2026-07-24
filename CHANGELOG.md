@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.19.0] - 2026-07-24
+
+### Close Nous-ahead gaps (honest table)
+- **Peer card** (`peer_card.py`): structured user model from warehouse; cadence rebuild; prompt strip
+- **Session digest** (`session_digest.py`): non-LLM 5-line narrative on session_end → `[SESSION]`
+- **Consent gate** (`consent.py`): manage `drafts` / `promote` / `reject` (not silent skill install)
+- **Conflict** (`conflict.py`): soft contradiction markers on belief/resolve add
+- **Care half-life**: `data.care` slows forget (~90d floor)
+- **Cadence knobs**: peer_card_cadence_s, session_digest, observe/replay_on_session_end, conflict_detect
+- Hermespace: leave + render + add_landmark purge session-ended spam
+
 ## [0.18.0] - 2026-07-24
 
 ### IR quality + Animus hubs under load

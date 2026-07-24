@@ -1,22 +1,26 @@
 # Ideas log — conversation → Cube edge (public-safe)
 
-## Inspiration sources (this arc)
-- AppleCare → **continuity**: memories that keep the “employee” employed (Care)
-- Animus / high-load FOA → small working set, deep Mneme underneath
-- Day-to-day no-loss → WAL + sleep replay
-- Client agents → same socket, isolated cubes (no cross-pollution)
-- Biological CLS / Hopfield / Hebbian → Engram Net + sleep_replay
+## Inspiration sources
+- Nous/Hermes memory layers + Honcho peer card + skill write_approval + journey
+- Care continuity, Animus FOA, CLS/Hopfield, trajectory observe
 
-## Shipped
+## Shipped (through 0.19)
 | Idea | Module |
 |------|--------|
-| Associative neural field | `engram_net.py` |
-| Offline consolidation | `sleep_replay.py` + manage `replay` + session_end |
-| Measure IR | `scripts/labeled_ir_bench.py` |
-| Repo isolation | `check_isolation.sh` |
+| Associative field | engram_net |
+| Sleep replay | sleep_replay |
+| Prospective focus→resolve | prospective |
+| Trajectory observe | trajectory |
+| IR lex guard | bio_rank + har |
+| Animus hubs | space_bridge + engram hub_ids |
+| Peer card | peer_card |
+| Session digest | session_digest |
+| Procedure consent | consent promote/reject |
+| Soft conflict | conflict |
+| Care half-life | bio_rank recency |
+| Cadence knobs | provider config schema |
 
 ## Next (not yet)
-- Prospective memory: `focus` intents that boost until `resolve` success
-- Care-critical tag half-life (generic flag in entry.data, not brand-specific)
-- Animus strip = top engram hubs only under load
-- Night cron template in docs only (user installs)
+- Multi-peer gateway aliases (client fleet) — still one cube per HERMES_HOME by design
+- Desktop memory graph UI
+- Optional promote → skill_manage bridge (explicit only)
