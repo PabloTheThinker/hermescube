@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.0] - 2026-07-24
+
+### Prospective memory — focus → resolve
+- `prospective.py`: open focuses stay hot until matching resolve closes them
+- `hermescube_manage action=intents` (list / close_id)
+- manage add resolve auto-closes best lexical match
+- System prompt strip: Open intents; focus type_prior raised
+- CONTINUITY refreshed to live 0.16
+
 ## [0.15.0] - 2026-07-24
 
 ### Sleep replay + labeled IR + ideas spine

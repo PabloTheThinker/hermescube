@@ -601,8 +601,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay"],
-                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, or sleep replay (engram consolidate)",
+                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay", "intents"],
+                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, replay, or list/close intents",
                         },
                         "entry_type": {
                             "type": "string",
@@ -771,6 +771,16 @@ class CubeMemoryProvider:
                     for w in wisdom:
                         tag = "crystal" if (w.data or {}).get("crystal") else (w.entry_type or "belief")
                         lines.append(f"  · [{tag}] {(w.description or '')[:100]}")
+                # Prospective open intents (focus until resolve)
+                try:
+                    from hermescube.prospective import prompt_strip
+
+                    strip = prompt_strip(ents, limit=4, high_load=False)
+                    if strip:
+                        lines.append("")
+                        lines.append(strip)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1533,7 +1543,47 @@ class CubeMemoryProvider:
             return self._handle_manage_prune(args)
         elif action == "forge":
             return self._handle_manage_forge(args)
+        elif action == "intents":
+            return self._handle_manage_intents(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_intents(self, args: dict[str, Any]) -> str:
+        """List open prospective focuses; optional close by id."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.prospective import open_focuses, close_focus, status
+
+            ents = list(self._cube.read_l1() or [])
+            close_id = (args.get("close_id") or args.get("entry_id") or "").strip()
+            if close_id:
+                focus = next((e for e in ents if e.id == close_id), None)
+                if focus is None:
+                    return json.dumps({"error": f"focus not found: {close_id}"})
+                closed = close_focus(
+                    self._cube,
+                    focus,
+                    resolve_id="manual",
+                    resolve_desc=str(args.get("note") or "manual close"),
+                    match=1.0,
+                )
+                self._prefetch_cache.clear()
+                if self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+                return json.dumps(
+                    {
+                        "status": "closed",
+                        "focus_id": close_id,
+                        "closed_id": getattr(closed, "id", None) if closed else None,
+                    }
+                )
+            st = status(ents)
+            return json.dumps({"status": "ok", "prospective": st})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_forge(self, args: dict[str, Any]) -> str:
         """Promote durable successes into procedure drafts (Nous skills-from-experience)."""
@@ -1774,9 +1824,11 @@ class CubeMemoryProvider:
                 "source": "hermescube_manage",
                 "session_id": self._session_id,
                 "platform": self._platform,
+                "trust": 0.72 if entry_type in ("focus", "resolve") else 0.65,
             },
             outcome=outcome,
         )
+        closed_info = None
         try:
             from hermescube.journey import log_event
 
@@ -1789,11 +1841,32 @@ class CubeMemoryProvider:
         except Exception:
             pass
 
-        return json.dumps({
+        # Prospective: successful resolve closes matching open focus
+        if entry_type in ("resolve", "evolution") or (
+            entry_type == "landmark" and outcome == "success"
+        ):
+            try:
+                from hermescube.prospective import try_close_on_resolve
+
+                # default outcome none still tries if wording looks done
+                closed_info = try_close_on_resolve(self._cube, entry)
+                if closed_info.get("closed") and self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+                    self._prefetch_cache.clear()
+            except Exception:
+                closed_info = None
+
+        out: dict[str, Any] = {
             "status": "added",
             "id": entry.id,
             "type": entry.entry_type,
-        })
+        }
+        if closed_info and closed_info.get("closed"):
+            out["prospective"] = closed_info
+        return json.dumps(out)
 
     def _handle_manage_remove(self, args: dict[str, Any]) -> str:
         """Handle hermescube_manage remove action."""

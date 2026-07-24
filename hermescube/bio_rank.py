@@ -170,7 +170,7 @@ def type_prior(entry_type: str) -> float:
         "resolve": 1.08,
         "belief": 1.05,
         "evolution": 1.04,
-        "focus": 0.95,
+        "focus": 1.18,  # open prospective intents stay hot
         "enter": 0.9,
         "leave": 0.9,
         "epoch_transition": 1.02,
@@ -206,6 +206,8 @@ def source_boost(data: dict | None) -> float:
     """Durable channels (manage/seed) outrank ephemeral turns."""
     if not data or not isinstance(data, dict):
         return 1.0
+    if data.get("prospective_closed") is True:
+        return 0.9
     if data.get("crystal") is True:
         return 1.55  # active wisdom — consensus crystals
     src = str(data.get("source") or data.get("indexed_from") or "").lower()
