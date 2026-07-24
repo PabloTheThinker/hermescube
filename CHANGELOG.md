@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1] - 2026-07-24
+
+### Isolation + Engram hot-path polish
+- `scripts/check_isolation.sh` + CONTRIBUTING isolation rules (no operator paths / live memory in git)
+- Engram: skip re-rank when net empty; fused cosine; tighter shadow-learn
+- Still: update hosts only via `hermescube update`
+
 ## [0.14.0] - 2026-07-23
 
 ### Engram Net — Cube-native neural associative field

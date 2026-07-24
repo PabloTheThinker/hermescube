@@ -32,6 +32,35 @@ hermes plugins install PabloTheThinker/hermescube
 → $HERMES_HOME/memories/memory.cube  (their data)
 ```
 
+### Isolation — no cross-pollution (mandatory)
+
+| Allowed in **git repo** | Forbidden in **git repo** |
+|-------------------------|---------------------------|
+| Library code, tests, public docs, benches *scripts* | Any operator home paths (`/home/ilo`, `~/.ilo`, …) |
+| Synthetic fixtures under `tests/` | Live `memory.cube`, `engram_net.json`, `yield_gradient.json`, journey ledgers |
+| Generic examples using `$HERMES_HOME` | Personal MEMORY.md, client names, Tailscale, secrets |
+| Lab *results* only if scrubbed/public | ILO/Vektra internal ops dumps |
+
+**Install / update for the running agent (ILO or any host):**
+
+```bash
+# always prefer
+hermescube update
+# or
+cd "$HERMES_HOME/plugins/hermescube" && ./scripts/update.sh
+```
+
+- **Do not** copy ad-hoc files from an operator tree into the public repo “to fix prod.”
+- **Do not** `pip install -e` a polluted path as the ship source of truth.
+- Experiments live under `$HERMES_HOME/hermescube-lab/` (or outside the repo) — never merge lab debris into `main`.
+- After code lands on `main`: **`hermescube update`** on each host so plugins stay in sync without hand-merging.
+
+Pre-commit / CI helper:
+
+```bash
+./scripts/check_isolation.sh
+```
+
 ---
 
 ## Running Tests

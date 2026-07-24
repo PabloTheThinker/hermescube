@@ -206,26 +206,40 @@ class EngramNet:
         *,
         beta: float = 12.0,
     ) -> dict[str, float]:
-        """Return multiplicative boosts ~[0.88, 1.42] for candidate ids."""
+        """Return multiplicative boosts ~[0.88, 1.42] for candidate ids.
+
+        Fast path: empty net → {} so HAR skips re-rank work.
+        """
         if not candidate_ids:
+            return {}
+        if not self._patterns and not self._edges:
             return {}
         boosts = {str(i): 1.0 for i in candidate_ids}
         idset = set(boosts)
 
         # 1) Pattern completion — Hopfield-like attention over pattern bank
         if query_vec and self._patterns:
+            # pre-norm query once
+            qn = math.sqrt(sum(float(x) * float(x) for x in query_vec)) or 1.0
             scores: list[tuple[float, list[str]]] = []
             for pat in self._patterns:
                 v = pat.get("v")
                 ids = pat.get("ids") or []
-                if not isinstance(v, list) or not ids:
+                if not isinstance(v, list) or not ids or len(v) != len(query_vec):
                     continue
-                c = _cos(query_vec, v)
+                # fused cos without extra allocs
+                dot = s2 = 0.0
+                for i in range(len(query_vec)):
+                    y = float(v[i])
+                    dot += float(query_vec[i]) * y
+                    s2 += y * y
+                if s2 <= 1e-12:
+                    continue
+                c = dot / (qn * math.sqrt(s2))
                 if c <= 0.05:
                     continue
                 scores.append((c, [str(x) for x in ids]))
             if scores:
-                # exp kernel (modern Hopfield energy surrogate)
                 m = max(s for s, _ in scores)
                 weights = []
                 for s, ids in scores:
@@ -238,7 +252,6 @@ class EngramNet:
                         if i in idset:
                             mass[i] += p
                 for i, mval in mass.items():
-                    # map mass to boost
                     boosts[i] = boosts.get(i, 1.0) * (1.0 + 0.38 * min(1.0, mval * 2.5))
 
         # 2) Co-graph: if several candidates are mutually wired, raise them

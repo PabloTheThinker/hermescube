@@ -311,8 +311,10 @@ def hygiene_world_beliefs(
         os.environ.setdefault("HERMESPACE_HOME", str(hs_home))
         for cand in (
             Path.home() / "projects" / "hermespace" / "src",
-            Path("/home/ilo/projects/hermespace/src"),
+            Path(os.environ.get("HERMESPACE_SRC", "")) if os.environ.get("HERMESPACE_SRC") else None,
         ):
+            if cand is None:
+                continue
             if cand.is_dir() and str(cand) not in sys.path:
                 sys.path.insert(0, str(cand))
         from hermespace.world import WorldModel  # type: ignore
@@ -420,8 +422,10 @@ def push_to_hermespace_world(
         # ensure src on path if present
         for cand in (
             Path.home() / "projects" / "hermespace" / "src",
-            Path("/home/ilo/projects/hermespace/src"),
+            Path(os.environ.get("HERMESPACE_SRC", "")) if os.environ.get("HERMESPACE_SRC") else None,
         ):
+            if cand is None:
+                continue
             if cand.is_dir() and str(cand) not in sys.path:
                 sys.path.insert(0, str(cand))
         from hermespace.world import WorldModel  # type: ignore

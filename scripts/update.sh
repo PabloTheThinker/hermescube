@@ -161,8 +161,12 @@ import os, sys
 from pathlib import Path
 home = Path(os.environ["HERMES_HOME"])
 sys.path.insert(0, str(home / "hermes-agent"))
-for extra in (Path.home() / "hermes-agent", Path("/home/ilo/hermes-agent")):
-    if extra.is_dir():
+for extra in (
+    Path.home() / "hermes-agent",
+    Path(os.environ["HERMES_HOME"]) / "hermes-agent" if os.environ.get("HERMES_HOME") else None,
+    Path(os.environ["HERMES_AGENT_HOME"]) if os.environ.get("HERMES_AGENT_HOME") else None,
+):
+    if extra is not None and extra.is_dir():
         sys.path.insert(0, str(extra))
 import hermescube
 print(f"  package {hermescube.__version__} @ {hermescube.__file__}")

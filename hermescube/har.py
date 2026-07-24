@@ -425,7 +425,10 @@ class HARQueryEngine:
             scored = [(e, s) for e, s in scored if s >= min_score]
         scored.sort(key=lambda x: -x[1])
         # Engram Net re-rank: association completion + co-activation (neural field)
-        scored = self._apply_engram(scored, q if isinstance(q, list) else list(q) if q is not None else None)
+        scored = self._apply_engram(
+            scored,
+            q if isinstance(q, list) else (list(q) if q is not None else None),
+        )
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
         # light expand only — entity index cached; skip if tiny result already full
         idx = self._entity_index
@@ -439,21 +442,22 @@ class HARQueryEngine:
                 entity_index=idx,
                 colony=getattr(self, "_colony", None),
             )
-        # weak Hebbian co-activation on retrieved set (shadow learn)
+        # weak Hebbian co-activation on retrieved set (shadow learn) — skip empty net cold path already handled inside
         try:
             net = getattr(self, "_engram_net", None)
-            if net is not None and out:
+            if net is not None and out and len(out) >= 2:
                 ids = [str(getattr(e, "id", "") or "") for e, _ in out if getattr(e, "id", None)]
-                vecs = []
-                for e, _ in out[:8]:
-                    v = getattr(e, "vector", None)
-                    if v is not None:
-                        try:
-                            vecs.append([float(x) for x in list(v)[:512]])
-                        except Exception:
-                            pass
                 if len(ids) >= 2:
-                    net.learn_coactivation(ids, vecs if vecs else None, strength=0.35)
+                    vecs = []
+                    for e, _ in out[:6]:
+                        v = getattr(e, "vector", None)
+                        if v is not None:
+                            try:
+                                vv = list(v)
+                                vecs.append([float(x) for x in vv])
+                            except Exception:
+                                pass
+                    net.learn_coactivation(ids, vecs if len(vecs) >= 2 else None, strength=0.35)
         except Exception:
             pass
         return out

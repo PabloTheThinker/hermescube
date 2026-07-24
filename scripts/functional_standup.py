@@ -11,8 +11,12 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/home/ilo/projects/hermescube")
-sys.path.insert(0, "/home/ilo/projects/hermespace/src")
+_root = Path(__file__).resolve().parents[1]
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+_hs = os.environ.get("HERMESPACE_SRC") or str(Path.home() / "projects" / "hermespace" / "src")
+if Path(_hs).is_dir() and _hs not in sys.path:
+    sys.path.insert(0, _hs)
 
 os.environ.setdefault("HERMES_HOME", str(Path.home() / ".hermes"))
 os.environ.setdefault("HERMESPACE_HOME", str(Path.home() / ".hermespace"))

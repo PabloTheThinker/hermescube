@@ -9,8 +9,10 @@ import time
 from pathlib import Path
 
 os.environ.setdefault("HERMES_HOME", str(Path.home() / ".hermes"))
-# prefer installed package
-sys.path.insert(0, "/home/ilo/projects/hermescube")
+# prefer repo root when running from a clone; else installed package
+_root = Path(__file__).resolve().parents[1]
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
 from hermescube.provider import CubeMemoryProvider  # noqa: E402
 

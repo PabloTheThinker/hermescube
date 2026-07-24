@@ -10,7 +10,9 @@ from pathlib import Path
 os.environ.setdefault("HERMES_HOME", str(Path.home() / ".hermes"))
 import sys
 
-sys.path.insert(0, "/home/ilo/projects/hermescube")
+_root = Path(__file__).resolve().parents[1]
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
 from hermescube.provider import CubeMemoryProvider
 
