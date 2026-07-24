@@ -1202,7 +1202,8 @@ class CubeMemoryProvider:
             self._prefetch_cache.clear()
 
         self._sync_queue.submit(_session_end_work)
-        self._sync_queue.flush(timeout=30.0)
+        # Non-blocking: work runs in background. The MemoryManager
+        # drains pending work via shutdown_all() later.
 
     def on_session_switch(
         self,
