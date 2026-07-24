@@ -191,6 +191,7 @@ class CubeMemoryProvider:
         self._observe_on_session_end = True
         self._replay_on_session_end = True
         self._conflict_detect = True
+        self._living_pulse_on_session_end = True
 
         self._cube: CubeFile | None = None
         self._engine: HARQueryEngine | None = None
@@ -303,6 +304,10 @@ class CubeMemoryProvider:
             )
             self._conflict_detect = _coerce_bool(
                 plugin_config.get("conflict_detect"), self._conflict_detect
+            )
+            self._living_pulse_on_session_end = _coerce_bool(
+                plugin_config.get("living_pulse_on_session_end"),
+                self._living_pulse_on_session_end,
             )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
@@ -575,6 +580,13 @@ class CubeMemoryProvider:
                 "default": "true",
                 "choices": ["true", "false"],
             },
+            {
+                "key": "living_pulse_on_session_end",
+                "description": "Run multi-chamber living pulse on session_end (catalog/connect/peer)",
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
+            },
         ]
 
     def save_config(self, values: dict[str, Any], hermes_home: str) -> None:
@@ -671,8 +683,9 @@ class CubeMemoryProvider:
                                 "reject",
                                 "drafts",
                                 "peer",
+                                "pulse",
                             ],
-                            "description": "warehouse ops + consent promote/reject + peer card",
+                            "description": "warehouse ops + living pulse + consent + peer",
                         },
                         "entry_type": {
                             "type": "string",
@@ -859,6 +872,15 @@ class CubeMemoryProvider:
                     if ps:
                         lines.append("")
                         lines.append(ps)
+                except Exception:
+                    pass
+                try:
+                    from hermescube.living import prompt_strip as living_strip
+
+                    ls = living_strip(self._hermes_home, high_load=False)
+                    if ls:
+                        lines.append("")
+                        lines.append(ls)
                 except Exception:
                     pass
         except Exception:
@@ -1191,6 +1213,28 @@ class CubeMemoryProvider:
                 )
             except Exception as e:
                 logger.debug("session_digest/peer_card skipped: %s", e)
+
+        # Living multi-chamber pulse (catalog + connect dots + doctrine touch)
+        if (
+            getattr(self, "_living_pulse_on_session_end", True)
+            and not self._should_skip_writes()
+            and self._cube.entry_count >= 4
+        ):
+            try:
+                from hermescube.living import chamber_pulse
+
+                preport = chamber_pulse(
+                    self._cube,
+                    hermes_home=self._hermes_home,
+                    engram=getattr(self, "_engram", None),
+                    max_connect=3,
+                    do_crystalize=False,  # already crystalized above
+                    do_peer=False,  # already refreshed above
+                )
+                if preport.get("ok"):
+                    logger.info("living_pulse: %s", preport.get("summary"))
+            except Exception as e:
+                logger.debug("living_pulse skipped: %s", e)
 
         if self._cube.entry_count > 0:
             # Avoid evolve if breaker is open
@@ -1718,7 +1762,35 @@ class CubeMemoryProvider:
             return self._handle_manage_drafts(args)
         elif action == "peer":
             return self._handle_manage_peer(args)
+        elif action == "pulse":
+            return self._handle_manage_pulse(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_pulse(self, args: dict[str, Any]) -> str:
+        """Multi-chamber living pulse — catalog, connect dots, peer, doctrine."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.living import chamber_pulse
+
+            report = chamber_pulse(
+                self._cube,
+                hermes_home=self._hermes_home,
+                engram=getattr(self, "_engram", None),
+                max_connect=int(args.get("max_connect") or 4),
+                do_crystalize=bool(args.get("crystalize", True)),
+                do_peer=bool(args.get("peer", True)),
+            )
+            if report.get("ok"):
+                self._prefetch_cache.clear()
+                if self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+            return json.dumps({"status": "pulse", "report": report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_promote(self, args: dict[str, Any]) -> str:
         if not self._cube:

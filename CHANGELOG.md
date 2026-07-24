@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.0] - 2026-07-24
+
+### Living archive — chambers (cubes within the cube)
+- `living.py`: multi-chamber pulse — identity, doctrine, intent, procedure, associate, narrative, catalog
+- Catalog index `memories/catalog.json` (types, entities, topic hubs)
+- Connect-dots: soft `[DOT]` relationship links across shared entities
+- `hermescube_manage action=pulse` + session_end living pulse
+- Prompt strip: Living archive status for any Hermes agent
+- State: `memories/living_state.json`
+
 ## [0.19.0] - 2026-07-24
 
 ### Close Nous-ahead gaps (honest table)
