@@ -429,6 +429,8 @@ class HARQueryEngine:
             scored,
             q if isinstance(q, list) else (list(q) if q is not None else None),
         )
+        # Lex floor: strong query coverage must not lose to engram/prestige hubs
+        scored = self._lex_identity_guard(scored, text)
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
         # light expand only — entity index cached; skip if tiny result already full
         idx = self._entity_index
@@ -461,6 +463,42 @@ class HARQueryEngine:
         except Exception:
             pass
         return out
+
+    def _lex_identity_guard(
+        self,
+        scored: list[tuple[CubeEntry, float]],
+        query: str,
+    ) -> list[tuple[CubeEntry, float]]:
+        """Keep high query-coverage hits ahead of association hubs."""
+        if not scored or not query:
+            return scored
+        try:
+            enriched: list[tuple[CubeEntry, float, float]] = []
+            for e, s in scored:
+                lx = bio_rank.lexical_score(query, e.description or "")
+                # if very strong lex, floor score above weaker-lex heads
+                ss = float(s)
+                if lx >= 0.78:
+                    ss = max(ss, ss * (1.0 + 0.35 * lx) , 1.15 * lx + 0.35)
+                elif lx >= 0.62:
+                    ss = max(ss, ss * (1.0 + 0.12 * lx))
+                enriched.append((e, ss, lx))
+            # hard: any lx>=0.85 must outrank lx<0.45 in top band
+            strong = [x for x in enriched if x[2] >= 0.82]
+            if strong:
+                max_weak = max((s for _, s, lx in enriched if lx < 0.50), default=0.0)
+                floor = max_weak + 0.05 if max_weak > 0 else 0.0
+                fixed = []
+                for e, s, lx in enriched:
+                    if lx >= 0.82 and s < floor:
+                        s = floor + 0.15 * lx
+                    fixed.append((e, s))
+                fixed.sort(key=lambda x: -x[1])
+                return fixed
+            enriched.sort(key=lambda x: -x[1])
+            return [(e, s) for e, s, _ in enriched]
+        except Exception:
+            return scored
 
     def _apply_engram(
         self,
