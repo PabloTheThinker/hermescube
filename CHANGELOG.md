@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.15.0] - 2026-07-24
+
+### Sleep replay + labeled IR + ideas spine
+- `sleep_replay.py`: offline CLS consolidation into Engram (bundles + edge decay)
+- `hermescube_manage action=replay` + session_end auto-replay
+- `scripts/labeled_ir_bench.py` — stem self-retrieval metrics on user cube
+- `docs/IDEAS_FROM_OPS.md` — conversation→architecture map (public-safe)
+
+
 ## [0.14.1] - 2026-07-24
 
 ### Isolation + Engram hot-path polish

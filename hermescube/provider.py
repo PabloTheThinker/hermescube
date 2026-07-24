@@ -601,8 +601,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge"],
-                            "description": "add/remove, crystalize, journey, hygiene, prune, or forge procedures from experience",
+                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay"],
+                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, or sleep replay (engram consolidate)",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1017,6 +1017,20 @@ class CubeMemoryProvider:
                             pass
             except Exception as e:
                 logger.debug("wisdom crystalize skipped: %s", e)
+
+        # Sleep replay — Engram Net consolidation (CLS offline teaching)
+        if not self._should_skip_writes() and self._cube.entry_count >= 6:
+            try:
+                net = getattr(self, "_engram", None)
+                if net is not None:
+                    from hermescube.sleep_replay import sleep_replay
+
+                    rstats = sleep_replay(self._cube, net, max_patterns=16)
+                    net.save()
+                    if rstats.get("patterns_added"):
+                        logger.info("sleep_replay: %s", rstats)
+            except Exception as e:
+                logger.debug("sleep_replay skipped: %s", e)
 
         if self._cube.entry_count > 0:
             # Avoid evolve if breaker is open
@@ -1509,6 +1523,8 @@ class CubeMemoryProvider:
             return self._handle_manage_remove(args)
         elif action == "crystalize":
             return self._handle_manage_crystalize(args)
+        elif action == "replay":
+            return self._handle_manage_replay(args)
         elif action == "journey":
             return self._handle_manage_journey(args)
         elif action == "hygiene":
@@ -1685,6 +1701,42 @@ class CubeMemoryProvider:
                 except Exception:
                     pass
             return json.dumps({"status": "crystalized", "stats": stats, "loop": loop})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_replay(self, args: dict[str, Any]) -> str:
+        """Offline sleep replay → Engram Net consolidation."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.sleep_replay import sleep_replay
+
+            net = getattr(self, "_engram", None)
+            if net is None:
+                from hermescube.engram_net import EngramNet, default_path as engram_path
+
+                net = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+                self._engram = net
+                if self._engine is not None:
+                    setattr(self._engine, "_engram_net", net)
+            stats = sleep_replay(
+                self._cube,
+                net,
+                max_patterns=int(args.get("max_patterns") or 24),
+            )
+            net.save()
+            try:
+                from hermescube.journey import log_event
+
+                log_event(
+                    "sleep_replay",
+                    f"bundles={stats.get('bundles')} patterns={stats.get('patterns_added')}",
+                    hermes_home=self._hermes_home,
+                    meta=stats,
+                )
+            except Exception:
+                pass
+            return json.dumps({"status": "replayed", "stats": stats})
         except Exception as e:
             return json.dumps({"error": str(e)})
 
