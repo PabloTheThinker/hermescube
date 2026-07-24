@@ -601,8 +601,8 @@ class CubeMemoryProvider:
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay", "intents"],
-                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, replay, or list/close intents",
+                            "enum": ["add", "remove", "crystalize", "journey", "hygiene", "prune", "forge", "replay", "intents", "observe"],
+                            "description": "add/remove, crystalize, journey, hygiene, prune, forge, replay, intents, or observe trajectories",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1042,6 +1042,24 @@ class CubeMemoryProvider:
             except Exception as e:
                 logger.debug("sleep_replay skipped: %s", e)
 
+        # Trajectory observe — successful multi-tool chains → procedure drafts
+        if not self._should_skip_writes() and messages:
+            try:
+                from hermescube.trajectory import observe_messages
+
+                tstats = observe_messages(
+                    self._cube,
+                    messages,
+                    hermes_home=self._hermes_home,
+                    min_tools=3,
+                    max_forge=2,
+                )
+                if tstats.get("forged"):
+                    logger.info("trajectory_observe: %s", tstats)
+                    self._prefetch_cache.clear()
+            except Exception as e:
+                logger.debug("trajectory_observe skipped: %s", e)
+
         if self._cube.entry_count > 0:
             # Avoid evolve if breaker is open
             if not self._is_evolve_breaker_open():
@@ -1219,6 +1237,19 @@ class CubeMemoryProvider:
                 },
                 outcome=outcome,
             )
+            if outcome == "success":
+                try:
+                    from hermescube.trajectory import observe_delegation
+
+                    observe_delegation(
+                        cube,
+                        task,
+                        result,
+                        hermes_home=self._hermes_home,
+                        child_session_id=child_session_id,
+                    )
+                except Exception:
+                    pass
 
         self._sync_queue.submit(_do_delegation)
 
@@ -1545,7 +1576,74 @@ class CubeMemoryProvider:
             return self._handle_manage_forge(args)
         elif action == "intents":
             return self._handle_manage_intents(args)
+        elif action == "observe":
+            return self._handle_manage_observe(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_observe(self, args: dict[str, Any]) -> str:
+        """Forge procedure drafts from tool trajectories in provided messages or last note."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.trajectory import observe_messages, extract_trajectories
+
+            messages = args.get("messages")
+            if not messages and args.get("tools"):
+                # synthetic: list of tool names
+                names = args.get("tools") or []
+                if isinstance(names, str):
+                    names = [n.strip() for n in names.split(",") if n.strip()]
+                goal = str(args.get("goal") or args.get("content") or "manual observe")
+                messages = [
+                    {"role": "user", "content": goal},
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": n, "arguments": "{}"}} for n in names
+                        ],
+                    },
+                ]
+            if not messages:
+                return json.dumps(
+                    {
+                        "error": "messages or tools required",
+                        "hint": "pass tools=['terminal','patch','pytest'] goal='...'",
+                    }
+                )
+            min_tools = int(args.get("min_tools") or 3)
+            stats = observe_messages(
+                self._cube,
+                messages,
+                hermes_home=self._hermes_home,
+                min_tools=min_tools,
+                max_forge=int(args.get("max_forge") or 3),
+                write_drafts=bool(args.get("write_drafts", True)),
+            )
+            preview = extract_trajectories(messages, min_tools=min_tools)
+            if stats.get("forged"):
+                self._prefetch_cache.clear()
+                if self._engine:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
+            return json.dumps(
+                {
+                    "status": "observed",
+                    "stats": stats,
+                    "preview": [
+                        {
+                            "goal": t.get("goal"),
+                            "tools": t.get("tool_names"),
+                            "fp": t.get("fingerprint"),
+                        }
+                        for t in preview[:5]
+                    ],
+                }
+            )
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_intents(self, args: dict[str, Any]) -> str:
         """List open prospective focuses; optional close by id."""

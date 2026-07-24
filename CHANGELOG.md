@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0] - 2026-07-24
+
+### Trajectory observe — watch work → procedure drafts
+- `trajectory.py`: multi-tool chains from session messages → `[TRAJECTORY]` + draft SKILL under memories/procedures/
+- Auto on `on_session_end` (max 2); `manage action=observe` manual
+- Delegation success → resolve + prospective close attempt
+- Scrub secrets/home paths; skip memory-only thrash chains; fingerprint dedupe
+- Dawson-lite: observational learning without media/VLM sprawl
+
 ## [0.16.0] - 2026-07-24
 
 ### Prospective memory — focus → resolve
