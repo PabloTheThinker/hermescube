@@ -172,12 +172,13 @@ class HARQueryEngine:
         # Use provided centroids (snapshot) or load from cube
         effective_centroids = centroids if centroids is not None else self._load_centroids()
 
-        # Score each centroid
+        # Score each centroid — batch cosine similarity
+        centroid_vecs = [b.centroid for b in effective_centroids]
+        scores = hrr.cosine_sim_batch(centroid_vecs, q_beta)
         scored_buckets: list[tuple[float, L2Bucket, int]] = []
         for idx, bucket in enumerate(effective_centroids):
-            score = hrr.cosine_sim(q_beta, bucket.centroid)
-            if score > min_score:
-                scored_buckets.append((score, bucket, idx))
+            if scores[idx] > min_score:
+                scored_buckets.append((scores[idx], bucket, idx))
 
         scored_buckets.sort(key=lambda x: -x[0])
 
@@ -643,26 +644,40 @@ class HARQueryEngine:
             centroids = self._kmeans_init(vecs, num_clusters)
             for _iter in range(10):
                 new_centroids = self._kmeans_iteration(vecs, centroids, num_clusters)
-                # Convergence check: max centroid movement
-                max_delta = max(
-                    1.0 - hrr.cosine_sim(c, nc)
-                    for c, nc in zip(centroids, new_centroids)
-                )
+                # Convergence check: batch centroid similarity
+                c_vecs = [list(c) if hasattr(c, 'tolist') else c for c in centroids]
+                nc_vecs = [list(nc) if hasattr(nc, 'tolist') else nc for nc in new_centroids]
+                deltas = [1.0 - s for s in hrr.cosine_sim_batch(c_vecs, nc_vecs[0])]
+                # Pairwise: need each pair, not just first
+                max_delta = 0.0
+                for i in range(len(centroids)):
+                    delta = 1.0 - hrr.cosine_sim(centroids[i], new_centroids[i])
+                    if delta > max_delta:
+                        max_delta = delta
                 centroids = new_centroids
                 if max_delta < 0.001:  # converged
                     break
 
-        # Assign entries to nearest centroid
+        # Assign entries to nearest centroid — batch matrix multiply
         assignments: list[list[int]] = [[] for _ in range(num_clusters)]
-        for idx, vec in enumerate(vecs):
-            best_c = -1
-            best_d = -1.0
-            for c_idx, cent in enumerate(centroids):
-                d = hrr.cosine_sim(vec, cent)
-                if d > best_d:
-                    best_d = d
-                    best_c = c_idx
-            assignments[best_c].append(idx)
+        if hrr.has_numpy():
+            import numpy as _np_np2
+            Vm = _np_np2.asarray(vecs, dtype=_np_np2.float64)       # (n, dim)
+            Cm = _np_np2.asarray(centroids, dtype=_np_np2.float64)  # (k, dim)
+            sim_matrix = _np_np2.dot(Vm, Cm.T)                       # (n, k)
+            best_per_row = _np_np2.argmax(sim_matrix, axis=1)
+            for idx, c_idx in enumerate(best_per_row):
+                assignments[int(c_idx)].append(idx)
+        else:
+            for idx, vec in enumerate(vecs):
+                best_c = -1
+                best_d = -1.0
+                for c_idx, cent in enumerate(centroids):
+                    d = hrr.cosine_sim(vec, cent)
+                    if d > best_d:
+                        best_d = d
+                        best_c = c_idx
+                assignments[best_c].append(idx)
 
         # Build L2 buckets
         buckets: list[L2Bucket] = []
@@ -779,11 +794,19 @@ class HARQueryEngine:
             centroids.append(list(vectors[0]))
 
         for _ in range(1, k):
-            dists = []
-            for vec in vectors:
-                v_arr = _np.asarray(vec) if hrr.has_numpy() else vec
-                min_d = min(hrr.cosine_sim(v_arr, c) for c in centroids)
-                dists.append(1.0 - min_d + 1e-12)
+            # Batch: compute all vector→centroid similarities at once
+            sims = hrr.cosine_sim_batch(vectors, centroids[-1])
+            dists = [max(0.0, 1.0 - sims[i] + 1e-12) for i in range(len(vectors))]
+
+            # Recompute distances against ALL centroids if we have >1 centroid
+            if len(centroids) > 1:
+                for c in centroids[:-1]:
+                    c_sims = hrr.cosine_sim_batch(vectors, c)
+                    for i in range(len(vectors)):
+                        d = max(0.0, 1.0 - c_sims[i] + 1e-12)
+                        if d < dists[i]:
+                            dists[i] = d
+
             total = sum(dists)
             r = (hashlib.sha256(str(total).encode()).digest()[0] / 255.0) * total
             cumulative = 0.0
@@ -802,17 +825,34 @@ class HARQueryEngine:
     def _kmeans_iteration(
         self, vectors: list[Any], centroids: list[hrr.Array], k: int
     ) -> list[hrr.Array]:
-        """One k-means iteration: assign → recompute means."""
+        """One k-means iteration: assign → recompute means.
+
+        Uses batch cosine similarity via matrix multiplication — O(n×k)
+        numpy operations instead of O(n×k) individual cosine_sim calls.
+        Since all vectors are unit length, dot(A, B.T) = cosine sim.
+        """
         assignments: list[list[int]] = [[] for _ in range(k)]
-        for idx, vec in enumerate(vectors):
-            best_c = -1
-            best_d = -1.0
-            for c_idx in range(k):
-                d = hrr.cosine_sim(vec, centroids[c_idx])
-                if d > best_d:
-                    best_d = d
-                    best_c = c_idx
-            assignments[best_c].append(idx)
+
+        if hrr.has_numpy():
+            import numpy as _np
+            # Batch: compute all vector→centroid similarities (n × k)
+            V = _np.asarray(vectors, dtype=_np.float64)        # (n, dim)
+            C = _np.asarray(centroids, dtype=_np.float64)      # (k, dim)
+            sims = _np.dot(V, C.T)                              # (n, k)
+            best = _np.argmax(sims, axis=1)                     # per-row best centroid
+            for idx, c_idx in enumerate(best):
+                assignments[int(c_idx)].append(idx)
+        else:
+            for idx, vec in enumerate(vectors):
+                sims = hrr.cosine_sim_batch([vec], centroids[0])
+                best_c = 0
+                best_d = sims[0]
+                for c_idx in range(1, k):
+                    s = hrr.cosine_sim_batch([vec], centroids[c_idx])[0]
+                    if s > best_d:
+                        best_d = s
+                        best_c = c_idx
+                assignments[best_c].append(idx)
 
         if hrr.has_numpy():
             import numpy as _np
