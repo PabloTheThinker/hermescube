@@ -5,23 +5,40 @@
 
 A fresh cube is born at living version **`0.0.0`**. Every lived experience —
 durable writes, hive draws, peer interviews, promoted procedures, installed
-skills, confirmed predictions, refined lessons — advances that version and
-raises a strength score. The diary lives at `memories/CUBE.md`.
+skills, confirmed predictions, refined lessons — advances that version.
+The diary lives at `memories/CUBE.md`.
 
-This is **not** the package version (`hermescube 0.27.x`) and **not** the
-binary format version (`CubeFile.VERSION = 1`). It is the soul-age of one
+This is **not** the package version (`hermescube 0.28.x`) and **not** the
+binary format version (`CubeFile.VERSION = 1`). It is the soul-record of one
 agent's archive.
+
+## Age in the digital world (not a human scorecard)
+
+Agents don't age in years. HermesCube ages a soul in two clear units:
+
+| Unit | Meaning |
+|---|---|
+| **Cycles** | Primary age. One cycle = one lived growth epoch (version bump). Tron-style program life — how many consolidations of experience this soul has survived. Displayed as `C12` or `12 cycles`. |
+| **Lived** | Wall-clock since genesis (`4d 6h`, `3h 12m`). How long this soul has been online in real time. |
+
+**Capability** (0–100) is *not* age. It is archive coherence — crystals,
+skills, confirmed predictions. **Era** (genesis → elder) is the life stage
+that capability earns. Never confuse capability with how old the soul is.
+
+```
+age 12 cycles · lived 4d 6h · era formed · capability 54/100
+```
 
 ## The life of a cube
 
 ```
-0.0.0  genesis     — empty archive, ready to live
-0.0.x  patches     — sessions left durable knowledge; draws; interviews
+0.0.0  genesis     — empty archive, cycle 0, ready to live
+0.0.x  patches     — sessions left durable knowledge; draws; interviews (+cycles)
 0.x.0  minors      — procedures promoted; skills installed/refined; crystals
-1.0.0+ majors      — strength crossed an era threshold (25 / 50 / 75 / 90)
+1.0.0+ majors      — capability crossed an era threshold (25 / 50 / 75 / 90)
 ```
 
-| Era | Strength | Meaning |
+| Era | Capability | Meaning |
 |---|---|---|
 | genesis | 0–24 | Just born |
 | awakening | 25–49 | First real lessons landing |
@@ -29,9 +46,10 @@ agent's archive.
 | seasoned | 75–89 | Predictions confirmed, hive wisdom drawn |
 | elder | 90–100 | Deep, trusted, hard to fake |
 
-Strength is weighted: procedures, crystals, installed skills, and confirmed
-predictions weigh more than raw entry count. You cannot fake maturity by
-dumping turns.
+Capability is weighted: procedures, crystals, installed skills, and confirmed
+predictions weigh more than raw entry count. You cannot fake coherence by
+dumping turns — and you cannot fake age that way either. Age only advances
+when the cube actually lives a growth cycle.
 
 ## Skills evolve with the cube
 
@@ -50,16 +68,16 @@ hermescube growth refine --skill deploy-safely \
 ## Usage
 
 ```bash
-# See the cube's age
+# See the cube's age (cycles + lived time) and capability
 hermescube growth status
-hermescube info                    # also shows Living version
+hermescube info                    # also shows Living version + age
 
-# Epoch history (append-only truth)
+# Cycle history (append-only truth)
 hermescube growth epochs
 
 # After a pilgrimage — growth line is printed automatically
 hermescube hive pilgrimage --hermes-home ~/.hermes --agent coder
-#   growth:      v0.0.3 → v0.0.4  (awakening, strength 28/100)
+#   growth:  v0.0.3 → v0.0.4  · 4 cycles · lived 6h · era awakening · capability 28/100
 ```
 
 In-session:
@@ -73,8 +91,11 @@ hermescube_manage action=growth content=refine:deploy-safely query="lesson text"
 The system prompt carries a one-line strip:
 
 ```
-Living Cube v0.3.12 (formed, strength 54/100) — grows with every session; see memories/CUBE.md
+Living Cube v0.3.12 · age 12 cycles · lived 4d 6h · era formed · capability 54/100 — see memories/CUBE.md
 ```
+
+Soul cards at the hive advertise the same age model so peers read digital
+life clearly: `v0.1.0 · C2 · 3h · era genesis`.
 
 ## Where artifacts land
 

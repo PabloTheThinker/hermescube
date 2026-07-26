@@ -50,10 +50,11 @@ def cmd_info(args: argparse.Namespace) -> None:
             if cpath.parent.name == "memories":
                 home = str(cpath.parent.parent)
             g = growth_status(home, cube=cube)
-            print(f"\nLiving version: v{g.get('version')}  "
-                  f"({g.get('era')}, strength {g.get('strength')}/100)")
-            print(f"  epochs lived: {g.get('epochs')}  "
-                  f"diary: {g.get('cube_md')}")
+            age = g.get("age") or {}
+            print(f"\nLiving version: v{g.get('version')}")
+            print(f"  age:        {age.get('label', '—')}  (digital cycles + lived time)")
+            print(f"  era:        {g.get('era')}  · capability {g.get('capability', g.get('strength'))}/100")
+            print(f"  diary:      {g.get('cube_md')}")
         except Exception as e:
             print(f"\nLiving version: n/a ({e})")
         try:
@@ -106,10 +107,11 @@ def cmd_growth(args: argparse.Namespace) -> int:
         cmd = args.growth_command
         if cmd == "status":
             s = gen.growth_status(home, cube=cube)
-            print(f"Living Cube v{s.get('version')}  — {s.get('era')}")
-            print(f"  strength:  {s.get('strength')}/100")
-            print(f"  epochs:    {s.get('epochs')}")
-            print(f"  diary:     {s.get('cube_md')}")
+            age = s.get("age") or {}
+            print(f"Living Cube v{s.get('version')}  — era {s.get('era')}")
+            print(f"  age:         {age.get('label', '—')}")
+            print(f"  capability:  {s.get('capability', s.get('strength'))}/100  (coherence, not age)")
+            print(f"  diary:       {s.get('cube_md')}")
             counts = s.get("counts") or {}
             print(f"  durable={counts.get('durable', 0)}  "
                   f"crystals={counts.get('crystals', 0)}  "
@@ -126,10 +128,12 @@ def cmd_growth(args: argparse.Namespace) -> int:
         if cmd == "epochs":
             for e in gen.list_epochs(home, limit=int(args.limit or 30)):
                 if e.get("kind") == "genesis":
-                    print(f"[genesis] → {e.get('to')}: {e.get('reason')}")
+                    print(f"[C0 genesis] → {e.get('to')}: {e.get('reason')}")
                 else:
+                    cyc = e.get("cycle")
+                    cyc_s = f"C{cyc} " if cyc is not None else ""
                     print(
-                        f"[{e.get('bump')}] {e.get('from')} → {e.get('to')}  "
+                        f"[{cyc_s}{e.get('bump')}] {e.get('from')} → {e.get('to')}  "
                         f"{e.get('reason', '')[:100]}"
                     )
             return 0
@@ -147,8 +151,9 @@ def cmd_growth(args: argparse.Namespace) -> int:
             )
             g = (r.get("growth") or {})
             if g.get("bumped"):
+                age = g.get("age") or {}
                 print(f"  cube: v{g.get('from')} → v{g.get('to')}  "
-                      f"(strength {g.get('strength')})")
+                      f"({age.get('label', '')})")
             return 0
         if cmd == "curate":
             from hermescube.curator import run_curator
@@ -624,9 +629,13 @@ def cmd_hive(args: argparse.Namespace) -> int:
             growth = s.get("growth") or {}
             gstrip = ""
             if growth:
+                age = growth.get("age") or {}
+                age_s = age.get("label") or (
+                    f"C{growth.get('cycles', 0)} · {growth.get('lived', '?')}"
+                )
                 gstrip = (
-                    f"  v{growth.get('version')} "
-                    f"({growth.get('era')}, {growth.get('strength')}/100)"
+                    f"  v{growth.get('version')} · {age_s} · "
+                    f"era {growth.get('era')}"
                 )
             print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')}){gstrip}")
             for w in (soul.get("wisdom") or [])[:2]:
@@ -636,6 +645,9 @@ def cmd_hive(args: argparse.Namespace) -> int:
             skills = growth.get("skills") or []
             if skills:
                 print(f"    skills: {', '.join(skills[:4])}")
+            if growth.get("capability") is not None or growth.get("strength") is not None:
+                cap = growth.get("capability", growth.get("strength"))
+                print(f"    capability: {cap}/100")
         return 0
 
     if cmd == "pilgrimage":
@@ -670,15 +682,18 @@ def cmd_hive(args: argparse.Namespace) -> int:
             elif isinstance(ivr, dict):
                 print(f"  interview:   error: {ivr.get('error')}")
         g = r.get("growth") or {}
+        age = g.get("age") or {}
         if g.get("bumped"):
             print(
                 f"  growth:      v{g.get('from')} → v{g.get('to')}  "
-                f"({g.get('era')}, strength {g.get('strength')}/100)"
+                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· capability {g.get('capability', g.get('strength'))}/100"
             )
         elif g.get("version"):
             print(
                 f"  growth:      v{g.get('version')}  "
-                f"({g.get('era')}, strength {g.get('strength')}/100)"
+                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· capability {g.get('capability', g.get('strength'))}/100"
             )
         cur = r.get("curator") or {}
         refines = cur.get("refines") or []

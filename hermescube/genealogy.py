@@ -10,13 +10,23 @@ This is NOT the package version (``hermescube.__version__``) and NOT the
 binary format version (``CubeFile.VERSION``). It is the *soul-age* of one
 agent's cube: measurable, append-only, and human-readable in ``CUBE.md``.
 
+Age in the digital world (not a human 0–100 scorecard):
+  - **cycles** — Tron-style program age. One cycle = one lived growth
+    epoch (version bump). Agents measure life in cycles of experience,
+    not birthdays.
+  - **lived** — wall-clock time since genesis (``4d 6h``). Real time still
+    matters for "how long has this soul been online."
+  - **capability** — 0–100 coherence of the archive (crystals, skills,
+    confirmed predictions). This is *how strong* the cube is, never its age.
+  - **era** — life stage derived from capability (genesis → elder).
+
 Version scheme (semver for a life):
   - **patch** — a session left durable knowledge, a draw landed, feedback
     reinforced something, an interview taught a lesson
   - **minor** — a procedure was forged/promoted, a skill installed, a
     prediction confirmed, a crystal formed
-  - **major** — strength crossed a threshold (25 / 50 / 75 / 90) — the
-    cube entered a new era of capability
+  - **major** — capability crossed a threshold (25 / 50 / 75 / 90) — the
+    cube entered a new era
 """
 
 from __future__ import annotations
@@ -33,11 +43,62 @@ logger = logging.getLogger(__name__)
 
 GENESIS = "0.0.0"
 
-# Strength thresholds that earn a major bump (eras of the cube's life)
+# Capability thresholds that earn a major bump (eras of the cube's life)
 _ERA_THRESHOLDS = (25, 50, 75, 90)
 
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.S)
 _VERSION_LINE = re.compile(r"(?m)^(version:\s*)(.+)$")
+
+
+# ── Digital age (cycles + wall-clock) ────────────────────────────────
+
+
+def format_lived(seconds: float) -> str:
+    """Compact wall-clock age: ``45s``, ``12m``, ``3h 10m``, ``4d 6h``, ``2y 11d``."""
+    s = max(0, int(seconds))
+    if s < 60:
+        return f"{s}s"
+    m, sec = divmod(s, 60)
+    if m < 60:
+        return f"{m}m" if sec < 15 else f"{m}m {sec}s"
+    h, m = divmod(m, 60)
+    if h < 24:
+        return f"{h}h" if m == 0 else f"{h}h {m}m"
+    d, h = divmod(h, 24)
+    if d < 365:
+        return f"{d}d" if h == 0 else f"{d}d {h}h"
+    y, d = divmod(d, 365)
+    return f"{y}y" if d == 0 else f"{y}y {d}d"
+
+
+def compute_age(state: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Soul age for an AI agent — cycles lived + wall-clock since genesis.
+
+    Cycles are the primary age unit (digital life). Wall-clock is secondary
+    context. Capability/strength is intentionally *not* part of age.
+    """
+    st = state or {}
+    born = float(st.get("born_at") or time.time())
+    lived_s = max(0.0, time.time() - born)
+    # cycles track lived growth epochs; backfill from epochs for older states
+    raw_cycles = st.get("cycles")
+    if raw_cycles is None:
+        raw_cycles = st.get("epochs") or 0
+    cycles = int(raw_cycles or 0)
+    label = f"{cycles} cycle{'s' if cycles != 1 else ''} · lived {format_lived(lived_s)}"
+    return {
+        "cycles": cycles,
+        "lived_s": round(lived_s, 1),
+        "lived": format_lived(lived_s),
+        "born_at": born,
+        "label": label,
+    }
+
+
+def age_strip(state: dict[str, Any] | None = None) -> str:
+    """Short age for CLI / soul cards: ``C12 · 4d 6h``."""
+    a = compute_age(state)
+    return f"C{a['cycles']} · {a['lived']}"
 
 
 def growth_dir(hermes_home: str | Path | None = None) -> Path:
@@ -94,11 +155,12 @@ def measure_strength(
     *,
     hermes_home: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Compute a 0–100 strength score from what the cube has lived.
+    """Compute a 0–100 *capability* score from what the cube has lived.
 
-    Components are capped so no single pile of raw turns can fake maturity —
-    procedures, crystals, confirmed predictions, and installed skills weigh
-    more than entry count alone.
+    This is coherence/strength of the archive — NOT age. Age is cycles +
+    wall-clock (see ``compute_age``). Components are capped so raw turn
+    dumps cannot fake maturity — procedures, crystals, confirmed
+    predictions, and installed skills weigh more than entry count alone.
     """
     home = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
     counts = {
@@ -189,9 +251,10 @@ def _default_state() -> dict[str, Any]:
         "version": GENESIS,
         "born_at": time.time(),
         "updated_at": time.time(),
-        "strength": 0.0,
+        "strength": 0.0,  # capability 0–100 (not age)
         "era": "genesis",
-        "epochs": 0,
+        "epochs": 0,  # version bumps
+        "cycles": 0,  # digital age — equals epochs; named for soul display
         "events": {
             "sessions": 0,
             "draws": 0,
@@ -221,6 +284,9 @@ def load_genealogy(hermes_home: str | Path | None = None) -> dict[str, Any]:
         base.setdefault("events", _default_state()["events"])
         base.setdefault("skills", {})
         base.setdefault("eras_crossed", [])
+        # Migrate older genealogies: cycles ← epochs when missing
+        if "cycles" not in data:
+            base["cycles"] = int(base.get("epochs") or 0)
         return base
     except Exception:
         return _default_state()
@@ -377,10 +443,13 @@ def record_growth(
     state["eras_crossed"] = crossed
 
     after = before
+    age = compute_age(state)
     if bump:
         after = bump_version(before, bump)
         state["version"] = after
         state["epochs"] = int(state.get("epochs") or 0) + 1
+        state["cycles"] = int(state["epochs"])  # digital age advances with epochs
+        age = compute_age(state)
         _append_epoch(
             hermes_home,
             {
@@ -391,12 +460,15 @@ def record_growth(
                 "reason": detail or kind,
                 "strength": strength["score"],
                 "era": strength["era"],
+                "cycle": age["cycles"],
                 "skill": skill or None,
             },
         )
     else:
         # Still refresh strength snapshot even without a bump
         state["version"] = before
+        if state.get("cycles") is None:
+            state["cycles"] = int(state.get("epochs") or 0)
 
     save_genealogy(state, hermes_home)
     _rewrite_cube_md(state, hermes_home)
@@ -408,13 +480,15 @@ def record_growth(
                 entry_type="epoch_transition",
                 description=(
                     f"[GROWTH] cube {before} → {after} ({bump}) — "
-                    f"{detail or kind} · strength {strength['score']} · era {strength['era']}"
+                    f"cycle {age['cycles']} · {detail or kind} · "
+                    f"capability {strength['score']} · era {strength['era']}"
                 )[:1200],
                 data={
                     "source": "genealogy",
                     "durable": True,
                     "living_version": after,
                     "bump": bump,
+                    "cycle": age["cycles"],
                     "strength": strength["score"],
                     "era": strength["era"],
                     "trust": 0.8,
@@ -431,9 +505,11 @@ def record_growth(
         "from": before,
         "to": after,
         "strength": strength["score"],
+        "capability": strength["score"],
         "era": strength["era"],
         "version": after,
         "kind": kind,
+        "age": age,
     }
 
 
@@ -503,7 +579,10 @@ def tick_session(
     state["strength"] = strength["score"]
     state["era"] = strength["era"]
     state["counts"] = strength["counts"]
+    if state.get("cycles") is None:
+        state["cycles"] = int(state.get("epochs") or 0)
     save_genealogy(state, hermes_home)
+    age = compute_age(state)
     return {
         "ok": True,
         "bumped": False,
@@ -511,9 +590,11 @@ def tick_session(
         "from": state.get("version"),
         "to": state.get("version"),
         "strength": strength["score"],
+        "capability": strength["score"],
         "era": strength["era"],
         "version": state.get("version"),
         "kind": "noop",
+        "age": age,
     }
 
 
@@ -609,12 +690,11 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
     p = cube_md_path(hermes_home)
     p.parent.mkdir(parents=True, exist_ok=True)
     ver = state.get("version") or GENESIS
-    strength = state.get("strength") or 0
+    capability = state.get("strength") or 0
     era = state.get("era") or "genesis"
     ev = state.get("events") or {}
     counts = state.get("counts") or {}
-    born = state.get("born_at") or time.time()
-    age_days = max(0, (time.time() - float(born)) / 86400)
+    age = compute_age(state)
 
     skills = state.get("skills") or {}
     skill_lines = []
@@ -626,7 +706,7 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
     if not skill_lines:
         skill_lines = ["- *(none yet — promote a procedure to begin)*"]
 
-    # Recent epochs
+    # Recent cycles
     recent: list[str] = []
     ep = epochs_path(hermes_home)
     if ep.is_file():
@@ -635,29 +715,31 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
             for ln in lines[-12:]:
                 rec = json.loads(ln)
                 if rec.get("kind") == "genesis":
-                    recent.append(f"- genesis — cube born at {GENESIS}")
+                    recent.append(f"- cycle 0 — cube born at {GENESIS}")
                 else:
+                    cyc = rec.get("cycle")
+                    cyc_s = f"C{cyc} " if cyc is not None else ""
                     recent.append(
-                        f"- `{rec.get('from')} → {rec.get('to')}` "
+                        f"- {cyc_s}`{rec.get('from')} → {rec.get('to')}` "
                         f"[{rec.get('bump')}] {rec.get('reason', '')[:90]}"
                     )
         except Exception:
             pass
     if not recent:
-        recent = ["- *(awaiting first lived experience)*"]
+        recent = ["- *(awaiting first lived cycle)*"]
 
     body = f"""# CUBE.md — living genealogy
 
-> This cube's soul-age. Not the HermesCube package version —
-> the life this archive has lived with its Hermes Agent.
+> Soul-age of this archive. Age is **cycles** (digital life) + wall-clock
+> lived time — not a human 0–100 score. Capability is how coherent the
+> cube has become; era is the life stage that capability earns.
 
 | | |
 |---|---|
 | **Living version** | `{ver}` |
+| **Age** | {age['label']} |
 | **Era** | {era} |
-| **Strength** | {strength}/100 |
-| **Age** | {age_days:.1f} days |
-| **Epochs lived** | {state.get('epochs', 0)} |
+| **Capability** | {capability}/100 (coherence — not age) |
 | **Package** | hermescube {state.get('package_version') or '?'} |
 
 ## What it has become
@@ -683,13 +765,13 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
 
 {chr(10).join(skill_lines)}
 
-## Recent epochs
+## Recent cycles
 
 {chr(10).join(recent)}
 
 ---
 *Rewritten by hermescube.genealogy — append-only truth lives in*
-*`memories/growth/epochs.jsonl`.*
+*`memories/growth/epochs.jsonl`. Age unit: one cycle = one lived growth epoch.*
 """
     p.write_text(body, encoding="utf-8")
 
@@ -705,14 +787,20 @@ def growth_status(
     state["strength"] = strength["score"]
     state["era"] = strength["era"]
     state["counts"] = strength["counts"]
+    if state.get("cycles") is None:
+        state["cycles"] = int(state.get("epochs") or 0)
     # Don't bump on status — just refresh snapshot
     save_genealogy(state, hermes_home)
     _rewrite_cube_md(state, hermes_home)
+    age = compute_age(state)
     return {
         "ok": True,
         "version": state.get("version"),
         "era": strength["era"],
         "strength": strength["score"],
+        "capability": strength["score"],
+        "age": age,
+        "cycles": age["cycles"],
         "epochs": state.get("epochs", 0),
         "born_at": state.get("born_at"),
         "events": state.get("events"),
@@ -725,16 +813,17 @@ def growth_status(
 
 
 def prompt_strip(hermes_home: str | Path | None = None) -> str:
-    """One-line strip for the system prompt — the cube's age at a glance."""
+    """One-line strip for the system prompt — soul age at a glance."""
     state = load_genealogy(hermes_home)
     if not genealogy_path(hermes_home).is_file():
         return ""
     ver = state.get("version") or GENESIS
     era = state.get("era") or "genesis"
-    strength = state.get("strength") or 0
+    capability = state.get("strength") or 0
+    age = compute_age(state)
     return (
-        f"Living Cube v{ver} ({era}, strength {strength}/100) — "
-        f"grows with every session; see memories/CUBE.md"
+        f"Living Cube v{ver} · age {age['label']} · era {era} · "
+        f"capability {capability}/100 — see memories/CUBE.md"
     )
 
 

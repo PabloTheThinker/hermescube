@@ -10,8 +10,11 @@ from pathlib import Path
 from hermescube.cube import CubeFile
 from hermescube.genealogy import (
     GENESIS,
+    age_strip,
     bump_version,
+    compute_age,
     ensure_genesis,
+    format_lived,
     growth_status,
     list_epochs,
     load_genealogy,
@@ -30,6 +33,40 @@ class TestVersionMath:
         assert bump_version("0.0.0", "patch") == "0.0.1"
         assert bump_version("0.0.9", "minor") == "0.1.0"
         assert bump_version("0.3.5", "major") == "1.0.0"
+
+
+class TestDigitalAge:
+    def test_format_lived(self):
+        assert format_lived(45) == "45s"
+        assert format_lived(125) == "2m"          # seconds omitted under 15s remainder
+        assert format_lived(140) == "2m 20s"
+        assert format_lived(3600) == "1h"
+        assert format_lived(90000) == "1d 1h"
+
+    def test_age_is_cycles_not_capability(self):
+        with tempfile.TemporaryDirectory() as td:
+            ensure_genesis(td)
+            r = record_growth(td, "draw", detail="first lesson")
+            assert r["age"]["cycles"] == 1
+            assert "cycle" in r["age"]["label"]
+            assert "lived" in r["age"]["label"]
+            # capability exists separately — must not be the age label
+            assert "/100" not in r["age"]["label"]
+            s = growth_status(td)
+            assert s["age"]["cycles"] == 1
+            assert s["capability"] == s["strength"]
+            assert age_strip(load_genealogy(td)).startswith("C1")
+
+    def test_prompt_strip_shows_cycles_and_capability(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = CubeMemoryProvider()
+            p.initialize(session_id="s1", hermes_home=td)
+            strip = p.system_prompt_block()
+            assert "Living Cube v0.0.0" in strip
+            assert "age 0 cycles" in strip
+            assert "capability" in strip
+            assert "strength" not in strip.lower() or "capability" in strip
+            p.shutdown()
 
 
 class TestGenesisAndGrowth:
@@ -149,8 +186,10 @@ class TestProviderIntegration:
             p.initialize(session_id="s1", hermes_home=td, agent_identity="coder")
             g = growth_status(td, cube=p._cube)
             assert g["version"] == "0.0.0"
+            assert g["age"]["cycles"] == 0
             strip = p.system_prompt_block()
             assert "Living Cube v0.0.0" in strip
+            assert "age 0 cycles" in strip
             p.shutdown()
 
     def test_manage_growth_status(self):

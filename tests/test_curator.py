@@ -97,6 +97,8 @@ class TestSoulCardGrowth:
                 list(cube.read_l1()), agent_id="coder", hermes_home=td
             )
             assert card["growth"]["version"] == "0.0.1"
+            assert card["growth"]["cycles"] == 1
+            assert card["growth"]["age"]["cycles"] == 1
             assert "era" in card["growth"]
             cube.close()
 
