@@ -13,9 +13,18 @@ from hermescube.colony import ColonyGraph
 from hermescube import mirror
 
 
-def test_paths_profile():
+def test_paths_default_uses_hermes_home_root():
+    """Hermes already scopes hermes_home — do not double-nest by identity."""
     p = resolve_cube_paths("/tmp/hh", agent_identity="coder")
     assert p.cube.name == "memory.cube"
+    assert str(p.cube) == "/tmp/hh/memories/memory.cube"
+    assert "profiles" not in str(p.memories_dir)
+
+
+def test_paths_optional_nest_profiles():
+    p = resolve_cube_paths(
+        "/tmp/hh", agent_identity="coder", nest_profiles=True
+    )
     assert "profiles" in str(p.memories_dir)
     assert "coder" in str(p.memories_dir)
 

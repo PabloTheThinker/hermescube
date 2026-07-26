@@ -52,7 +52,25 @@ def promote(
     *,
     hermes_home: str | Path | None = None,
     cube: Any = None,
+    install_to_skills: bool = False,
+    overwrite: bool = False,
 ) -> dict[str, Any]:
+    """Approve a procedure draft; optionally install into Hermes skills/.
+
+    Default remains review-only (approved/). ``install_to_skills=True`` is the
+    explicit bridge into Hermes-native ``skills/<name>/SKILL.md``.
+    """
+    if install_to_skills:
+        from hermescube.skill_bridge import promote_and_optionally_install
+
+        return promote_and_optionally_install(
+            name,
+            hermes_home=hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"),
+            cube=cube,
+            install_to_skills=True,
+            overwrite=overwrite,
+        )
+
     root = procedures_root(hermes_home)
     src = root / _safe_name(name)
     if not src.is_file():
@@ -73,7 +91,11 @@ def promote(
         "ok": True,
         "action": "promoted",
         "path": str(dest),
-        "note": "Approved draft only — not installed into Hermes skills. Use skill_manage if you want a live skill.",
+        "installed": False,
+        "note": (
+            "Approved draft only — not installed into Hermes skills. "
+            "Pass install_to_skills=true (or skill_manage) for a live skill."
+        ),
     }
     if cube is not None:
         try:
@@ -86,6 +108,7 @@ def promote(
                     "approved_path": str(dest),
                     "trust": 0.85,
                     "durable": True,
+                    "verification": "user_authored",
                 },
                 outcome="success",
             )
@@ -102,6 +125,7 @@ def promote(
                     "action": "promote",
                     "name": src.name,
                     "path": str(dest),
+                    "install_to_skills": False,
                 }
             )
             + "\n"

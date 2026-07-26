@@ -1,6 +1,6 @@
 name: hermescube
 manifest_version: 1
-version: "0.20.0"
+version: "0.21.0"
 description: >-
   Local holographic .cube memory for Hermes Agent — living archive with
   HAR retrieval, engram neural network, wisdom crystallization, journey
@@ -10,7 +10,7 @@ description: >-
 author: PabloTheThinker
 license: MIT
 homepage: https://github.com/PabloTheThinker/hermescube
-platforms: [linux, macos, windows]
+platforms: [linux, macos]
 
 requires:
   python: ">=3.11"

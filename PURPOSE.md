@@ -6,18 +6,25 @@
 
 Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud memory leaks and costs, flat logs don't retrieve by meaning under load.
 
-## Solution (layered — Hermes 0.19 contract)
+## Solution (layered — Hermes 0.19+ contract)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Hermes Agent                                            │
+│  state.db                canonical sessions / tools     │
 │  MEMORY.md / USER.md     short doctrine (always-on)     │
+│  Skills                  executable procedures          │
 │  memory tool batch       atomic hot writes              │
 │  MemoryProvider socket   ONE external plugin            │
-│       └── HermesCube     warehouse .cube + tools        │
+│       └── HermesCube     living warehouse + tools       │
 │  Hermespace (optional)   FOA desk; cube strip under load│
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Living Cube (0.21+):** Hermes is the active nervous system; HermesCube is
+the durable lifetime structure — immutable events → temporal claims →
+verified procedures, with subagent branches and branched consolidation.
+Compression never erases provenance.
 
 | Layer | Job | Cube relation |
 |-------|-----|----------------|

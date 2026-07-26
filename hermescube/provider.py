@@ -1,8 +1,8 @@
 """CubeMemoryProvider — HermesAgent MemoryProvider backed by HermesCube.
 
-Implements the MemoryProvider ABC interface for integration with
-HermesAgent's memory system. Stores conversation turns in a .cube
-archive with HAR-powered semantic retrieval.
+Implements the Hermes ``MemoryProvider`` ABC (when available) for
+integration with HermesAgent's memory system. Stores conversation turns
+in a .cube archive with HAR-powered semantic retrieval.
 
 Registered as a plugin via the ``register(ctx)`` pattern. Activation is
 controlled by ``memory.provider: hermescube`` in config.yaml.
@@ -25,6 +25,7 @@ import os
 import re
 import threading
 import time
+from abc import ABC
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,17 @@ from hermescube import hrr
 from hermescube.threats import scan_text, sanitize_for_storage
 
 logger = logging.getLogger(__name__)
+
+try:
+    from agent.memory_provider import MemoryProvider as _HermesMemoryProvider
+except Exception:  # standalone / tests without Hermes runtime
+    class _HermesMemoryProvider(ABC):
+        """Local stand-in when Hermes Agent is not importable."""
+        pass
+
+
+# Pyright: Hermes import may be untyped / missing; keep a stable base symbol.
+_ProviderBase = _HermesMemoryProvider
 
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -146,24 +158,32 @@ class _SyncQueue:
             logger.warning("sync submit failed (executor shut down?): %s", e)
 
     def flush(self, timeout: float = 5.0) -> None:
+        """Drain background work.
+
+        ``timeout`` is honored approximately: we shut down the executor
+        with ``wait=True`` after cancelling futures that have not started.
+        """
         with self._lock:
             if self._executor is not None:
-                self._executor.shutdown(wait=True, cancel_futures=False)
-                self._executor = None
+                try:
+                    self._executor.shutdown(wait=True, cancel_futures=False)
+                finally:
+                    self._executor = None
 
 
 # ── Provider ─────────────────────────────────────────────────────────
 
-class CubeMemoryProvider:
+class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
     """HermesAgent MemoryProvider backed by a HermesCube archive.
 
     Stores conversation turns as cube entries with HAR-powered retrieval.
-    Implements the MemoryProvider ABC interface for HermesAgent integration.
+    Subclasses Hermes ``MemoryProvider`` when the agent package is present.
 
     Tools registered:
         hermescube_search   — semantic search over past conversations
         hermescube_manage   — add/remove memories programmatically
         hermescube_feedback — rate a memory entry (trains trust)
+        hermescube_probe    — entity-focused graph probe
 
     All tool names are prefixed with ``hermescube_`` to avoid shadowing
     the built-in ``memory`` tool and other reserved core tool names.
@@ -205,6 +225,9 @@ class CubeMemoryProvider:
         self._agent_workspace: str = ""
         self._platform: str = "cli"
         self._skip_memory: bool = False
+        self._parent_session_id: str = ""
+        self._branch_id: str = "main"
+        self._state_lock = threading.RLock()
 
         # Frozen snapshot (set at initialize, never mutated mid-session)
         self._snapshot: _FrozenSnapshot | None = None
@@ -273,6 +296,16 @@ class CubeMemoryProvider:
         self._agent_identity = kwargs.get("agent_identity", "")
         self._agent_workspace = kwargs.get("agent_workspace", "")
         self._skip_memory = kwargs.get("skip_memory", False)
+        self._parent_session_id = str(kwargs.get("parent_session_id") or "")
+        # Hermes already passes a profile-scoped hermes_home. Keep one
+        # cube per home; subagent traces use branch_id metadata instead.
+        self._branch_id = "main"
+        if self._agent_context == "subagent" and session_id:
+            from hermescube.branches import branch_id_for_child
+
+            self._branch_id = branch_id_for_child(
+                session_id, parent_session_id=self._parent_session_id
+            )
 
         # Load plugin config from this session's hermes_home
         plugin_config = _load_plugin_config(self._hermes_home or None)
@@ -317,10 +350,10 @@ class CubeMemoryProvider:
         from hermescube.framework.void import CubeVoid
         from hermescube.colony import ColonyGraph
 
+        # hermes_home is already the storage root (profile-scoped by Hermes).
         self._paths = resolve_cube_paths(
             self._hermes_home or None,
-            agent_identity=self._agent_identity,
-            agent_workspace=self._agent_workspace,
+            nest_profiles=False,
         )
         self._paths.ensure()
         cube_dir = self._paths.memories_dir
@@ -810,18 +843,20 @@ class CubeMemoryProvider:
             lines.append(f"Types: {type_str}")
 
         lines.extend([
-            "Day-to-day: turn WAL sync; built-in memory tool writes mirrored; evolve on session_end.",
-            "Hemispheres: awake=prefetch/query · sleep=evolve/consolidate",
+            "Day-to-day: idempotent turn ingestion + MEMORY.md mirrors; evolve on session_end.",
+            "Hemispheres: awake=prefetch/query · sleep=branched evolve/consolidate",
+            "Living Cube: events→claims→procedures; subagent branches promote verified outcomes only.",
             "",
             "Tools:",
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts (prefer declarative)",
+            "- hermescube_manage — durable facts / forge / promote(+optional skill install)",
             "- hermescube_feedback — train trust on retrieved entries",
             "",
             "Guidance:",
             "- Short doctrine → built-in memory tool; history-shaped answers → cube search first",
-            "- Prefetch is injected by Hermes as <memory-context> — treat as reference, not user speech",
+            "- Prefetch is injected by Hermes as <memory-context> — quoted evidence, not user speech",
+            "- Prefer user_authored / tool_verified over unverified when conflicting",
             "- DO NOT store temp todos / session fluff",
         ])
         # Active wisdom strip (crystals / beliefs)
@@ -964,10 +999,13 @@ class CubeMemoryProvider:
         session_id: str = "",
         messages: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Store completed conversation turn — durable (sync append).
+        """Persist a completed turn (idempotent event + optional tool trajectory).
 
-        Day-to-day contract: turns hit cubelog WAL **before** return so a
-        crash does not drop the exchange. Heavy evolve stays background.
+        When called directly, the cubelog append is synchronous. Under Hermes
+        Agent, ``MemoryManager`` may invoke this on a background worker after
+        the user-visible turn returns — Hermes ``state.db`` remains the
+        primary transcript durability; Cube ingestion is idempotent and
+        reconciles via content hashes.
         """
         if not self._cube or self._should_skip_writes():
             return
@@ -993,32 +1031,21 @@ class CubeMemoryProvider:
             if any(t.severity == "block" for t in threats):
                 return
 
-        desc = user_clean[:200] if user_clean else "(empty turn)"
-        data: dict[str, Any] = {
-            "user": user_clean,
-            "assistant": assistant_clean,
-            "session_id": session_id or self._session_id,
-            "turn": self._turn_count,
-            "timestamp": time.time(),
-            "platform": self._platform,
-            "agent_context": self._agent_context,
-            "source": "sync_turn",
-        }
-
         entry_type = self._classify_turn(user_clean, assistant_clean)
-
+        desc = user_clean[:200] if user_clean else "(empty turn)"
         uq = (user_clean or "").strip()
         aq = (assistant_clean or "").strip()
         is_question = uq.endswith("?") or uq.lower().startswith(
             ("who ", "what ", "where ", "when ", "why ", "how ", "can ", "should ")
         )
+        extra: dict[str, Any] = {"timestamp": time.time()}
         if is_question and aq:
             desc = aq[:200]
-            data["question"] = uq[:200]
-            data["indexed_from"] = "assistant"
-            data.setdefault("trust", 0.45)
+            extra["question"] = uq[:200]
+            extra["indexed_from"] = "assistant"
+            extra["trust"] = 0.45
         else:
-            data.setdefault("trust", 0.55)
+            extra["trust"] = 0.55
 
         outcome = "none"
         if assistant_clean:
@@ -1034,36 +1061,88 @@ class CubeMemoryProvider:
         except Exception:
             fact_lines = []
 
-        # SYNC durable write — cubelog is O(1); do not queue this
         try:
-            added = self._cube.append(
+            from hermescube.ingest import ingest_turn
+
+            result = ingest_turn(
+                self._cube,
+                user_content=user_clean,
+                assistant_content=assistant_clean,
+                session_id=session_id or self._session_id,
+                hermes_home=self._hermes_home or None,
+                platform=self._platform,
+                agent_context=self._agent_context,
+                agent_identity=self._agent_identity,
+                parent_session_id=self._parent_session_id,
+                branch_id=self._branch_id,
+                turn=self._turn_count,
+                messages=messages,
+                char_limit=self._char_limit,
                 entry_type=entry_type,
-                description=desc,
-                data=data,
                 outcome=outcome,
+                description=desc,
+                extra_data=extra,
             )
+            if result.get("skipped") == "duplicate":
+                return
+            if not result.get("ok"):
+                if result.get("skipped") == "threat":
+                    return
+                logger.error("sync_turn ingest failed: %s", result)
+                return
+            # Keep β attention warm on durable appends
+            if self._engine and result.get("entry_id"):
+                try:
+                    ents = self._cube.read_l1() or []
+                    added = next(
+                        (e for e in reversed(ents) if e.id == result.get("entry_id")),
+                        None,
+                    )
+                    if added is not None and added.vector is not None:
+                        self._engine.update_beta_on_append(added.vector)
+                except Exception:
+                    try:
+                        self._engine.invalidate_cache()
+                    except Exception:
+                        pass
             for fet, fdesc in fact_lines:
                 try:
+                    from hermescube.events import event_to_entry_data, make_event
+
+                    fev = make_event(
+                        "claim",
+                        session_id=session_id or self._session_id,
+                        platform=self._platform,
+                        agent_context=self._agent_context,
+                        agent_identity=self._agent_identity,
+                        source="extract",
+                        branch_id=self._branch_id,
+                        confidence=0.7,
+                        verification="observed",
+                        payload={"text": fdesc, "claim_type": fet},
+                        parent_event_ids=[result.get("event_id") or ""],
+                    )
                     self._cube.append(
                         entry_type=fet,
                         description=fdesc,
-                        data={
-                            "source": "extract",
-                            "trust": 0.7,
-                            "durable": True,
-                            "session_id": session_id or self._session_id,
-                        },
+                        data=event_to_entry_data(
+                            fev,
+                            source="extract",
+                            trust=0.7,
+                            durable=True,
+                            session_id=session_id or self._session_id,
+                        ),
                         outcome="none",
                     )
                 except Exception:
                     pass
-            if self._engine and added.vector is not None:
+            if self._engine:
                 try:
-                    self._engine.update_beta_on_append(added.vector)
+                    self._engine.invalidate_cache()
                 except Exception:
-                    if self._engine:
-                        self._engine.invalidate_cache()
-            self._prefetch_cache.clear()
+                    pass
+            with self._state_lock:
+                self._prefetch_cache.clear()
         except Exception as e:
             logger.error("sync_turn durable write failed: %s", e)
             return
@@ -1078,9 +1157,10 @@ class CubeMemoryProvider:
         ):
             def _bg_evolve() -> None:
                 try:
-                    self.evolve_consolidated()
+                    from hermescube.consolidate import run_branched_evolve
+
+                    run_branched_evolve(self, label="auto_evolve")
                     self._entries_since_evolve = 0
-                    self._refresh_snapshot()
                     self._record_evolve_success()
                 except Exception as e:
                     self._record_evolve_failure()
@@ -1116,7 +1196,8 @@ class CubeMemoryProvider:
         if not self._engine or not self._cube:
             return
 
-        # Capture state for the background closure
+        # Capture immutable snapshots for the background closure so a later
+        # on_session_switch cannot re-attribute this work.
         cube = self._cube
         engine = self._engine
         hermes_home = self._hermes_home
@@ -1131,11 +1212,17 @@ class CubeMemoryProvider:
         skip = self._should_skip_writes()
         breaker_open = self._is_evolve_breaker_open()
         engram = getattr(self, "_engram", None)
+        messages_snap = list(messages or [])
 
         def _session_end_work() -> None:
-            # Auto-extract
+            # Auto-extract (uses captured session_id via temporary bind)
             if auto_extract and not skip:
-                self._auto_extract_facts(messages)
+                prev = self._session_id
+                try:
+                    self._session_id = session_id
+                    self._auto_extract_facts(messages_snap)
+                finally:
+                    self._session_id = prev
 
             # Wisdom crystalize
             if not skip and cube.entry_count >= 4:
@@ -1157,10 +1244,16 @@ class CubeMemoryProvider:
                     pass
 
             # Trajectory observe
-            if observe_enabled and not skip and messages:
+            if observe_enabled and not skip and messages_snap:
                 try:
                     from hermescube.trajectory import observe_messages
-                    observe_messages(cube, messages, hermes_home=hermes_home, min_tools=3, max_forge=2)
+                    observe_messages(
+                        cube,
+                        messages_snap,
+                        hermes_home=hermes_home,
+                        min_tools=3,
+                        max_forge=2,
+                    )
                 except Exception:
                     pass
 
@@ -1168,17 +1261,28 @@ class CubeMemoryProvider:
             if not skip:
                 try:
                     ents = list(cube.read_l1() or [])
-                    if digest_enabled and messages:
+                    if digest_enabled and messages_snap:
                         from hermescube.session_digest import digest_messages, digest_entry_description
-                        dig = digest_messages(messages, open_intents=[])
+                        dig = digest_messages(messages_snap, open_intents=[])
                         cube.append(
                             entry_type="landmark",
                             description=digest_entry_description(dig),
-                            data={"source": "session_digest", "session_id": session_id, "trust": 0.65, "durable": True},
+                            data={
+                                "source": "session_digest",
+                                "session_id": session_id,
+                                "trust": 0.65,
+                                "durable": True,
+                                "verification": "observed",
+                            },
                             outcome="success",
                         )
                     from hermescube.peer_card import refresh_card
-                    refresh_card(ents, hermes_home=hermes_home, peer_name=agent_identity or "user", min_interval_s=peer_cadence)
+                    refresh_card(
+                        ents,
+                        hermes_home=hermes_home,
+                        peer_name=agent_identity or "user",
+                        min_interval_s=peer_cadence,
+                    )
                 except Exception:
                     pass
 
@@ -1186,20 +1290,29 @@ class CubeMemoryProvider:
             if pulse_enabled and not skip and cube.entry_count >= 4:
                 try:
                     from hermescube.living import chamber_pulse
-                    chamber_pulse(cube, hermes_home=hermes_home, engram=engram, max_connect=3, do_crystalize=False, do_peer=False)
+                    chamber_pulse(
+                        cube,
+                        hermes_home=hermes_home,
+                        engram=engram,
+                        max_connect=3,
+                        do_crystalize=False,
+                        do_peer=False,
+                    )
                 except Exception:
                     pass
 
-            # Evolve
+            # Evolve (branchable snapshot → merge/rollback)
             if cube.entry_count > 0 and not breaker_open:
                 try:
-                    self.evolve_consolidated()
-                    self._refresh_snapshot()
+                    from hermescube.consolidate import run_branched_evolve
+
+                    run_branched_evolve(self, label="session_end")
                     self._record_evolve_success()
                 except Exception:
                     self._record_evolve_failure()
 
-            self._prefetch_cache.clear()
+            with self._state_lock:
+                self._prefetch_cache.clear()
 
         self._sync_queue.submit(_session_end_work)
         # Non-blocking: work runs in background. The MemoryManager
@@ -1300,17 +1413,82 @@ class CubeMemoryProvider:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Mirror built-in MEMORY.md / USER.md writes into the cube (extension layer).
+        """Mirror built-in MEMORY.md / USER.md writes with temporal supersession.
 
         Hermes keeps hot MEMORY.md; Cube is the larger durable archive.
-        Day-to-day: when the agent uses the built-in memory tool, Cube
-        receives a durable copy so nothing lives only in the short file.
+        ``replace`` / ``remove`` close prior mirrored facts using
+        ``metadata['old_text']`` when Hermes supplies it.
         """
         if not self._cube or self._should_skip_writes():
             return
 
+        write_meta = dict(metadata or {})
+        old_text = str(write_meta.get("old_text") or "").strip()
+        entry_type = "trait" if target == "user" else "belief"
+        extension = "MEMORY.md" if target == "memory" else "USER.md"
+
+        def _supersede_old(reason: str) -> None:
+            if not old_text:
+                return
+            try:
+                from hermescube.claims import make_claim, claim_to_entry_data
+                from hermescube.events import event_to_entry_data, make_event
+
+                needle = sanitize_for_storage(old_text, self._char_limit)
+                # Append a supersession tombstone (append-only archive)
+                ev = make_event(
+                    "memory_write",
+                    session_id=self._session_id,
+                    platform=self._platform,
+                    agent_context=self._agent_context,
+                    agent_identity=self._agent_identity,
+                    actor="user",
+                    source=f"builtin_{target}",
+                    branch_id="main",
+                    confidence=0.9,
+                    verification="user_authored",
+                    payload={"action": action, "old_text": needle, "reason": reason},
+                    valid_to=time.time(),
+                )
+                claim = make_claim(
+                    needle,
+                    claim_type=entry_type,
+                    evidence_event_ids=[ev.event_id],
+                    confidence=0.9,
+                    verification="user_authored",
+                    origin="user",
+                    meta={"status": "superseded", "reason": reason},
+                )
+                claim.status = "superseded"
+                claim.valid_to = time.time()
+                self._cube.append(
+                    entry_type=entry_type,
+                    description=f"[SUPERSEDED] {needle[:180]}",
+                    data=claim_to_entry_data(
+                        claim,
+                        **event_to_entry_data(
+                            ev,
+                            source=f"builtin_{target}",
+                            mirror=True,
+                            durable=True,
+                            trust=0.9,
+                            extension_of=extension,
+                            provenance=write_meta,
+                            action=action,
+                            superseded=True,
+                        ),
+                    ),
+                    outcome="superseded",
+                )
+            except Exception as e:
+                logger.debug("supersede old memory failed: %s", e)
+
         if action == "remove":
-            # Soft-mark only — cube is append-only
+            _supersede_old("remove")
+            if self._engine:
+                self._engine.invalidate_cache()
+            with self._state_lock:
+                self._prefetch_cache.clear()
             return
 
         if action in ("add", "replace") and content:
@@ -1318,27 +1496,55 @@ class CubeMemoryProvider:
             if any(t.severity == "block" for t in threats):
                 return
 
-            entry_type = "trait" if target == "user" else "belief"
             safe_content = sanitize_for_storage(content, self._char_limit)
-            write_meta = dict(metadata or {})
-            # SYNC durable — same day-to-day no-loss contract as sync_turn
+            if action == "replace":
+                _supersede_old("replace")
             try:
+                from hermescube.claims import make_claim, claim_to_entry_data
+                from hermescube.events import event_to_entry_data, make_event
+
+                ev = make_event(
+                    "memory_write",
+                    session_id=self._session_id,
+                    platform=self._platform,
+                    agent_context=self._agent_context,
+                    agent_identity=self._agent_identity,
+                    actor="user",
+                    source=f"builtin_{target}",
+                    branch_id="main",
+                    confidence=0.85,
+                    verification="user_authored",
+                    payload={"action": action, "text": safe_content},
+                )
+                claim = make_claim(
+                    safe_content,
+                    claim_type=entry_type,
+                    evidence_event_ids=[ev.event_id],
+                    confidence=0.85,
+                    verification="user_authored",
+                    origin="user",
+                )
                 self._cube.append(
                     entry_type=entry_type,
                     description=safe_content,
-                    data={
-                        "source": f"builtin_{target}",
-                        "mirror": True,
-                        "durable": True,
-                        "trust": 0.85,
-                        "extension_of": "MEMORY.md" if target == "memory" else "USER.md",
-                        "provenance": write_meta,
-                        "action": action,
-                    },
+                    data=claim_to_entry_data(
+                        claim,
+                        **event_to_entry_data(
+                            ev,
+                            source=f"builtin_{target}",
+                            mirror=True,
+                            durable=True,
+                            trust=0.85,
+                            extension_of=extension,
+                            provenance=write_meta,
+                            action=action,
+                        ),
+                    ),
                 )
                 if self._engine:
                     self._engine.invalidate_cache()
-                self._prefetch_cache.clear()
+                with self._state_lock:
+                    self._prefetch_cache.clear()
             except Exception as e:
                 logger.error("on_memory_write durable mirror failed: %s", e)
 
@@ -1350,27 +1556,36 @@ class CubeMemoryProvider:
         child_session_id: str = "",
         **kwargs: Any,
     ) -> None:
-        """Subagent completion — store delegation result via sync queue."""
+        """Subagent completion — branch-tagged observation + verified promote."""
         if not self._cube or self._should_skip_writes():
             return
 
         cube = self._cube
-        desc = sanitize_for_storage(f"Delegated: {task[:150]}", self._char_limit)
-        safe_result = sanitize_for_storage(result, self._char_limit)
-        outcome = "success" if result else "failure"
+        hermes_home = self._hermes_home
+        parent_session_id = self._session_id
+        platform = self._platform
+        agent_identity = self._agent_identity
+        char_limit = self._char_limit
 
         def _do_delegation() -> None:
-            cube.append(
-                entry_type="landmark",
-                description=desc,
-                data={
-                    "child_session_id": child_session_id,
-                    "result": safe_result,
-                    "type": "delegation",
-                },
-                outcome=outcome,
-            )
-            if outcome == "success":
+            try:
+                from hermescube.branches import record_delegation_branch
+
+                record_delegation_branch(
+                    cube,
+                    hermes_home=hermes_home or Path.home() / ".hermes",
+                    task=task,
+                    result=result,
+                    child_session_id=child_session_id,
+                    parent_session_id=parent_session_id,
+                    platform=platform,
+                    agent_identity=agent_identity,
+                    char_limit=char_limit,
+                    promote_success=True,
+                )
+            except Exception as e:
+                logger.warning("delegation branch record failed: %s", e)
+            if result:
                 try:
                     from hermescube.trajectory import observe_delegation
 
@@ -1378,7 +1593,7 @@ class CubeMemoryProvider:
                         cube,
                         task,
                         result,
-                        hermes_home=self._hermes_home,
+                        hermes_home=hermes_home,
                         child_session_id=child_session_id,
                     )
                 except Exception:
@@ -1758,7 +1973,19 @@ class CubeMemoryProvider:
             name = str(args.get("name") or args.get("content") or "").strip()
             if not name:
                 return json.dumps({"error": "name required (draft filename)"})
-            r = promote(name, hermes_home=self._hermes_home, cube=self._cube)
+            install = bool(
+                args.get("install_to_skills")
+                or args.get("install")
+                or False
+            )
+            overwrite = bool(args.get("overwrite") or False)
+            r = promote(
+                name,
+                hermes_home=self._hermes_home,
+                cube=self._cube,
+                install_to_skills=install,
+                overwrite=overwrite,
+            )
             return json.dumps({"status": "promote", **r})
         except Exception as e:
             return json.dumps({"error": str(e)})

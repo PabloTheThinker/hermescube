@@ -10,6 +10,9 @@ User data always lives under the **user's** Hermes home::
   $HERMES_HOME/memories/memory.cube
 
 Never under the git checkout / project folder.
+
+Package installation belongs to the plugin installer / ``install_hermes.sh``.
+``register()`` only ensures importability from the plugin tree.
 """
 
 from __future__ import annotations
@@ -30,41 +33,19 @@ def _ensure_import_path() -> None:
         sys.path.insert(0, root)
 
 
-def _ensure_package_installed() -> None:
-    """If hermescube isn't importable, pip-install this tree into the active env."""
-    _ensure_import_path()
-    try:
-        import hermescube  # noqa: F401
-        return
-    except ImportError:
-        pass
-    import subprocess
-
-    cmd = [
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "-e",
-        f"{_ROOT}[numpy]",
-        "-q",
-    ]
-    logger.info("HermesCube: installing package into active Python: %s", sys.executable)
-    try:
-        subprocess.check_call(cmd)
-    except Exception:
-        # numpy optional — try bare editable
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-e", str(_ROOT), "-q"]
-        )
-    _ensure_import_path()
-    import hermescube  # noqa: F401
-
-
 def register(ctx) -> None:
     """Register HermesCube as a MemoryProvider (Hermes plugin contract)."""
-    _ensure_package_installed()
-    from hermescube.provider import CubeMemoryProvider, _load_plugin_config, _coerce_bool
+    _ensure_import_path()
+    try:
+        from hermescube.provider import CubeMemoryProvider, _load_plugin_config
+    except ImportError as e:
+        logger.error(
+            "HermesCube package not importable (%s). "
+            "Run ./scripts/install_hermes.sh or: pip install -e \"%s[numpy]\"",
+            e,
+            _ROOT,
+        )
+        raise
 
     config = _load_plugin_config()
     auto = config.get("auto_extract", False)
@@ -77,5 +58,5 @@ def register(ctx) -> None:
     ctx.register_memory_provider(provider)
     logger.info(
         "HermesCube memory provider registered "
-        "(tools: hermescube_search, hermescube_manage, hermescube_feedback)"
+        "(tools: hermescube_search, hermescube_manage, hermescube_feedback, hermescube_probe)"
     )
