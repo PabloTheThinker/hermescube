@@ -575,6 +575,28 @@ def pilgrimage(
             hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
         )
 
+        # 5. GROWTH — pilgrimage experience advances the living cube version
+        try:
+            from hermescube.genealogy import tick_session
+
+            drew = int((report.get("draw") or {}).get("drawn") or 0)
+            ivs = report.get("interviews") or []
+            interviewed = (
+                sum(1 for x in ivs if isinstance(x, dict) and x.get("ok"))
+                if isinstance(ivs, list)
+                else 0
+            )
+            offered = int((report.get("offer") or {}).get("rows") or 0)
+            report["growth"] = tick_session(
+                home,
+                cube=cube,
+                durable_writes=offered,
+                drew=drew,
+                interviewed=interviewed,
+            )
+        except Exception as e:
+            report["growth"] = {"error": str(e)}
+
     _ledger_write(hive_root, {"action": "pilgrimage", "agent_id": agent_id})
     return report
 

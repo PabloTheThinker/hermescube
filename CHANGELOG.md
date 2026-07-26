@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0] - 2026-07-26
+
+### Living Cube Growth — from 0.0.0 to elder
+- **`genealogy.py`**: every cube is born at living version `0.0.0` (distinct from package version and binary format version). Experience advances it — patch for sessions/draws/interviews, minor for promotes/skill-installs/refines/crystals/confirmed predictions, major when strength crosses an era threshold (25 awakening / 50 formed / 75 seasoned / 90 elder)
+- **Strength score (0–100)**: weighted composite of durable memories, crystals, procedures, installed skills, hive draws, interviews, confirmed predictions, and mean trust — raw turn dumps cannot fake maturity
+- **`CUBE.md`**: human-readable growth diary under `$HERMES_HOME/memories/` (the cube's equivalent of Hermes Agent's visible learning story), rewritten each epoch; append-only truth in `memories/growth/epochs.jsonl`
+- **Skills evolve**: helpful feedback on a procedure/skill entry (or `hermescube growth refine`) bumps the skill's own `version:`, appends under `## Lessons from the cube` without rewriting the core body, and advances the cube's living version
+- **Wired throughout**: genesis on provider init; session-end tick; pilgrimage prints a growth line; promote / skill_bridge record epochs; system prompt carries `Living Cube vX.Y.Z (era, strength N/100)`
+- **CLI**: `hermescube growth status|epochs|refine`; `hermescube info` shows living version
+- **Agent tool**: `hermescube_manage action=growth content=status|epochs|refine:<skill>`
+- Docs: [docs/GROWTH.md](docs/GROWTH.md)
+
 ## [0.26.0] - 2026-07-26
 
 ### One system — deep integration of Hive, HQ, harness, and interviews

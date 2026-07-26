@@ -63,6 +63,14 @@ handoffs route, carry distilled evidence packets, and settle
 keep every fact attributed to the soul that lived it. `hive status` is
 the single pane: souls, collective, charters, handoffs, interviews.
 
+**Living growth (0.27+):** every cube is born at living version `0.0.0`
+and strengthens with experience — the same visible growth story Hermes
+Agent has for skills and MEMORY.md, but for the archive itself. Sessions,
+draws, interviews, promotions, skill installs, and confirmed predictions
+advance the version; helpful feedback *refines* installed skills in place
+(patch bump + lessons ledger); era thresholds (25/50/75/90 strength)
+earn major bumps. The diary is `memories/CUBE.md`. See [docs/GROWTH.md](docs/GROWTH.md).
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

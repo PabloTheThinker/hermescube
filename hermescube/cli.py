@@ -38,6 +38,24 @@ def cmd_info(args: argparse.Namespace) -> None:
               f"{info['l2_buckets']['non_empty']} non-empty")
         print(f"File size: {info['file_size']} bytes")
         print(f"Backend: {'numpy' if info['has_numpy'] else 'pure-python'}")
+        # Living genealogy (soul-age of this cube)
+        try:
+            from pathlib import Path
+
+            from hermescube.genealogy import growth_status
+
+            home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+            # Infer hermes_home from cube path when under memories/
+            cpath = Path(info["path"]).resolve()
+            if cpath.parent.name == "memories":
+                home = str(cpath.parent.parent)
+            g = growth_status(home, cube=cube)
+            print(f"\nLiving version: v{g.get('version')}  "
+                  f"({g.get('era')}, strength {g.get('strength')}/100)")
+            print(f"  epochs lived: {g.get('epochs')}  "
+                  f"diary: {g.get('cube_md')}")
+        except Exception as e:
+            print(f"\nLiving version: n/a ({e})")
         try:
             dens = cube.density_stats()
             print("\nDensity (archive packing):")
@@ -68,6 +86,78 @@ def cmd_info(args: argparse.Namespace) -> None:
                 print(f"  ! {issue}")
         except Exception as e:
             print(f"\nIntegrity: n/a ({e})")
+
+
+def cmd_growth(args: argparse.Namespace) -> int:
+    """Show / refine the living cube genealogy."""
+    from pathlib import Path
+
+    from hermescube import genealogy as gen
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cube = None
+    cube_path = Path(home) / "memories" / "memory.cube"
+    if cube_path.is_file():
+        try:
+            cube = CubeFile.open(str(cube_path))
+        except Exception:
+            cube = None
+    try:
+        cmd = args.growth_command
+        if cmd == "status":
+            s = gen.growth_status(home, cube=cube)
+            print(f"Living Cube v{s.get('version')}  — {s.get('era')}")
+            print(f"  strength:  {s.get('strength')}/100")
+            print(f"  epochs:    {s.get('epochs')}")
+            print(f"  diary:     {s.get('cube_md')}")
+            counts = s.get("counts") or {}
+            print(f"  durable={counts.get('durable', 0)}  "
+                  f"crystals={counts.get('crystals', 0)}  "
+                  f"procedures={counts.get('procedures', 0)}  "
+                  f"skills={counts.get('skills_installed', 0)}  "
+                  f"draws={counts.get('hive_draws', 0)}")
+            skills = s.get("skills") or {}
+            if skills:
+                print("  skills evolving:")
+                for name, meta in list(skills.items())[:12]:
+                    print(f"    · {name} v{meta.get('version')} "
+                          f"(refined {meta.get('refined', 0)}×)")
+            return 0
+        if cmd == "epochs":
+            for e in gen.list_epochs(home, limit=int(args.limit or 30)):
+                if e.get("kind") == "genesis":
+                    print(f"[genesis] → {e.get('to')}: {e.get('reason')}")
+                else:
+                    print(
+                        f"[{e.get('bump')}] {e.get('from')} → {e.get('to')}  "
+                        f"{e.get('reason', '')[:100]}"
+                    )
+            return 0
+        if cmd == "refine":
+            if not args.skill or not args.lesson:
+                print("Error: --skill and --lesson required", file=sys.stderr)
+                return 1
+            r = gen.refine_skill(home, args.skill, lesson=args.lesson, cube=cube)
+            if not r.get("ok"):
+                print(f"Error: {r.get('error')}", file=sys.stderr)
+                return 1
+            print(
+                f"Skill refined: {r.get('skill')} "
+                f"{r.get('from_version')} → {r.get('to_version')}"
+            )
+            g = (r.get("growth") or {})
+            if g.get("bumped"):
+                print(f"  cube: v{g.get('from')} → v{g.get('to')}  "
+                      f"(strength {g.get('strength')})")
+            return 0
+        print(f"Error: unknown growth command {cmd}", file=sys.stderr)
+        return 1
+    finally:
+        if cube is not None:
+            try:
+                cube.close()
+            except Exception:
+                pass
 
 
 def cmd_append(args: argparse.Namespace) -> None:
@@ -346,6 +436,24 @@ def main(argv: list[str] | None = None) -> int:
     p_hq.add_argument("--task", default="", help="For route: task text to route")
 
     # harness — grounded self-evolution (witness / critic / verifier / gardener)
+    p_growth = sub.add_parser(
+        "growth",
+        help="Living cube genealogy: status/epochs/refine (starts at 0.0.0)",
+    )
+    p_growth.add_argument(
+        "growth_command",
+        choices=["status", "epochs", "refine"],
+        help="Growth operation",
+    )
+    p_growth.add_argument(
+        "--hermes-home",
+        default="",
+        help="Hermes home (default: $HERMES_HOME or ~/.hermes)",
+    )
+    p_growth.add_argument("--limit", type=int, default=30, help="For epochs: how many")
+    p_growth.add_argument("--skill", default="", help="For refine: skill name")
+    p_growth.add_argument("--lesson", default="", help="For refine: lesson text")
+
     p_har = sub.add_parser(
         "harness",
         help="Self-evolution harness: status/witness/critic/verify/gardener",
@@ -386,6 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hq(args)
     if args.command == "interview":
         return cmd_interview(args)
+    if args.command == "growth":
+        return cmd_growth(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -518,6 +628,17 @@ def cmd_hive(args: argparse.Namespace) -> int:
                 )
             elif isinstance(ivr, dict):
                 print(f"  interview:   error: {ivr.get('error')}")
+        g = r.get("growth") or {}
+        if g.get("bumped"):
+            print(
+                f"  growth:      v{g.get('from')} → v{g.get('to')}  "
+                f"({g.get('era')}, strength {g.get('strength')}/100)"
+            )
+        elif g.get("version"):
+            print(
+                f"  growth:      v{g.get('version')}  "
+                f"({g.get('era')}, strength {g.get('strength')}/100)"
+            )
         return 0
 
     print(f"Error: unknown hive command {cmd}", file=sys.stderr)

@@ -390,6 +390,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         self._engine = HARQueryEngine(self._cube)
 
+        # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
+        try:
+            from hermescube.genealogy import ensure_genesis
+            from hermescube import __version__ as _pkg_v
+
+            ensure_genesis(
+                self._hermes_home or None,
+                agent_id=self._agent_identity or "hermes",
+                package_version=_pkg_v,
+            )
+        except Exception as e:
+            logger.debug("genealogy genesis skipped: %s", e)
+
         # Colony + void OS
         try:
             self._colony = ColonyGraph(self._paths.colony_graph)
@@ -753,12 +766,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "harness",
                                 "hq",
                                 "interview",
+                                "growth",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
                                 "+ witness (log real friction) + harness (self-evolution) "
                                 "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
-                                "+ interview (peer dialogue / mint skill drafts)"
+                                "+ interview (peer dialogue / mint skill drafts) "
+                                "+ growth (living cube version / strength / CUBE.md)"
                             ),
                         },
                         "interview_action": {
@@ -947,16 +962,27 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             type_str = ", ".join(f"{t}:{c}" for t, c in top_types)
             lines.append(f"Types: {type_str}")
 
+        # Living version — the cube's soul-age (starts 0.0.0, grows with experience)
+        try:
+            from hermescube.genealogy import prompt_strip
+
+            strip = prompt_strip(self._hermes_home or None)
+            if strip:
+                lines.append(strip)
+        except Exception:
+            pass
+
         lines.extend([
             "Day-to-day: idempotent turn ingestion + MEMORY.md mirrors; evolve on session_end.",
             "Hemispheres: awake=prefetch/query · sleep=branched evolve/consolidate",
             "Living Cube: events→claims→procedures; subagent branches promote verified outcomes only.",
+            "Growth: every session/draw/promote/skill-refine advances living version — see memories/CUBE.md",
             "",
             "Tools:",
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts / forge / promote(+optional skill install)",
-            "- hermescube_feedback — train trust on retrieved entries",
+            "- hermescube_manage — durable facts / forge / promote(+optional skill install) / growth",
+            "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
             "",
             "Guidance:",
             "- Short doctrine → built-in memory tool; history-shaped answers → cube search first",
@@ -1360,6 +1386,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         )
 
         def _session_end_work() -> None:
+            start_count = int(getattr(cube, "entry_count", 0) or 0)
+
             # Auto-extract (uses captured session_id via temporary bind)
             if auto_extract and not skip:
                 prev = self._session_id
@@ -1470,23 +1498,43 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     logger.debug("harness verifier/critic skipped: %s", e)
 
             # Hive pilgrimage (opt-in nightly upload/draw at session end)
+            pilgrimage_report: dict[str, Any] = {}
             if hive_enabled and hive_root and not skip:
                 try:
                     from hermescube import hive as hive_mod
 
-                    hive_mod.pilgrimage(
+                    pilgrimage_report = hive_mod.pilgrimage(
                         hive_root,
                         hermes_home=hermes_home or str(Path.home() / ".hermes"),
                         agent_id=agent_identity or "hermes",
                         interview=bool(
                             getattr(self, "_interview_on_pilgrimage", False)
                         ),
-                    )
+                    ) or {}
                     # Draw appended to our cube — retrieval must see it
                     if self._engine:
                         self._engine.invalidate_cache()
                 except Exception as e:
                     logger.warning("hive pilgrimage failed: %s", e)
+
+            # Living genealogy — advance the cube's soul-age. Pilgrimage
+            # already ticks when it ran; otherwise tick from session deltas.
+            if hermes_home and not skip:
+                try:
+                    if pilgrimage_report.get("growth"):
+                        pass  # already advanced inside pilgrimage()
+                    else:
+                        from hermescube.genealogy import tick_session
+
+                        end_count = int(getattr(cube, "entry_count", 0) or 0)
+                        durable_delta = max(0, end_count - int(start_count or 0))
+                        tick_session(
+                            hermes_home,
+                            cube=cube,
+                            durable_writes=durable_delta,
+                        )
+                except Exception as e:
+                    logger.debug("genealogy tick skipped: %s", e)
 
             with self._state_lock:
                 self._prefetch_cache.clear()
@@ -2138,7 +2186,54 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_hq(args)
         elif action == "interview":
             return self._handle_manage_interview(args)
+        elif action == "growth":
+            return self._handle_manage_growth(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_growth(self, args: dict[str, Any]) -> str:
+        """Living cube genealogy — version, strength, eras, skill lineage."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        sub = str(args.get("content") or args.get("mode") or "status").strip().lower()
+        try:
+            from hermescube import genealogy as gen
+
+            if sub in ("status", "", "show"):
+                return json.dumps(
+                    {"status": "growth", **gen.growth_status(
+                        self._hermes_home, cube=self._cube
+                    )},
+                    default=str,
+                )
+            if sub == "epochs":
+                return json.dumps(
+                    {
+                        "status": "epochs",
+                        "epochs": gen.list_epochs(self._hermes_home, limit=30),
+                    },
+                    default=str,
+                )
+            if sub.startswith("refine:"):
+                # refine:<skill_name> — lesson in mode/query fields
+                skill = sub.split(":", 1)[1].strip()
+                lesson = str(args.get("query") or args.get("description") or "").strip()
+                if not lesson:
+                    return json.dumps({"error": "lesson text required in query"})
+                return json.dumps(
+                    {
+                        "status": "refine",
+                        **gen.refine_skill(
+                            self._hermes_home,
+                            skill,
+                            lesson=lesson,
+                            cube=self._cube,
+                        ),
+                    },
+                    default=str,
+                )
+            return json.dumps({"error": f"unknown growth subcommand: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_interview(self, args: dict[str, Any]) -> str:
         """Peer interview (interview-me protocol) at the Hive.
@@ -2540,6 +2635,20 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         )
                 except Exception:
                     pass
+                # Living version advances on promote; skill_bridge records
+                # skill_install itself so we don't double-bump.
+                if not r.get("installed"):
+                    try:
+                        from hermescube.genealogy import record_growth
+
+                        record_growth(
+                            self._hermes_home,
+                            "promote",
+                            detail=f"promote: {name}",
+                            cube=self._cube,
+                        )
+                    except Exception:
+                        pass
             return json.dumps({"status": "promote", **r})
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -3155,9 +3264,58 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
-        return json.dumps({
+        # Skills evolve: helpful feedback on a procedure/skill entry appends
+        # a lesson and bumps the skill's patch version.
+        refine_info: dict[str, Any] | None = None
+        if action == "helpful" and self._hermes_home:
+            try:
+                d = entry.data if isinstance(entry.data, dict) else {}
+                desc = entry.description or ""
+                is_proc = bool(
+                    d.get("procedure")
+                    or d.get("skill_path")
+                    or desc.startswith(
+                        ("[PROCEDURE]", "[PROMOTED]", "[SKILL INSTALLED]")
+                    )
+                )
+                if is_proc:
+                    from hermescube.genealogy import refine_skill
+
+                    skill_name = ""
+                    if d.get("skill_path"):
+                        skill_name = Path(str(d["skill_path"])).parent.name
+                    elif desc.startswith("[SKILL INSTALLED]"):
+                        skill_name = desc.split("]", 1)[-1].strip().split()[0]
+                    elif d.get("draft"):
+                        skill_name = Path(str(d["draft"])).stem
+                    if skill_name:
+                        refine_info = refine_skill(
+                            self._hermes_home,
+                            skill_name,
+                            lesson=f"reinforced in use (trust → {new_trust}): {desc[:160]}",
+                            cube=self._cube,
+                        )
+                    else:
+                        from hermescube.genealogy import record_growth
+
+                        record_growth(
+                            self._hermes_home,
+                            "feedback_up",
+                            detail=f"trust↑ on procedure: {desc[:80]}",
+                            cube=self._cube,
+                        )
+            except Exception:
+                pass
+
+        out: dict[str, Any] = {
             "status": "rated",
             "id": entry_id,
             "action": action,
             "trust": new_trust,
-        })
+        }
+        if refine_info and refine_info.get("ok"):
+            out["skill_refined"] = {
+                "skill": refine_info.get("skill"),
+                "version": refine_info.get("to_version"),
+            }
+        return json.dumps(out)
