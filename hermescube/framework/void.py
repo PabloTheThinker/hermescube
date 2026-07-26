@@ -91,19 +91,26 @@ class CubeVoid:
     def format_prefetch(self, results: list[tuple[CubeEntry, float]]) -> str:
         if not results:
             return ""
-        lines = ["[Relevant memories from past sessions:]"]
-        for entry, _score in results[:5]:
-            ts = entry.timestamp[:10] if entry.timestamp else "unknown"
-            layer = bio_rank.cortical_layer(entry.entry_type or "")
-            kind = colony_mod.resource_kind(entry.entry_type or "", entry.description or "")
-            lines.append(
-                f"- [{ts}] [{entry.entry_type}|{layer}|{kind}] {entry.description}"
-            )
-            if entry.data:
-                for k, v in entry.data.items():
-                    if k in ("confidence", "source", "trust", "entities"):
-                        lines.append(f"  {k}: {v}")
-        return "\n".join(lines)
+        try:
+            from hermescube.evidence import build_evidence_packet
+
+            return build_evidence_packet(results, top_n=8, include_meta=True)
+        except Exception:
+            lines = ["[Relevant memories from past sessions:]"]
+            for entry, _score in results[:5]:
+                ts = entry.timestamp[:10] if entry.timestamp else "unknown"
+                layer = bio_rank.cortical_layer(entry.entry_type or "")
+                kind = colony_mod.resource_kind(
+                    entry.entry_type or "", entry.description or ""
+                )
+                lines.append(
+                    f"- [{ts}] [{entry.entry_type}|{layer}|{kind}] {entry.description}"
+                )
+                if entry.data:
+                    for k, v in entry.data.items():
+                        if k in ("confidence", "source", "trust", "entities"):
+                            lines.append(f"  {k}: {v}")
+            return "\n".join(lines)
 
     def reinforce(self, entry: CubeEntry, *, amount: float = 0.5) -> None:
         if self.colony is None:

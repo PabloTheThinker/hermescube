@@ -1,37 +1,34 @@
 name: hermescube
 manifest_version: 1
-version: "0.13.0"
+version: "0.21.0"
 description: >-
-  Local holographic .cube memory for Hermes Agent — HAR retrieval,
-  MemoryProvider plugin. Per-user cube at $HERMES_HOME/memories/memory.cube.
+  Living Cube memory for Hermes Agent — provenance-preserving events and
+  temporal claims, HAR retrieval, subagent branches, evidence-packet prefetch,
+  branched consolidation, and consent-gated procedure→skill bridge.
+  Zero network dependencies, pure Python with optional numpy acceleration.
 author: PabloTheThinker
 license: MIT
 homepage: https://github.com/PabloTheThinker/hermescube
-platforms: [linux, macos, windows]
+platforms: [linux, macos]
 
 requires:
   python: ">=3.11"
 
-# Memory provider discovery scans $HERMES_HOME/plugins/<name>/ for MemoryProvider
-# Activation: memory.provider: hermescube  in $HERMES_HOME/config.yaml
-
 config:
   auto_extract:
-    description: Auto-extract facts from conversations at session end
+    description: Auto-extract facts from conversations at session end using regex patterns
     type: bool
     default: false
   query_rewrite:
-    description: >-
-      LLM query rewrite before HAR (slow; off by default).
-      Env: HERMESCUBE_QUERY_REWRITE=1
+    description: LLM query rewrite before HAR retrieval (uses auxiliary client; slow)
     type: bool
     default: false
   dim:
-    description: HRR vector dimension
+    description: HRR vector dimension (256 recommended)
     type: int
     default: 256
   l2_buckets:
-    description: Number of L2 topic buckets
+    description: Number of L2 topic buckets for HAR clustering
     type: int
     default: 64
   char_limit:
@@ -43,9 +40,33 @@ config:
     type: int
     default: 50
   memory_nudge_interval:
-    description: Remind agent to review memory every N turns
+    description: Remind agent to review memory every N turns (0 to disable)
     type: int
     default: 10
+  peer_card_cadence_s:
+    description: Minimum seconds between peer card rebuilds (default 3600 = hourly)
+    type: int
+    default: 3600
+  session_digest:
+    description: Write session digest landmarks on session end
+    type: bool
+    default: true
+  observe_on_session_end:
+    description: Run trajectory observation on session end (tool chains → procedures)
+    type: bool
+    default: true
+  replay_on_session_end:
+    description: Run sleep replay consolidation on session end
+    type: bool
+    default: true
+  conflict_detect:
+    description: Detect conflicting beliefs/resolves on manage add
+    type: bool
+    default: true
+  living_pulse_on_session_end:
+    description: Run living archive multi-chamber pulse on session end
+    type: bool
+    default: true
 
 tools:
   - hermescube_search

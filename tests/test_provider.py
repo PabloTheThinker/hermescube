@@ -891,12 +891,18 @@ class TestAutoExtract:
 
 
 class TestPerProfileScoping:
-    def test_isolation_by_agent_identity(self):
+    def test_shared_cube_under_scoped_hermes_home(self):
+        """Hermes passes profile-scoped hermes_home; identity must not re-nest."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            coder_home = os.path.join(tmpdir, "profiles", "coder")
+            writer_home = os.path.join(tmpdir, "profiles", "writer")
+            os.makedirs(coder_home)
+            os.makedirs(writer_home)
+
             p1 = CubeMemoryProvider()
             p1.initialize(
                 session_id="s1",
-                hermes_home=tmpdir,
+                hermes_home=coder_home,
                 agent_identity="coder",
             )
             p1.sync_turn("Coder message", "Response")
@@ -906,7 +912,7 @@ class TestPerProfileScoping:
             p2 = CubeMemoryProvider()
             p2.initialize(
                 session_id="s2",
-                hermes_home=tmpdir,
+                hermes_home=writer_home,
                 agent_identity="writer",
             )
             p2.sync_turn("Writer message", "Response")
@@ -914,10 +920,13 @@ class TestPerProfileScoping:
             p2.shutdown()
 
             assert os.path.isfile(
-                os.path.join(tmpdir, "memories", "profiles", "coder", "memory.cube")
+                os.path.join(coder_home, "memories", "memory.cube")
             )
             assert os.path.isfile(
-                os.path.join(tmpdir, "memories", "profiles", "writer", "memory.cube")
+                os.path.join(writer_home, "memories", "memory.cube")
+            )
+            assert not os.path.isdir(
+                os.path.join(coder_home, "memories", "profiles")
             )
 
     def test_no_isolation_without_identity(self):

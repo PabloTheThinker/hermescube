@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0] - 2026-07-26
+
+### Living Cube — Hermes-aligned lifetime memory
+- **Hermes contract harding**: subclass `MemoryProvider` when available; root `plugin.yaml` synced to **0.21.0**; `register()` no longer runs `pip install`
+- **Path fix**: treat Hermes-scoped `hermes_home` as the storage root (no double `profiles/` nesting)
+- **Concurrency**: short-held sidecar `.cube.lock` instead of lifetime exclusive flock — multi-session Hermes can share one cube
+- **MemoryEvent / Claim schemas** (`events.py`, `claims.py`): provenance, verification, bi-temporal validity
+- **Idempotent ingest** (`ingest.py`): content-hash cursor; tool trajectory from `sync_turn(messages=...)`
+- **Temporal supersession**: `on_memory_write` replace/remove uses Hermes `old_text` tombstones
+- **Subagent branches** (`branches.py`): delegation traces isolated; verified outcomes promote to main
+- **Evidence packets** (`evidence.py`): typed prefetch (facts / episodes / procedures / intents / contradictions)
+- **Skill bridge** (`skill_bridge.py`): explicit `install_to_skills=true` on promote → Hermes `skills/<name>/SKILL.md`
+- **Branched consolidate** (`consolidate.py`): snapshot sidecars before evolve; rollback on failure
+- Platforms manifest: linux/macos (POSIX locks); Windows not claimed
+
 ## [0.20.0] - 2026-07-24
 
 ### Living archive — chambers (cubes within the cube)

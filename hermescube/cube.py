@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
 import struct
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterator
 
 from hermescube import hrr
 
 logger = logging.getLogger(__name__)
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # Windows / non-POSIX
+    _fcntl = None  # type: ignore[assignment]
 
 MAGIC = b"CUBE"
 VERSION = 1
@@ -119,13 +124,19 @@ def _deserialize_vec(data: bytes, dim: int) -> hrr.Array:
 
 
 class CubeFile:
-    """Binary .cube file — open/create, append, read, write L3."""
+    """Binary .cube file — open/create, append, read, write L3.
+
+    Cross-process safety uses a short-held sidecar lock file
+    (``.cube.lock``) around mutating operations so multiple Hermes
+    sessions in one profile can coexist. Lifetime exclusive flock on the
+    data fd is intentionally avoided.
+    """
 
     def __init__(self) -> None:
         import threading
         self.path: str = ""
         self._file: Any = None  # file handle
-        self._flocked: bool = False  # set True after fcntl.flock acquired
+        self._flocked: bool = False  # legacy flag; short-hold via lock file
         self.dim: int = DEFAULT_DIM
         self.l2_bucket_count: int = DEFAULT_L2_BUCKETS
         self.entry_count: int = 0
@@ -138,50 +149,65 @@ class CubeFile:
         self._cubelog_entries: list[CubeEntry] | None = None
         # Internal RLock — guards all file I/O and in-memory state mutation
         self._lock = threading.RLock()
+        self._lock_path: str = ""
+        self._lock_fd: Any = None
 
-    # ── File-level locking (cross-process) ─────────────────────────
+    # ── File-level locking (cross-process, short critical sections) ─
 
-    def _acquire_flock(self) -> None:
-        """Acquire exclusive flock on the open file descriptor.
+    def _lock_file_path(self) -> str:
+        if self._lock_path:
+            return self._lock_path
+        self._lock_path = (self.path or "") + ".lock"
+        return self._lock_path
 
-        Non-blocking; raises RuntimeError if another process holds the lock.
-        The lock is released automatically when the fd is closed or the
-        process exits.
-        """
-        if self._flocked:
+    @contextmanager
+    def _exclusive_file_lock(self, *, blocking: bool = True) -> Iterator[None]:
+        """Acquire a short exclusive lock via sidecar lock file."""
+        lock_path = self._lock_file_path()
+        if not lock_path:
+            yield
             return
-        if not self._file or self._file.closed:
-            raise RuntimeError("Cube file not open")
+        fd = open(lock_path, "a+b")
         try:
-            fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if _fcntl is not None:
+                flags = _fcntl.LOCK_EX if blocking else (_fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                try:
+                    _fcntl.flock(fd.fileno(), flags)
+                except OSError as e:
+                    raise RuntimeError(
+                        f"Cannot lock {self.path!r}: another writer is active. ({e})"
+                    ) from None
             self._flocked = True
-        except OSError as e:
-            raise RuntimeError(
-                f"Cannot lock {self.path!r}: another process may have it open. "
-                f"({e})"
-            ) from None
-
-    def _release_flock(self) -> None:
-        """Release the exclusive flock (best-effort)."""
-        if not self._flocked:
-            return
-        if self._file and not self._file.closed:
+            yield
+        finally:
+            if _fcntl is not None:
+                try:
+                    _fcntl.flock(fd.fileno(), _fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            self._flocked = False
             try:
-                fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+                fd.close()
             except OSError:
                 pass
+
+    def _acquire_flock(self) -> None:
+        """No-op compatibility shim — locking is short-held per mutation."""
+        return
+
+    def _release_flock(self) -> None:
+        """No-op compatibility shim."""
         self._flocked = False
 
     def _reopen_after_replace(self) -> None:
         """Reopen the file handle after os.replace() renamed the underlying file.
 
         The old fd still points to the unlinked temp inode; we must
-        reopen on the canonical path and reacquire the flock.
+        reopen on the canonical path.
         """
         if self._file and not self._file.closed:
             self._file.close()
         self._file = open(self.path, "r+b")
-        self._acquire_flock()
         self._open_cubelog()
 
     # ── WAL: cubelog for O(1) appends ──────────────────────────────
@@ -334,18 +360,37 @@ class CubeFile:
         empty_l2_size = 4 + l2_buckets * (dim * 8 + 6)
         self.l3_offset = HEADER_SIZE + empty_l2_size
 
-        self._file = open(self.path, "wb")
-        self._acquire_flock()
-        self._write_header(self._file)
-        self._write_empty_l2()
+        # Short lock around creation so concurrent Hermes sessions don't
+        # truncate each other. Existing complete cubes are opened as-is;
+        # empty/incomplete files (e.g. NamedTemporaryFile) are initialized.
+        parent = os.path.dirname(self.path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with self._exclusive_file_lock():
+            if os.path.isfile(self.path) and os.path.getsize(self.path) >= HEADER_SIZE:
+                try:
+                    with open(self.path, "rb") as probe:
+                        probe_self = cls()
+                        probe_self.path = self.path
+                        probe_self._read_header(probe)
+                    # Valid existing cube — open without truncating.
+                    return cls.open(self.path)
+                except Exception:
+                    pass  # incomplete/corrupt — reinitialize below
 
-        beta = hrr.zero_vector(dim)
-        self._write_l3_raw(beta)
-        self._file.flush()
-        self.close()
+            self._file = open(self.path, "wb")
+            self._write_header(self._file)
+            self._write_empty_l2()
+            beta = hrr.zero_vector(dim)
+            self._write_l3_raw(beta)
+            self._file.flush()
+            try:
+                os.fsync(self._file.fileno())
+            except OSError:
+                pass
+            self.close()
 
         self._file = open(self.path, "r+b")
-        self._acquire_flock()
         self._open_cubelog()
         # entry_count from header excludes cubelog entries — add them
         self.entry_count += self._cubelog_count
@@ -363,7 +408,6 @@ class CubeFile:
             self._read_header(f)
 
         self._file = open(self.path, "r+b")
-        self._acquire_flock()
         self._open_cubelog()
         # entry_count from header excludes cubelog entries — add them
         self.entry_count += self._cubelog_count
@@ -613,9 +657,24 @@ class CubeFile:
 
         data = annotate_entities_on_append(description, data)
         with self._lock:
-            return self._append_unlocked(
-                entry_type, description, data, causal_parents, outcome
-            )
+            with self._exclusive_file_lock():
+                # Refresh WAL from disk so concurrent Hermes sessions see
+                # each other's appends before we bump the cubelog count.
+                try:
+                    if self._file and not self._file.closed:
+                        pos = self._file.tell()
+                        self._file.seek(0)
+                        self._read_header(self._file)
+                        self._file.seek(pos)
+                    header_count = int(self.entry_count or 0)
+                    self._open_cubelog()
+                    self.entry_count = header_count + int(self._cubelog_count or 0)
+                    self._entries_cache = None
+                except Exception as e:
+                    logger.debug("cubelog refresh before append: %s", e)
+                return self._append_unlocked(
+                    entry_type, description, data, causal_parents, outcome
+                )
 
     def _append_unlocked(
         self,
@@ -837,7 +896,8 @@ class CubeFile:
 
     def write_l2(self, buckets: list[L2Bucket]) -> None:
         with self._lock:
-            self._write_l2_unlocked(buckets)
+            with self._exclusive_file_lock():
+                self._write_l2_unlocked(buckets)
 
     def _write_l2_unlocked(self, buckets: list[L2Bucket]) -> None:
         if not self._file or self._file.closed:
@@ -937,28 +997,29 @@ class CubeFile:
 
     def write_l3(self, beta: hrr.Array) -> None:
         with self._lock:
-            if self.l3_offset > 0:
-                # L3 exists and wasn't invalidated — overwrite in place
-                self._file.seek(self.l3_offset)
+            with self._exclusive_file_lock():
+                if self.l3_offset > 0:
+                    # L3 exists and wasn't invalidated — overwrite in place
+                    self._file.seek(self.l3_offset)
+                    self._write_l3_raw(beta)
+                    self._file.flush()
+                    try:
+                        os.fsync(self._file.fileno())
+                    except OSError as e:
+                        logger.warning("fsync failed after write_l3 (in-place): %s", e)
+                    return
+
+                # Append L3 at file end (after L2), update header
+                self._file.seek(0, 2)
+                self.l3_offset = self._file.tell()
                 self._write_l3_raw(beta)
+                self._file.seek(0)
+                self._write_header(self._file)
                 self._file.flush()
                 try:
                     os.fsync(self._file.fileno())
                 except OSError as e:
-                    logger.warning("fsync failed after write_l3 (in-place): %s", e)
-                return
-
-            # Append L3 at file end (after L2), update header
-            self._file.seek(0, 2)
-            self.l3_offset = self._file.tell()
-            self._write_l3_raw(beta)
-            self._file.seek(0)
-            self._write_header(self._file)
-            self._file.flush()
-            try:
-                os.fsync(self._file.fileno())
-            except OSError as e:
-                logger.warning("fsync failed after write_l3: %s", e)
+                    logger.warning("fsync failed after write_l3: %s", e)
 
     # ── Utility ───────────────────────────────────────────────────
 

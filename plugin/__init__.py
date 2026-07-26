@@ -2,6 +2,9 @@
 
 Prefer repo-root ``__init__.py`` + ``plugin.yaml`` for
 ``hermes plugins install PabloTheThinker/hermescube``.
+
+Package installation belongs to the installer; ``register()`` only
+ensures the plugin tree is importable.
 """
 
 from __future__ import annotations
@@ -22,30 +25,16 @@ def _ensure_import_path() -> None:
         sys.path.insert(0, root)
 
 
-def _ensure_package_installed() -> None:
-    _ensure_import_path()
-    try:
-        import hermescube  # noqa: F401
-        return
-    except ImportError:
-        pass
-    import subprocess
-
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-e", f"{_ROOT}[numpy]", "-q"]
-        )
-    except Exception:
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-e", str(_ROOT), "-q"]
-        )
-    _ensure_import_path()
-    import hermescube  # noqa: F401
-
-
 def register(ctx) -> None:
-    _ensure_package_installed()
-    from hermescube.provider import CubeMemoryProvider, _load_plugin_config
+    _ensure_import_path()
+    try:
+        from hermescube.provider import CubeMemoryProvider, _load_plugin_config
+    except ImportError as e:
+        logger.error(
+            "HermesCube package not importable (%s). Run ./scripts/install_hermes.sh",
+            e,
+        )
+        raise
 
     config = _load_plugin_config()
     auto = config.get("auto_extract", False)

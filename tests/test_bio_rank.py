@@ -83,7 +83,12 @@ class TestBioProviderIntegration:
             text = p.prefetch("what does the user prefer about editors?")
             ms = (time.perf_counter() - t0) * 1000
             assert ms < 50.0, f"prefetch too slow: {ms}ms"
-            assert "Relevant memories" in text
+            assert (
+                "Relevant memories" in text
+                or "evidence packet" in text.lower()
+                or "CURRENT FACTS" in text
+                or "PAST EPISODES" in text
+            )
             assert "|associative]" in text or "|executive]" in text or "trait" in text
             block = p.system_prompt_block()
             assert "Hemispheres" in block
