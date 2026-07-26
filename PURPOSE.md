@@ -40,6 +40,14 @@ falsifiable predictions a verifier later settles, a mechanical critic flags
 bookkeeping theatre, and a gardener surfaces dormant memories without
 deleting. See [docs/SELF_EVOLUTION.md](docs/SELF_EVOLUTION.md).
 
+**Fleet HQ (0.24+):** the hive root doubles as the command layer for any
+number of agents — charters record who owns which lane, routing sends work
+to its owner (command fallback for the rest), handoffs carry distilled
+evidence packets, task claims prevent turf wars, `hq verify` catches ghost
+routes and lane conflicts, and frozen baselines prove what changed.
+Subagents get read-only memory tools: work flows upward, privilege does
+not flow down. See [docs/HQ.md](docs/HQ.md).
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |
