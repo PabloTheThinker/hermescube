@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.24.0] - 2026-07-26
+
+### Fleet HQ — clear ownership for 1, 100, or a million agents
+- **Charters** (`hq.py`): permanent agents exist because they own a durable lane — role (`command`/`specialist`), lane, keywords, boundaries; `retire` keeps history but stops routing immediately (no ghost routing)
+- **Routing**: explicit overrides (audited) → lane keyword match → command fallback; the orchestrator owns the outcome. `hermescube hq route --task "..."` / `manage action=hq hq_action=route`
+- **Privilege stays at the top**: subagents now get read-only memory tools (`search`/`probe`/`feedback`) — `manage` (durable writes, hive, HQ) is blocked with a boundary error; work flows upward
+- **Lane strips**: chartered agents see their lane, boundaries, and other lanes' owners in the system prompt — specialists hand off instead of quietly doing everything
+- **Handoff packets**: delegations distill task-relevant evidence (typed, quoted, provenance-tagged) via HAR + evidence packets; `on_delegation` records fleet handoffs in the ledger
+- **Task claims**: leased ownership per task key; concurrent claims return a conflict with the current owner — no two agents thinking the task belongs to them
+- **Fleet verification**: `hq verify` flags ghost routes, lane conflicts, missing command charter, uncharted souls, stuck handoffs (non-zero exit when flagged, cron-able)
+- **Baselines**: `hq freeze` snapshots charter/routing hashes + collective stats; `hq drift` proves what changed — production ready means recoverable
+- CLI: `hermescube hq charter|retire|list|route|verify|freeze|drift|handoffs`
+- HQ state lives inside the hive root (`charters/`, `routing.json`, `handoffs.jsonl`, `claims/`, `baseline.json`) — the hive *is* the fleet HQ
+
 ## [0.23.0] - 2026-07-26
 
 ### Grounded self-evolution harness (witness → evolve → verify → critique → garden)

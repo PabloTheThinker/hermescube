@@ -277,6 +277,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Focus query when drawing collective wisdom",
     )
 
+    # hq — fleet command layer (charters, routing, verification, baseline)
+    p_hq = sub.add_parser(
+        "hq",
+        help="Fleet HQ: charter/list/route/verify/freeze/drift/handoffs",
+    )
+    p_hq.add_argument(
+        "hq_command",
+        choices=["charter", "retire", "list", "route", "verify", "freeze", "drift", "handoffs"],
+        help="HQ operation",
+    )
+    p_hq.add_argument("--hive", default=None, help="Hive/HQ directory (default: $HERMESCUBE_HIVE)")
+    p_hq.add_argument("--agent", default=None, help="Agent id (for charter/retire)")
+    p_hq.add_argument("--role", default="specialist", choices=["command", "specialist"])
+    p_hq.add_argument("--lane", default="", help="For charter: the durable lane this agent owns")
+    p_hq.add_argument("--keywords", default="", help="For charter: comma-separated lane keywords")
+    p_hq.add_argument("--boundaries", default="", help="For charter: semicolon-separated boundaries")
+    p_hq.add_argument("--task", default="", help="For route: task text to route")
+
     # harness — grounded self-evolution (witness / critic / verifier / gardener)
     p_har = sub.add_parser(
         "harness",
@@ -314,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hive(args)
     if args.command == "harness":
         return cmd_harness(args)
+    if args.command == "hq":
+        return cmd_hq(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -432,6 +452,110 @@ def cmd_hive(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Error: unknown hive command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_hq(args: argparse.Namespace) -> int:
+    from hermescube import hq as hq_mod
+
+    hive_root = args.hive or os.environ.get("HERMESCUBE_HIVE")
+    if not hive_root:
+        print("Error: HQ path required (--hive or HERMESCUBE_HIVE)", file=sys.stderr)
+        return 1
+    cmd = args.hq_command
+
+    if cmd == "charter":
+        if not args.agent or not args.lane or not args.keywords:
+            print("Error: --agent, --lane, --keywords required", file=sys.stderr)
+            return 1
+        r = hq_mod.register_charter(
+            hive_root,
+            args.agent,
+            role=args.role,
+            lane=args.lane,
+            keywords=[k.strip() for k in args.keywords.split(",") if k.strip()],
+            boundaries=[b.strip() for b in args.boundaries.split(";") if b.strip()],
+        )
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        c = r["charter"]
+        print(f"Chartered [{c['role']}] {c['agent_id']}: {c['lane']}")
+        return 0
+
+    if cmd == "retire":
+        if not args.agent:
+            print("Error: --agent required", file=sys.stderr)
+            return 1
+        r = hq_mod.retire_charter(hive_root, args.agent)
+        print(f"Retired: {args.agent}" if r.get("ok") else f"Error: {r.get('error')}")
+        return 0 if r.get("ok") else 1
+
+    if cmd == "list":
+        charters = hq_mod.list_charters(hive_root, include_retired=True)
+        if not charters:
+            print("No charters. Register with: hermescube hq charter --agent ... --lane ... --keywords ...")
+            return 0
+        for c in charters:
+            mark = "·" if c.get("status") == "active" else "✝"
+            print(f"{mark} [{c.get('role')}] {c['agent_id']}: {c.get('lane')}")
+            print(f"    keywords: {', '.join(c.get('keywords') or [])}")
+            for b in c.get("boundaries") or []:
+                print(f"    boundary: {b}")
+        return 0
+
+    if cmd == "route":
+        if not args.task:
+            print("Error: --task required", file=sys.stderr)
+            return 1
+        r = hq_mod.route_task(hive_root, args.task)
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Owner: {r['owner']}  (via {r['via']}, confidence {r['confidence']:.2f})")
+        print(f"  lane: {r.get('lane')}")
+        if r.get("runner_up"):
+            print(f"  runner-up: {r['runner_up']}")
+        return 0
+
+    if cmd == "verify":
+        r = hq_mod.verify_fleet(hive_root)
+        print(f"Fleet verdict: {r['verdict']}  (charters: {r['charters']})")
+        for f in r.get("findings") or []:
+            print(f"  ! {f['flag']}: {f['detail']}")
+        return 0 if r["verdict"] == "healthy" else 2
+
+    if cmd == "freeze":
+        r = hq_mod.freeze_baseline(hive_root)
+        b = r["baseline"]
+        print(f"Baseline frozen: {len(b['charters'])} charters, "
+              f"collective entries {b['collective_entries']}")
+        return 0
+
+    if cmd == "drift":
+        r = hq_mod.verify_baseline(hive_root)
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        if r["clean"]:
+            print("No drift since baseline.")
+            return 0
+        print("Drift detected:")
+        for d in r["drift"]:
+            print(f"  ! {d}")
+        return 2
+
+    if cmd == "handoffs":
+        hs = hq_mod.list_handoffs(hive_root, limit=20)
+        if not hs:
+            print("No handoffs recorded.")
+            return 0
+        for h in hs:
+            print(f"[{h.get('status')}] {h.get('from_agent')} → {h.get('to_agent')}: "
+                  f"{h.get('task', '')[:80]}")
+        return 0
+
+    print(f"Error: unknown hq command {cmd}", file=sys.stderr)
     return 1
 
 

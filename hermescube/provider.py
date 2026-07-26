@@ -669,7 +669,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
     # ── MemoryProvider ABC: tool schemas ───────────────────────────
 
     def get_tool_schemas(self) -> list[dict[str, Any]]:
-        """Return OpenAI function-calling tool schemas."""
+        """Return OpenAI function-calling tool schemas.
+
+        Subagents get read-only recall tools: search, probe, feedback.
+        Durable writes, hive, and HQ operations belong to the parent —
+        work flows upward; privilege does not flow down.
+        """
+        schemas = self._all_tool_schemas()
+        if self._agent_context == "subagent":
+            allowed = {"hermescube_search", "hermescube_probe", "hermescube_feedback"}
+            return [s for s in schemas if s.get("name") in allowed]
+        return schemas
+
+    def _all_tool_schemas(self) -> list[dict[str, Any]]:
         return [
             {
                 "name": "hermescube_search",
@@ -734,10 +746,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "hive",
                                 "witness",
                                 "harness",
+                                "hq",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
-                                "+ witness (log real friction) + harness (self-evolution)"
+                                "+ witness (log real friction) + harness (self-evolution) "
+                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline)"
+                            ),
+                        },
+                        "hq_action": {
+                            "type": "string",
+                            "enum": [
+                                "route", "charter", "charters", "claim",
+                                "handoffs", "verify", "baseline",
+                            ],
+                            "description": (
+                                "For action=hq: route a task to its lane owner, "
+                                "register/list charters, claim task ownership, "
+                                "review handoffs, verify fleet, freeze/verify baseline"
                             ),
                         },
                         "hive_action": {
@@ -844,6 +870,13 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if tool_name == "hermescube_search":
             return self._handle_search(args)
         elif tool_name == "hermescube_manage":
+            if self._agent_context == "subagent":
+                return json.dumps(
+                    {
+                        "error": "subagent boundary: durable memory writes flow "
+                        "upward — return your findings to the parent agent"
+                    }
+                )
             return self._handle_manage(args)
         elif tool_name == "hermescube_feedback":
             return self._handle_feedback(args)
@@ -906,6 +939,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "(status/pilgrimage/draw). [HIVE:agent] entries are peer wisdom, "
                 "not user facts."
             )
+            # HQ lane awareness: your lane, boundaries, where other work goes
+            try:
+                from hermescube.hq import lane_strip
+
+                strip = lane_strip(self._hive_path, self._agent_identity or "hermes")
+                if strip:
+                    lines.append(strip)
+            except Exception:
+                pass
         # Active wisdom strip (crystals / beliefs)
         try:
             from hermescube.wisdom import active_wisdom, functional_loop_stats
@@ -1661,8 +1703,23 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         platform = self._platform
         agent_identity = self._agent_identity
         char_limit = self._char_limit
+        hive_root = getattr(self, "_hive_path", "")
 
         def _do_delegation() -> None:
+            # HQ handoff ledger: the delegation becomes fleet history
+            if hive_root:
+                try:
+                    from hermescube.hq import record_handoff
+
+                    record_handoff(
+                        hive_root,
+                        from_agent=agent_identity or "hermes",
+                        to_agent=f"subagent:{child_session_id or 'anon'}",
+                        task=task,
+                        status="completed" if result else "failed",
+                    )
+                except Exception:
+                    pass
             try:
                 from hermescube.branches import record_delegation_branch
 
@@ -2037,7 +2094,99 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_witness(args)
         elif action == "harness":
             return self._handle_manage_harness(args)
+        elif action == "hq":
+            return self._handle_manage_hq(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_hq(self, args: dict[str, Any]) -> str:
+        """Fleet HQ ops: route / charter / claim / handoffs / verify / baseline.
+
+        Requires a configured hive (the hive root doubles as fleet HQ).
+        """
+        hive_root = getattr(self, "_hive_path", "") or os.environ.get(
+            "HERMESCUBE_HIVE", ""
+        )
+        if not hive_root:
+            return json.dumps(
+                {
+                    "error": "HQ not configured",
+                    "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                }
+            )
+        try:
+            from hermescube import hq as hq_mod
+
+            sub = str(args.get("hq_action") or "route").strip()
+            agent_id = self._agent_identity or "hermes"
+            if sub == "route":
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to route)"})
+                return json.dumps(
+                    {"status": "route", **hq_mod.route_task(hive_root, task)},
+                    default=str,
+                )
+            if sub == "charter":
+                r = hq_mod.register_charter(
+                    hive_root,
+                    str(args.get("agent") or agent_id),
+                    role=str(args.get("role") or "specialist"),
+                    lane=str(args.get("lane") or args.get("content") or ""),
+                    keywords=[
+                        k.strip()
+                        for k in str(args.get("keywords") or "").split(",")
+                        if k.strip()
+                    ],
+                    boundaries=[
+                        b.strip()
+                        for b in str(args.get("boundaries") or "").split(";")
+                        if b.strip()
+                    ],
+                )
+                return json.dumps({"status": "charter", **r}, default=str)
+            if sub == "charters":
+                return json.dumps(
+                    {"status": "charters", "charters": hq_mod.list_charters(hive_root)},
+                    default=str,
+                )
+            if sub == "claim":
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to claim)"})
+                return json.dumps(
+                    {
+                        "status": "claim",
+                        **hq_mod.claim_task(hive_root, agent_id, task),
+                    },
+                    default=str,
+                )
+            if sub == "handoffs":
+                return json.dumps(
+                    {
+                        "status": "handoffs",
+                        "handoffs": hq_mod.list_handoffs(hive_root, limit=20),
+                    },
+                    default=str,
+                )
+            if sub == "verify":
+                return json.dumps(
+                    {"status": "verify", **hq_mod.verify_fleet(hive_root)},
+                    default=str,
+                )
+            if sub == "baseline":
+                mode = str(args.get("content") or "verify").strip()
+                if mode == "freeze":
+                    return json.dumps(
+                        {"status": "baseline", **hq_mod.freeze_baseline(hive_root)},
+                        default=str,
+                    )
+                return json.dumps(
+                    {"status": "baseline", **hq_mod.verify_baseline(hive_root)},
+                    default=str,
+                )
+            return json.dumps({"error": f"unknown hq_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_witness(self, args: dict[str, Any]) -> str:
         """Record real friction in the witness ledger (grounded evolution)."""
