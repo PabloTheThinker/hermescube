@@ -356,6 +356,8 @@ class HARQueryEngine:
         if yb is None:
             eid = getattr(entry, "id", None) or ""
             yb = float(self._yield_map.get(str(eid), 1.0)) if self._yield_map else 1.0
+        # Living maturity (genealogy era/strength) — set by provider
+        mat = getattr(self, "_maturity", None) or {}
         return bio_rank.composite_score(
             semantic,
             entry_type=entry.entry_type or "",
@@ -366,6 +368,8 @@ class HARQueryEngine:
             description=entry.description or "",
             data=data,
             yield_boost=float(yb),
+            maturity_era=str(mat.get("era") or "genesis"),
+            maturity_strength=float(mat.get("strength") or 0),
         )
 
     def _hyper_query(

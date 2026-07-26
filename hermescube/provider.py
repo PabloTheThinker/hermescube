@@ -233,6 +233,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._hive_on_session_end: bool = False
         # Grounded self-evolution harness
         self._witness_detect: bool = True
+        # Peer interview during pilgrimage (interview-me at the hive)
+        self._interview_on_pilgrimage: bool = False
 
         # Frozen snapshot (set at initialize, never mutated mid-session)
         self._snapshot: _FrozenSnapshot | None = None
@@ -354,6 +356,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._witness_detect = _coerce_bool(
                 plugin_config.get("witness_detect"), True
             )
+            self._interview_on_pilgrimage = _coerce_bool(
+                plugin_config.get("interview_on_pilgrimage"), False
+            )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
             self._hive_path = os.environ.get("HERMESCUBE_HIVE", "").strip()
@@ -384,6 +389,20 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
 
         self._engine = HARQueryEngine(self._cube)
+
+        # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
+        try:
+            from hermescube.genealogy import ensure_genesis
+            from hermescube import __version__ as _pkg_v
+
+            ensure_genesis(
+                self._hermes_home or None,
+                agent_id=self._agent_identity or "hermes",
+                package_version=_pkg_v,
+            )
+            self._refresh_maturity()
+        except Exception as e:
+            logger.debug("genealogy genesis skipped: %s", e)
 
         # Colony + void OS
         try:
@@ -447,6 +466,26 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             l2_centroids=centroids,
             entry_count=self._cube.entry_count,
         )
+
+    def _refresh_maturity(self) -> None:
+        """Push living genealogy era/strength onto the HAR engine for ranking."""
+        if not self._engine or not self._hermes_home:
+            return
+        try:
+            from hermescube.genealogy import load_genealogy
+
+            g = load_genealogy(self._hermes_home)
+            setattr(
+                self._engine,
+                "_maturity",
+                {
+                    "era": g.get("era") or "genesis",
+                    "strength": float(g.get("strength") or 0),
+                    "version": g.get("version") or "0.0.0",
+                },
+            )
+        except Exception:
+            pass
 
     def _should_skip_writes(self) -> bool:
         """True when we should NOT persist data.
@@ -669,7 +708,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
     # ── MemoryProvider ABC: tool schemas ───────────────────────────
 
     def get_tool_schemas(self) -> list[dict[str, Any]]:
-        """Return OpenAI function-calling tool schemas."""
+        """Return OpenAI function-calling tool schemas.
+
+        Subagents get read-only recall tools: search, probe, feedback.
+        Durable writes, hive, and HQ operations belong to the parent —
+        work flows upward; privilege does not flow down.
+        """
+        schemas = self._all_tool_schemas()
+        if self._agent_context == "subagent":
+            allowed = {"hermescube_search", "hermescube_probe", "hermescube_feedback"}
+            return [s for s in schemas if s.get("name") in allowed]
+        return schemas
+
+    def _all_tool_schemas(self) -> list[dict[str, Any]]:
         return [
             {
                 "name": "hermescube_search",
@@ -734,10 +785,41 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "hive",
                                 "witness",
                                 "harness",
+                                "hq",
+                                "interview",
+                                "growth",
+                                "curate",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
-                                "+ witness (log real friction) + harness (self-evolution)"
+                                "+ witness (log real friction) + harness (self-evolution) "
+                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
+                                "+ interview (peer dialogue / mint skill drafts) "
+                                "+ growth (living cube version / strength / CUBE.md) "
+                                "+ curate (refine skills from lessons / era forge+garden)"
+                            ),
+                        },
+                        "interview_action": {
+                            "type": "string",
+                            "enum": ["dialogue", "list", "mint"],
+                            "description": (
+                                "For action=interview: dialogue (interview a peer), "
+                                "list past interviews, mint a skill draft from a brief"
+                            ),
+                        },
+                        "hq_action": {
+                            "type": "string",
+                            "enum": [
+                                "route", "charter", "charters", "claim",
+                                "handoff", "complete", "handoffs",
+                                "verify", "baseline",
+                            ],
+                            "description": (
+                                "For action=hq: route a task to its lane owner, "
+                                "register/list charters, claim task ownership, "
+                                "handoff (route + distilled context packet + ledger), "
+                                "complete a handoff, review handoffs, verify fleet, "
+                                "freeze/verify baseline"
                             ),
                         },
                         "hive_action": {
@@ -758,6 +840,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         "focus": {
                             "type": "string",
                             "description": "For hive draw/pilgrimage: focus query to pull relevant collective wisdom",
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": (
+                                "Peer agent id — for interview dialogue (subject) "
+                                "or hq charter"
+                            ),
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "clarify", "discover", "brief",
+                                "decision", "retrospective", "profile",
+                            ],
+                            "description": "For action=interview: interview-me mode",
                         },
                         "entry_type": {
                             "type": "string",
@@ -844,6 +941,13 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if tool_name == "hermescube_search":
             return self._handle_search(args)
         elif tool_name == "hermescube_manage":
+            if self._agent_context == "subagent":
+                return json.dumps(
+                    {
+                        "error": "subagent boundary: durable memory writes flow "
+                        "upward — return your findings to the parent agent"
+                    }
+                )
             return self._handle_manage(args)
         elif tool_name == "hermescube_feedback":
             return self._handle_feedback(args)
@@ -881,16 +985,27 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             type_str = ", ".join(f"{t}:{c}" for t, c in top_types)
             lines.append(f"Types: {type_str}")
 
+        # Living version — the cube's soul-age (starts 0.0.0, grows with experience)
+        try:
+            from hermescube.genealogy import prompt_strip
+
+            strip = prompt_strip(self._hermes_home or None)
+            if strip:
+                lines.append(strip)
+        except Exception:
+            pass
+
         lines.extend([
             "Day-to-day: idempotent turn ingestion + MEMORY.md mirrors; evolve on session_end.",
             "Hemispheres: awake=prefetch/query · sleep=branched evolve/consolidate",
             "Living Cube: events→claims→procedures; subagent branches promote verified outcomes only.",
+            "Growth: every session/draw/promote/skill-refine advances living version — see memories/CUBE.md",
             "",
             "Tools:",
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts / forge / promote(+optional skill install)",
-            "- hermescube_feedback — train trust on retrieved entries",
+            "- hermescube_manage — durable facts / forge / promote(+optional skill install) / growth",
+            "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
             "",
             "Guidance:",
             "- Short doctrine → built-in memory tool; history-shaped answers → cube search first",
@@ -903,9 +1018,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if getattr(self, "_hive_path", ""):
             lines.append(
                 "Hive: connected to collective nexus — manage action=hive "
-                "(status/pilgrimage/draw). [HIVE:agent] entries are peer wisdom, "
-                "not user facts."
+                "(status/pilgrimage/draw), action=interview (peer dialogue → "
+                "consent-gated skill drafts), action=hq (route/handoff/verify). "
+                "[HIVE:agent] entries are peer wisdom, not user facts."
             )
+            # HQ lane awareness: your lane, boundaries, where other work goes
+            try:
+                from hermescube.hq import lane_strip
+
+                strip = lane_strip(self._hive_path, self._agent_identity or "hermes")
+                if strip:
+                    lines.append(strip)
+            except Exception:
+                pass
         # Active wisdom strip (crystals / beliefs)
         try:
             from hermescube.wisdom import active_wisdom, functional_loop_stats
@@ -1284,6 +1409,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         )
 
         def _session_end_work() -> None:
+            start_count = int(getattr(cube, "entry_count", 0) or 0)
+
             # Auto-extract (uses captured session_id via temporary bind)
             if auto_extract and not skip:
                 prev = self._session_id
@@ -1394,17 +1521,66 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     logger.debug("harness verifier/critic skipped: %s", e)
 
             # Hive pilgrimage (opt-in nightly upload/draw at session end)
+            pilgrimage_report: dict[str, Any] = {}
             if hive_enabled and hive_root and not skip:
                 try:
                     from hermescube import hive as hive_mod
 
-                    hive_mod.pilgrimage(
+                    pilgrimage_report = hive_mod.pilgrimage(
                         hive_root,
                         hermes_home=hermes_home or str(Path.home() / ".hermes"),
                         agent_id=agent_identity or "hermes",
-                    )
+                        interview=bool(
+                            getattr(self, "_interview_on_pilgrimage", False)
+                        ),
+                    ) or {}
+                    # Draw appended to our cube — retrieval must see it
+                    if self._engine:
+                        self._engine.invalidate_cache()
                 except Exception as e:
                     logger.warning("hive pilgrimage failed: %s", e)
+
+            # Living genealogy — advance the cube's soul-age. Pilgrimage
+            # already ticks when it ran; otherwise tick from session deltas.
+            growth_report: dict[str, Any] = {}
+            if hermes_home and not skip:
+                try:
+                    if pilgrimage_report.get("growth"):
+                        growth_report = pilgrimage_report["growth"]
+                    else:
+                        from hermescube.genealogy import tick_session
+
+                        end_count = int(getattr(cube, "entry_count", 0) or 0)
+                        durable_delta = max(0, end_count - int(start_count or 0))
+                        growth_report = tick_session(
+                            hermes_home,
+                            cube=cube,
+                            durable_writes=durable_delta,
+                        )
+                    # Ranking must see the new era/strength immediately
+                    self._refresh_maturity()
+                except Exception as e:
+                    logger.debug("genealogy tick skipped: %s", e)
+
+            # Curator (when pilgrimage didn't already run it): era milestones
+            # forge/garden; otherwise a quiet pass is skipped.
+            if (
+                hermes_home
+                and not skip
+                and not pilgrimage_report.get("curator")
+                and growth_report.get("bump") == "major"
+            ):
+                try:
+                    from hermescube.curator import run_curator
+
+                    run_curator(
+                        hermes_home,
+                        cube=cube,
+                        lessons=[],
+                        era_milestone=True,
+                    )
+                except Exception as e:
+                    logger.debug("curator skipped: %s", e)
 
             with self._state_lock:
                 self._prefetch_cache.clear()
@@ -1661,8 +1837,23 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         platform = self._platform
         agent_identity = self._agent_identity
         char_limit = self._char_limit
+        hive_root = getattr(self, "_hive_path", "")
 
         def _do_delegation() -> None:
+            # HQ handoff ledger: the delegation becomes fleet history
+            if hive_root:
+                try:
+                    from hermescube.hq import record_handoff
+
+                    record_handoff(
+                        hive_root,
+                        from_agent=agent_identity or "hermes",
+                        to_agent=f"subagent:{child_session_id or 'anon'}",
+                        task=task,
+                        status="completed" if result else "failed",
+                    )
+                except Exception:
+                    pass
             try:
                 from hermescube.branches import record_delegation_branch
 
@@ -2037,7 +2228,299 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_witness(args)
         elif action == "harness":
             return self._handle_manage_harness(args)
+        elif action == "hq":
+            return self._handle_manage_hq(args)
+        elif action == "interview":
+            return self._handle_manage_interview(args)
+        elif action == "growth":
+            return self._handle_manage_growth(args)
+        elif action == "curate":
+            return self._handle_manage_curate(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_curate(self, args: dict[str, Any]) -> str:
+        """Run the growth curator — refine skills from lessons, forge/garden."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube.curator import run_curator
+
+            lesson = str(args.get("content") or args.get("query") or "").strip()
+            lessons = [lesson] if lesson else []
+            # Also pull recent hive draws from the cube as lessons
+            if self._cube and not lessons:
+                for e in list(self._cube.read_l1() or [])[-40:]:
+                    desc = e.description or ""
+                    if desc.startswith("[HIVE:") or desc.startswith("[INTERVIEW:"):
+                        lessons.append(desc)
+            force_era = str(args.get("mode") or "").lower() == "milestone"
+            report = run_curator(
+                self._hermes_home,
+                cube=self._cube,
+                lessons=lessons[-12:],
+                era_milestone=force_era,
+            )
+            self._refresh_maturity()
+            return json.dumps({"status": "curate", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_growth(self, args: dict[str, Any]) -> str:
+        """Living cube genealogy — version, strength, eras, skill lineage."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        sub = str(args.get("content") or args.get("mode") or "status").strip().lower()
+        try:
+            from hermescube import genealogy as gen
+
+            if sub in ("status", "", "show"):
+                return json.dumps(
+                    {"status": "growth", **gen.growth_status(
+                        self._hermes_home, cube=self._cube
+                    )},
+                    default=str,
+                )
+            if sub == "epochs":
+                return json.dumps(
+                    {
+                        "status": "epochs",
+                        "epochs": gen.list_epochs(self._hermes_home, limit=30),
+                    },
+                    default=str,
+                )
+            if sub.startswith("refine:"):
+                # refine:<skill_name> — lesson in mode/query fields
+                skill = sub.split(":", 1)[1].strip()
+                lesson = str(args.get("query") or args.get("description") or "").strip()
+                if not lesson:
+                    return json.dumps({"error": "lesson text required in query"})
+                return json.dumps(
+                    {
+                        "status": "refine",
+                        **gen.refine_skill(
+                            self._hermes_home,
+                            skill,
+                            lesson=lesson,
+                            cube=self._cube,
+                        ),
+                    },
+                    default=str,
+                )
+            return json.dumps({"error": f"unknown growth subcommand: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_interview(self, args: dict[str, Any]) -> str:
+        """Peer interview (interview-me protocol) at the Hive.
+
+        dialogue — offline peer dialogue that inspects a subject soul,
+        asks highest-value questions, produces a brief, optionally mints
+        a consent-gated skill draft.
+        list / mint — review past interviews / mint from a closed session.
+        """
+        hive_root = getattr(self, "_hive_path", "") or os.environ.get(
+            "HERMESCUBE_HIVE", ""
+        )
+        if not hive_root:
+            return json.dumps(
+                {
+                    "error": "hive not configured",
+                    "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                }
+            )
+        try:
+            from hermescube import interview as iv
+
+            sub = str(args.get("interview_action") or "dialogue").strip()
+            agent_id = self._agent_identity or "hermes"
+
+            if sub == "list":
+                return json.dumps(
+                    {"status": "list", "interviews": iv.list_interviews(hive_root)},
+                    default=str,
+                )
+
+            if sub == "dialogue":
+                subject = str(args.get("agent") or "").strip()
+                if not subject:
+                    return json.dumps(
+                        {"error": "agent required (peer subject to interview)"}
+                    )
+                topic = str(args.get("content") or args.get("focus") or "shared craft")
+                mode = str(args.get("mode") or "discover")
+                # Prefer subject's offered knowledge; fall back to local cube
+                # only when interviewing about knowledge already drawn in.
+                r = iv.peer_dialogue(
+                    hive_root,
+                    interviewer=agent_id,
+                    subject=subject,
+                    topic=topic,
+                    mode=mode if mode in iv.MODES else "discover",
+                    subject_cube=self._cube,
+                    hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
+                    persist=True,
+                    mint=True,
+                )
+                return json.dumps({"status": "dialogue", **r}, default=str)
+
+            if sub == "mint":
+                session_id = str(args.get("content") or args.get("entry_id") or "").strip()
+                if not session_id:
+                    return json.dumps({"error": "content required (session id)"})
+                path = iv.interviews_dir(hive_root) / f"{session_id}.json"
+                if not path.is_file():
+                    return json.dumps({"error": f"session not found: {session_id}"})
+                session = json.loads(path.read_text(encoding="utf-8"))
+                brief = session.get("brief") or iv.produce_brief(session)
+                r = iv.mint_skill_draft(
+                    brief,
+                    hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
+                )
+                return json.dumps({"status": "mint", **r}, default=str)
+
+            return json.dumps({"error": f"unknown interview_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_hq(self, args: dict[str, Any]) -> str:
+        """Fleet HQ ops: route / charter / claim / handoffs / verify / baseline.
+
+        Requires a configured hive (the hive root doubles as fleet HQ).
+        """
+        hive_root = getattr(self, "_hive_path", "") or os.environ.get(
+            "HERMESCUBE_HIVE", ""
+        )
+        if not hive_root:
+            return json.dumps(
+                {
+                    "error": "HQ not configured",
+                    "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                }
+            )
+        try:
+            from hermescube import hq as hq_mod
+
+            sub = str(args.get("hq_action") or "route").strip()
+            agent_id = self._agent_identity or "hermes"
+            if sub == "route":
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to route)"})
+                return json.dumps(
+                    {"status": "route", **hq_mod.route_task(hive_root, task)},
+                    default=str,
+                )
+            if sub == "charter":
+                r = hq_mod.register_charter(
+                    hive_root,
+                    str(args.get("agent") or agent_id),
+                    role=str(args.get("role") or "specialist"),
+                    lane=str(args.get("lane") or args.get("content") or ""),
+                    keywords=[
+                        k.strip()
+                        for k in str(args.get("keywords") or "").split(",")
+                        if k.strip()
+                    ],
+                    boundaries=[
+                        b.strip()
+                        for b in str(args.get("boundaries") or "").split(";")
+                        if b.strip()
+                    ],
+                )
+                return json.dumps({"status": "charter", **r}, default=str)
+            if sub == "charters":
+                return json.dumps(
+                    {"status": "charters", "charters": hq_mod.list_charters(hive_root)},
+                    default=str,
+                )
+            if sub == "claim":
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to claim)"})
+                return json.dumps(
+                    {
+                        "status": "claim",
+                        **hq_mod.claim_task(hive_root, agent_id, task),
+                    },
+                    default=str,
+                )
+            if sub == "handoffs":
+                return json.dumps(
+                    {
+                        "status": "handoffs",
+                        "handoffs": hq_mod.list_handoffs(hive_root, limit=20),
+                    },
+                    default=str,
+                )
+            if sub == "handoff":
+                # Route → distill context → record: the full delegation package
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to hand off)"})
+                to_agent = str(args.get("agent") or "").strip()
+                routed = None
+                if not to_agent:
+                    routed = hq_mod.route_task(hive_root, task)
+                    if not routed.get("ok"):
+                        return json.dumps({"error": routed.get("error")})
+                    to_agent = str(routed["owner"])
+                packet: dict[str, Any] = {"context": "", "sha": ""}
+                if self._cube:
+                    packet = hq_mod.build_handoff_packet(
+                        self._cube, task, from_agent=agent_id, to_agent=to_agent
+                    )
+                rec = hq_mod.record_handoff(
+                    hive_root,
+                    from_agent=agent_id,
+                    to_agent=to_agent,
+                    task=task,
+                    status="pending",
+                    packet_sha=str(packet.get("sha") or ""),
+                )
+                return json.dumps(
+                    {
+                        "status": "handoff",
+                        "id": rec["id"],
+                        "to_agent": to_agent,
+                        "routed_via": (routed or {}).get("via"),
+                        "context": packet.get("context") or "(no cube evidence)",
+                        "note": (
+                            "Deliver this context with the delegation; settle with "
+                            "hq_action=complete content=<id> when done."
+                        ),
+                    },
+                    default=str,
+                )
+            if sub == "complete":
+                hid = str(args.get("content") or "").strip()
+                if not hid:
+                    return json.dumps({"error": "content required (handoff id)"})
+                return json.dumps(
+                    {
+                        "status": "complete",
+                        **hq_mod.update_handoff_status(hive_root, hid, "completed"),
+                    },
+                    default=str,
+                )
+            if sub == "verify":
+                return json.dumps(
+                    {"status": "verify", **hq_mod.verify_fleet(hive_root)},
+                    default=str,
+                )
+            if sub == "baseline":
+                mode = str(args.get("content") or "verify").strip()
+                if mode == "freeze":
+                    return json.dumps(
+                        {"status": "baseline", **hq_mod.freeze_baseline(hive_root)},
+                        default=str,
+                    )
+                return json.dumps(
+                    {"status": "baseline", **hq_mod.verify_baseline(hive_root)},
+                    default=str,
+                )
+            return json.dumps({"error": f"unknown hq_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_witness(self, args: dict[str, Any]) -> str:
         """Record real friction in the witness ledger (grounded evolution)."""
@@ -2140,11 +2623,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     self._prefetch_cache.clear()
                 return json.dumps({"status": "draw", **r}, default=str)
             if sub == "pilgrimage":
+                do_interview = bool(
+                    args.get("interview")
+                    or getattr(self, "_interview_on_pilgrimage", False)
+                )
                 r = hive_mod.pilgrimage(
                     hive_root,
                     hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
                     agent_id=agent_id,
                     focus=str(args.get("focus") or ""),
+                    interview=do_interview,
                 )
                 if self._engine:
                     self._engine.invalidate_cache()
@@ -2222,6 +2710,20 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         )
                 except Exception:
                     pass
+                # Living version advances on promote; skill_bridge records
+                # skill_install itself so we don't double-bump.
+                if not r.get("installed"):
+                    try:
+                        from hermescube.genealogy import record_growth
+
+                        record_growth(
+                            self._hermes_home,
+                            "promote",
+                            detail=f"promote: {name}",
+                            cube=self._cube,
+                        )
+                    except Exception:
+                        pass
             return json.dumps({"status": "promote", **r})
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -2837,9 +3339,58 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
-        return json.dumps({
+        # Skills evolve: helpful feedback on a procedure/skill entry appends
+        # a lesson and bumps the skill's patch version.
+        refine_info: dict[str, Any] | None = None
+        if action == "helpful" and self._hermes_home:
+            try:
+                d = entry.data if isinstance(entry.data, dict) else {}
+                desc = entry.description or ""
+                is_proc = bool(
+                    d.get("procedure")
+                    or d.get("skill_path")
+                    or desc.startswith(
+                        ("[PROCEDURE]", "[PROMOTED]", "[SKILL INSTALLED]")
+                    )
+                )
+                if is_proc:
+                    from hermescube.genealogy import refine_skill
+
+                    skill_name = ""
+                    if d.get("skill_path"):
+                        skill_name = Path(str(d["skill_path"])).parent.name
+                    elif desc.startswith("[SKILL INSTALLED]"):
+                        skill_name = desc.split("]", 1)[-1].strip().split()[0]
+                    elif d.get("draft"):
+                        skill_name = Path(str(d["draft"])).stem
+                    if skill_name:
+                        refine_info = refine_skill(
+                            self._hermes_home,
+                            skill_name,
+                            lesson=f"reinforced in use (trust → {new_trust}): {desc[:160]}",
+                            cube=self._cube,
+                        )
+                    else:
+                        from hermescube.genealogy import record_growth
+
+                        record_growth(
+                            self._hermes_home,
+                            "feedback_up",
+                            detail=f"trust↑ on procedure: {desc[:80]}",
+                            cube=self._cube,
+                        )
+            except Exception:
+                pass
+
+        out: dict[str, Any] = {
             "status": "rated",
             "id": entry_id,
             "action": action,
             "trust": new_trust,
-        })
+        }
+        if refine_info and refine_info.get("ok"):
+            out["skill_refined"] = {
+                "skill": refine_info.get("skill"),
+                "version": refine_info.get("to_version"),
+            }
+        return json.dumps(out)

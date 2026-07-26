@@ -158,6 +158,26 @@ def build_soul_card(
             "procedures": procedures,
         },
     }
+    # Living growth — peers see how mature this soul's cube is
+    if hermes_home:
+        try:
+            from hermescube.genealogy import compute_age, load_genealogy
+
+            g = load_genealogy(hermes_home)
+            age = compute_age(g)
+            card["growth"] = {
+                "version": g.get("version") or "0.0.0",
+                "era": g.get("era") or "genesis",
+                "capability": g.get("strength") or 0,
+                "strength": g.get("strength") or 0,  # compat alias
+                "age": age,
+                "cycles": age["cycles"],
+                "lived": age["lived"],
+                "epochs": g.get("epochs") or 0,
+                "skills": list((g.get("skills") or {}).keys())[:12],
+            }
+        except Exception:
+            pass
     # merge peer knowledge if present
     try:
         from hermescube.peer_card import load_card
@@ -212,8 +232,18 @@ def _offerable(entry: Any) -> bool:
         return False
     if (d.get("source") or "") in _OFFER_SOURCES_SKIP:
         return False
+    # No wisdom laundering: knowledge that arrived FROM the hive (drawn
+    # entries, hive_shared verification) must never be re-offered under
+    # this agent's name — the collective already holds it with the true
+    # author's provenance.
+    if d.get("hive_shared") or d.get("from_agent") or d.get("offer_hash"):
+        return False
+    if str(d.get("verification") or "") == "hive_shared":
+        return False
     desc = (getattr(entry, "description", "") or "").strip()
     if len(desc) < 12:
+        return False
+    if desc.startswith("[HIVE:") or "[INTERVIEW:" in desc:
         return False
     # only share durable / distilled knowledge
     if not (
@@ -286,7 +316,10 @@ def write_offering(
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in agent_id)[:64]
     agent_dir = p["offerings"] / safe
     agent_dir.mkdir(parents=True, exist_ok=True)
-    fname = f"offering_{int(time.time())}.jsonl.gz"
+    # Nanosecond stamp + entropy: several offerings can land in the same
+    # second during a single pilgrimage (offer, then interview facts) and
+    # must never overwrite each other
+    fname = f"offering_{time.time_ns()}_{os.urandom(3).hex()}.jsonl.gz"
     path = agent_dir / fname
     with gzip.open(path, "wt", encoding="utf-8") as f:
         for row in rows:
@@ -428,6 +461,7 @@ def draw_wisdom(
 
     drawn = 0
     skipped_own = 0
+    drawn_lessons: list[str] = []
     with CubeFile.open(str(p["cube"])) as hive_cube:
         candidates: list[tuple[Any, float]]
         if focus.strip():
@@ -453,6 +487,10 @@ def draw_wisdom(
             desc = (entry.description or "").strip()
             if not desc:
                 continue
+            # Echo guard: never re-absorb your own interviewed knowledge
+            if f"[INTERVIEW:{agent_id}]" in desc:
+                skipped_own += 1
+                continue
             ev = make_event(
                 "hive_draw",
                 session_id="",
@@ -465,26 +503,38 @@ def draw_wisdom(
                 verification=DRAW_VERIFICATION,
                 payload={"from_agent": d.get("from_agent"), "offer_hash": ch},
             )
+            # Preserve distillation flags so maturity ranking + skill
+            # matching can see crystals/procedures after the draw.
+            tagged = f"[HIVE:{d.get('from_agent', '?')}] {desc[:400]}"
             agent_cube.append(
                 entry_type=entry.entry_type or "belief",
-                description=f"[HIVE:{d.get('from_agent', '?')}] {desc[:400]}",
+                description=tagged,
                 data=event_to_entry_data(
                     ev,
                     offer_hash=ch,
                     from_agent=d.get("from_agent"),
                     hive_shared=True,
                     durable=True,
+                    crystal=bool(d.get("crystal")),
+                    procedure=bool(d.get("procedure")),
+                    entities=d.get("entities") or [],
                 ),
                 outcome=entry.outcome or "none",
             )
             local_seen.add(ch)
             drawn += 1
+            drawn_lessons.append(tagged)
 
     _ledger_write(
         hive_root,
         {"action": "draw", "agent_id": agent_id, "drawn": drawn, "focus": focus[:120]},
     )
-    return {"ok": True, "drawn": drawn, "skipped_own": skipped_own}
+    return {
+        "ok": True,
+        "drawn": drawn,
+        "skipped_own": skipped_own,
+        "lessons": drawn_lessons,
+    }
 
 
 # ── Pilgrimage (full nightly cycle) ─────────────────────────────────
@@ -498,12 +548,16 @@ def pilgrimage(
     focus: str = "",
     offer_limit: int = 200,
     draw_limit: int = 12,
+    interview: bool = False,
+    interview_peers: int = 1,
 ) -> dict[str, Any]:
-    """Full cycle: offer distilled experience → assimilate → draw wisdom.
+    """Full cycle: offer → assimilate → draw → optional peer interview.
 
     Intended to run at a quiet hour (Hermes cron or hive host cron):
     every agent goes to the hive at the end of the night and uploads what
-    it learned, then returns with what the collective knows.
+    it learned, then returns with what the collective knows. When
+    ``interview=True``, the agent also interviews peer souls (interview-me
+    protocol) and may mint consent-gated skill drafts from the briefs.
     """
     if not is_hive(hive_root):
         init_hive(hive_root)
@@ -521,26 +575,137 @@ def pilgrimage(
         else:
             report["offer"] = {"rows": 0}
 
-        # soul card
+        # 2. PEER INTERVIEW (optional — interview-me at the hive).
+        # Runs BEFORE assimilate so interview-distilled facts (persisted
+        # as offerings) join the collective in this same visit.
+        if interview:
+            try:
+                report["interviews"] = _pilgrimage_interviews(
+                    hive_root,
+                    interviewer=agent_id,
+                    hermes_home=home,
+                    focus=focus,
+                    peers=interview_peers,
+                )
+            except Exception as e:
+                report["interviews"] = {"error": str(e)}
+
+        # 3. ASSIMILATE (all pending offerings — including interview facts)
+        report["assimilate"] = assimilate_offerings(hive_root)
+
+        # 4. DRAW
+        report["draw"] = draw_wisdom(
+            hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
+        )
+
+        # 5. GROWTH — pilgrimage experience advances the living cube version
+        try:
+            from hermescube.genealogy import tick_session
+
+            drew = int((report.get("draw") or {}).get("drawn") or 0)
+            ivs = report.get("interviews") or []
+            interviewed = (
+                sum(1 for x in ivs if isinstance(x, dict) and x.get("ok"))
+                if isinstance(ivs, list)
+                else 0
+            )
+            offered = int((report.get("offer") or {}).get("rows") or 0)
+            report["growth"] = tick_session(
+                home,
+                cube=cube,
+                durable_writes=offered,
+                drew=drew,
+                interviewed=interviewed,
+            )
+        except Exception as e:
+            report["growth"] = {"error": str(e)}
+
+        # 6. CURATOR — drawn lessons refine skills; era milestones forge/garden
+        try:
+            from hermescube.curator import run_curator
+
+            lessons = list((report.get("draw") or {}).get("lessons") or [])
+            # Interview briefs also leave distillable facts as lessons
+            for ivr in report.get("interviews") or []:
+                if isinstance(ivr, dict) and ivr.get("ok"):
+                    topic = ivr.get("outcome") or ""
+                    if ivr.get("session_id"):
+                        lessons.append(
+                            f"peer interview on craft: {topic} "
+                            f"session {ivr.get('session_id')}"
+                        )
+            growth = report.get("growth") or {}
+            report["curator"] = run_curator(
+                home,
+                cube=cube,
+                lessons=lessons,
+                era_milestone=bool(
+                    growth.get("bumped") and growth.get("bump") == "major"
+                ),
+            )
+        except Exception as e:
+            report["curator"] = {"error": str(e)}
+
+        # 7. SOUL CARD — published LAST so peers see post-growth living
+        # version, strength, and skills refined during this visit.
         try:
             card = build_soul_card(
                 list(cube.read_l1() or []), agent_id=agent_id, hermes_home=home
             )
             publish_soul_card(hive_root, card)
             report["soul_card"] = True
+            report["soul_growth"] = card.get("growth")
         except Exception as e:
             report["soul_card"] = f"failed: {e}"
 
-        # 2. ASSIMILATE (any pending offerings, from all agents)
-        report["assimilate"] = assimilate_offerings(hive_root)
-
-        # 3. DRAW
-        report["draw"] = draw_wisdom(
-            hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
-        )
-
     _ledger_write(hive_root, {"action": "pilgrimage", "agent_id": agent_id})
     return report
+
+
+def _pilgrimage_interviews(
+    hive_root: str | Path,
+    *,
+    interviewer: str,
+    hermes_home: Path,
+    focus: str,
+    peers: int,
+) -> list[dict[str, Any]]:
+    """Interview up to ``peers`` other souls present in the hive."""
+    from hermescube.interview import peer_dialogue
+
+    souls = [
+        s for s in list_souls(hive_root)
+        if s.get("agent_id") and s.get("agent_id") != interviewer
+    ]
+    # Prefer souls whose missions/wisdom overlap the focus
+    focus_l = (focus or "").lower()
+
+    def score(s: dict[str, Any]) -> int:
+        soul = s.get("soul") or {}
+        blob = " ".join(
+            str(x)
+            for k in ("wisdom", "missions", "procedures", "beliefs")
+            for x in (soul.get(k) or [])
+        ).lower()
+        return sum(1 for t in focus_l.split() if t and t in blob) if focus_l else 1
+
+    souls.sort(key=score, reverse=True)
+    results = []
+    topic = focus.strip() or "shared craft and lessons learned"
+    for s in souls[: max(0, peers)]:
+        results.append(
+            peer_dialogue(
+                hive_root,
+                interviewer=interviewer,
+                subject=str(s["agent_id"]),
+                topic=topic,
+                mode="discover",
+                hermes_home=hermes_home,
+                persist=True,
+                mint=True,
+            )
+        )
+    return results
 
 
 def hive_status(hive_root: str | Path) -> dict[str, Any]:
@@ -564,7 +729,7 @@ def hive_status(hive_root: str | Path) -> dict[str, Any]:
             if d.is_dir()
             for _ in d.glob("offering_*.jsonl.gz")
         )
-    return {
+    status: dict[str, Any] = {
         "ok": True,
         "name": meta.get("name"),
         "root": str(p["root"]),
@@ -573,3 +738,22 @@ def hive_status(hive_root: str | Path) -> dict[str, Any]:
         "souls": len(souls),
         "pending_offerings": pending,
     }
+    # One nexus, one status: fold in HQ + interview surfaces when present
+    try:
+        from hermescube.hq import list_charters, list_handoffs
+
+        charters = list_charters(hive_root)
+        status["charters"] = len(charters)
+        status["command"] = next(
+            (c["agent_id"] for c in charters if c.get("role") == "command"), None
+        )
+        status["pending_handoffs"] = len(list_handoffs(hive_root, status="pending"))
+    except Exception:
+        pass
+    try:
+        from hermescube.interview import list_interviews
+
+        status["interviews"] = len(list_interviews(hive_root, limit=1000))
+    except Exception:
+        pass
+    return status

@@ -40,6 +40,43 @@ falsifiable predictions a verifier later settles, a mechanical critic flags
 bookkeeping theatre, and a gardener surfaces dormant memories without
 deleting. See [docs/SELF_EVOLUTION.md](docs/SELF_EVOLUTION.md).
 
+**Fleet HQ (0.24+):** the hive root doubles as the command layer for any
+number of agents — charters record who owns which lane, routing sends work
+to its owner (command fallback for the rest), handoffs carry distilled
+evidence packets, task claims prevent turf wars, `hq verify` catches ghost
+routes and lane conflicts, and frozen baselines prove what changed.
+Subagents get read-only memory tools: work flows upward, privilege does
+not flow down. See [docs/HQ.md](docs/HQ.md).
+
+**Peer interviews (0.25+):** agents that pilgrimage back can interview
+each other with the interview-me protocol — inspect soul cards before
+asking, one high-value question at a time, grounded answers, a structured
+brief, and consent-gated skill drafts. See [docs/INTERVIEW.md](docs/INTERVIEW.md).
+
+**One system (0.26+):** the layers are one machine, not four features.
+The night cycle at the nexus runs OFFER → SOUL CARD → INTERVIEW →
+ASSIMILATE → DRAW, so interviewed knowledge joins the collective in the
+same visit. Interviews take HQ task claims and land in the HQ handoff
+ledger; minted peer lessons commit falsifiable harness predictions;
+handoffs route, carry distilled evidence packets, and settle
+(`hq_action=handoff` / `complete`); echo guards and provenance filters
+keep every fact attributed to the soul that lived it. `hive status` is
+the single pane: souls, collective, charters, handoffs, interviews.
+
+**Living growth (0.27+):** every cube is born at living version `0.0.0`
+and strengthens with experience — the same visible growth story Hermes
+Agent has for skills and MEMORY.md, but for the archive itself. Sessions,
+draws, interviews, promotions, skill installs, and confirmed predictions
+advance the version; helpful feedback *refines* installed skills in place
+(patch bump + lessons ledger); era thresholds (25/50/75/90 strength)
+earn major bumps. The diary is `memories/CUBE.md`. See [docs/GROWTH.md](docs/GROWTH.md).
+
+**Curator + maturity (0.28+):** growth changes behavior. Elder cubes
+prefer distilled knowledge in retrieval; soul cards advertise living
+version to the hive; a curator matches drawn lessons to installed skills
+and refines them (Hermes closed learning loop), forging and gardening on
+era milestones — still consent-gated.
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

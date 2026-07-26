@@ -121,6 +121,35 @@ def install_approved_draft(
             rec["entry_id"] = getattr(e, "id", None)
         except Exception as ex:
             rec["cube_error"] = str(ex)
+
+    # Living genealogy — installing a skill is a minor epoch
+    try:
+        from hermescube.genealogy import record_growth
+
+        skill_ver = "0.1.0"
+        if text.startswith("---"):
+            try:
+                fm = text.split("---", 2)[1]
+                for line in fm.splitlines():
+                    if line.strip().startswith("version:"):
+                        skill_ver = line.split(":", 1)[1].strip().strip("\"'")
+                        break
+            except Exception:
+                pass
+        growth = record_growth(
+            home,
+            "skill_install",
+            detail=f"installed skill '{safe}' into Hermes skills/",
+            cube=cube,
+            skill=safe,
+            skill_version=skill_ver,
+        )
+        rec["growth"] = {
+            "version": growth.get("to"),
+            "strength": growth.get("strength"),
+        }
+    except Exception as ex:
+        rec["growth_error"] = str(ex)
     return rec
 
 

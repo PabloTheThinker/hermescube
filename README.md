@@ -263,6 +263,9 @@ Choose the right type for each memory.
 | **[Binary Format Spec](docs/SPEC.md)** | `.cube` file layout, HRR algebra, HAR protocol |
 | **[Hive Nexus](docs/HIVE.md)** | Multi-agent collective memory: pilgrimage, soul cards, trust model |
 | **[Self-Evolution](docs/SELF_EVOLUTION.md)** | Grounded harness: witness ledger, predictions, critic, gardener |
+| **[Fleet HQ](docs/HQ.md)** | Charters, routing, handoffs, claims, fleet verification, baselines |
+| **[Peer Interviews](docs/INTERVIEW.md)** | interview-me at the Hive: dialogue, briefs, skill drafts |
+| **[Living Growth](docs/GROWTH.md)** | Cube genealogy from 0.0.0; maturity ranking; curator refines skills from draws |
 | **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
 
 ---

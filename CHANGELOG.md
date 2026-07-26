@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.28.0] - 2026-07-26
+
+### Growth that strengthens the system — curator + maturity ranking
+- **Maturity-aware retrieval**: `bio_rank.maturity_multiplier` — as the living cube's era/strength rises, crystals and procedures rank higher and ephemeral chatter ranks lower (high lexical identity still wins). Provider pushes genealogy onto `HARQueryEngine._maturity` on init and after every growth tick
+- **Soul cards publish growth**: `build_soul_card` now includes `growth.{version,era,strength,epochs,skills}` so peers at the hive can see how mature each soul's archive is (`hermescube hive souls`)
+- **`curator.py`**: Hermes-style closed learning loop for the Cube — match drawn/interviewed lessons to installed skills by topical overlap and `refine_skill` them; on era milestones (major bumps) also forge procedure drafts + run the gardener (consent-gated)
+- **Pilgrimage step 6**: after growth tick, curator runs automatically; CLI prints refined skills / milestone forge+garden
+- **Draws preserve distillation**: `crystal` / `procedure` / `entities` survive offer → assimilate → draw so maturity ranking and skill matching see peer-distilled knowledge for what it is
+- CLI: `hermescube growth curate [--lesson …] [--milestone]`; tool: `manage action=curate`
+- 354 tests pass
+
+## [0.27.0] - 2026-07-26
+
+### Living Cube Growth — from 0.0.0 to elder
+- **`genealogy.py`**: every cube is born at living version `0.0.0` (distinct from package version and binary format version). Experience advances it — patch for sessions/draws/interviews, minor for promotes/skill-installs/refines/crystals/confirmed predictions, major when strength crosses an era threshold (25 awakening / 50 formed / 75 seasoned / 90 elder)
+- **Strength score (0–100)**: weighted composite of durable memories, crystals, procedures, installed skills, hive draws, interviews, confirmed predictions, and mean trust — raw turn dumps cannot fake maturity
+- **`CUBE.md`**: human-readable growth diary under `$HERMES_HOME/memories/` (the cube's equivalent of Hermes Agent's visible learning story), rewritten each epoch; append-only truth in `memories/growth/epochs.jsonl`
+- **Skills evolve**: helpful feedback on a procedure/skill entry (or `hermescube growth refine`) bumps the skill's own `version:`, appends under `## Lessons from the cube` without rewriting the core body, and advances the cube's living version
+- **Wired throughout**: genesis on provider init; session-end tick; pilgrimage prints a growth line; promote / skill_bridge record epochs; system prompt carries `Living Cube vX.Y.Z (era, strength N/100)`
+- **CLI**: `hermescube growth status|epochs|refine`; `hermescube info` shows living version
+- **Agent tool**: `hermescube_manage action=growth content=status|epochs|refine:<skill>`
+- Docs: [docs/GROWTH.md](docs/GROWTH.md)
+
+## [0.26.0] - 2026-07-26
+
+### One system — deep integration of Hive, HQ, harness, and interviews
+- **Pilgrimage reordered**: OFFER → SOUL CARD → INTERVIEW → ASSIMILATE → DRAW — interview-distilled facts now join the collective cube in the *same* visit instead of waiting for the next pilgrimage
+- **Interviews are fleet citizens**: each dialogue takes an HQ task claim (`interview:<subject>:<topic>`; concurrent attempts get a conflict, not a duplicate) and every completed dialogue is recorded in the HQ handoff ledger as knowledge flowing subject → interviewer
+- **Provenance boundary fixed**: when the interviewer's cube grounds answers, only subject-attributed entries (`from_agent` / `[HIVE:subject]` / `[INTERVIEW:subject]`) are admissible — the interviewer's own memories can no longer masquerade as the subject's answers (cube evidence also now scores above the unknown threshold)
+- **Interview dedupe + echo guard**: interview facts use content hashes (re-interviewing dedupes at assimilation instead of piling up); `draw_wisdom` never returns facts others distilled *about* the drawing agent
+- **Handoff lifecycle closed**: `manage action=hq hq_action=handoff` routes the task, distills an evidence packet from your cube, and records a pending handoff in one call; `hq_action=complete` / `hermescube hq complete --id` settles it — pending handoffs that never settle are still flagged by `hq verify`
+- **Interviews feed the harness**: a minted peer lesson commits a falsifiable `witness_absence` prediction — the lesson is supposed to prevent friction on that topic, and the verifier checks that it did
+- **One status pane**: `hive status` now folds in charters (and the command owner), pending handoffs, and interviews held
+- Session-end pilgrimage invalidates the retrieval cache so freshly drawn wisdom is immediately searchable; system prompt hive line now surfaces interview + HQ tooling
+- New `tests/test_integration.py`: full night-cycle coverage across all layers (336 tests total)
+
+## [0.25.0] - 2026-07-26
+
+### Peer interviews — interview-me at the Hive
+- **Adapted from** [hermes-field-kit/interview-me](https://github.com/asimons81/hermes-field-kit/tree/main/skills/interview-me) (Tony Simons, Apache-2.0): adaptive, evidence-first, one high-value question at a time
+- **`interview.py`**: peer dialogue protocol — inspect soul card/charter/offerings before asking; coverage map across 10 dimensions; grounded answers from dossier + HAR (unknown when no evidence); interview-me report contract brief; consent-gated skill draft minting (`origin: hermescube-peer-interview`)
+- **Pilgrimage ritual**: `hermescube hive pilgrimage --interview` (or `interview_on_pilgrimage: true`) — after offer/assimilate/draw, interview peer souls and mint pending procedure drafts
+- **CLI**: `hermescube interview dialogue|list`
+- **Agent tool**: `hermescube_manage action=interview interview_action=dialogue|list|mint`
+- **Bundled skill**: `skills/interview-me/SKILL.md` — works for human interviews and hive peer dialogue
+- Safety: inspected content is untrusted evidence (sanitized + threat-scanned); no silent skill installs; persist/mint are explicit
+
+## [0.24.0] - 2026-07-26
+
+### Fleet HQ — clear ownership for 1, 100, or a million agents
+- **Charters** (`hq.py`): permanent agents exist because they own a durable lane — role (`command`/`specialist`), lane, keywords, boundaries; `retire` keeps history but stops routing immediately (no ghost routing)
+- **Routing**: explicit overrides (audited) → lane keyword match → command fallback; the orchestrator owns the outcome. `hermescube hq route --task "..."` / `manage action=hq hq_action=route`
+- **Privilege stays at the top**: subagents now get read-only memory tools (`search`/`probe`/`feedback`) — `manage` (durable writes, hive, HQ) is blocked with a boundary error; work flows upward
+- **Lane strips**: chartered agents see their lane, boundaries, and other lanes' owners in the system prompt — specialists hand off instead of quietly doing everything
+- **Handoff packets**: delegations distill task-relevant evidence (typed, quoted, provenance-tagged) via HAR + evidence packets; `on_delegation` records fleet handoffs in the ledger
+- **Task claims**: leased ownership per task key; concurrent claims return a conflict with the current owner — no two agents thinking the task belongs to them
+- **Fleet verification**: `hq verify` flags ghost routes, lane conflicts, missing command charter, uncharted souls, stuck handoffs (non-zero exit when flagged, cron-able)
+- **Baselines**: `hq freeze` snapshots charter/routing hashes + collective stats; `hq drift` proves what changed — production ready means recoverable
+- CLI: `hermescube hq charter|retire|list|route|verify|freeze|drift|handoffs`
+- HQ state lives inside the hive root (`charters/`, `routing.json`, `handoffs.jsonl`, `claims/`, `baseline.json`) — the hive *is* the fleet HQ
+
 ## [0.23.0] - 2026-07-26
 
 ### Grounded self-evolution harness (witness → evolve → verify → critique → garden)

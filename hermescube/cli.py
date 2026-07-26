@@ -38,6 +38,25 @@ def cmd_info(args: argparse.Namespace) -> None:
               f"{info['l2_buckets']['non_empty']} non-empty")
         print(f"File size: {info['file_size']} bytes")
         print(f"Backend: {'numpy' if info['has_numpy'] else 'pure-python'}")
+        # Living genealogy (soul-age of this cube)
+        try:
+            from pathlib import Path
+
+            from hermescube.genealogy import growth_status
+
+            home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+            # Infer hermes_home from cube path when under memories/
+            cpath = Path(info["path"]).resolve()
+            if cpath.parent.name == "memories":
+                home = str(cpath.parent.parent)
+            g = growth_status(home, cube=cube)
+            age = g.get("age") or {}
+            print(f"\nLiving version: v{g.get('version')}")
+            print(f"  age:        {age.get('label', '—')}  (digital cycles + lived time)")
+            print(f"  era:        {g.get('era')}  · capability {g.get('capability', g.get('strength'))}/100")
+            print(f"  diary:      {g.get('cube_md')}")
+        except Exception as e:
+            print(f"\nLiving version: n/a ({e})")
         try:
             dens = cube.density_stats()
             print("\nDensity (archive packing):")
@@ -68,6 +87,106 @@ def cmd_info(args: argparse.Namespace) -> None:
                 print(f"  ! {issue}")
         except Exception as e:
             print(f"\nIntegrity: n/a ({e})")
+
+
+def cmd_growth(args: argparse.Namespace) -> int:
+    """Show / refine the living cube genealogy."""
+    from pathlib import Path
+
+    from hermescube import genealogy as gen
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cube = None
+    cube_path = Path(home) / "memories" / "memory.cube"
+    if cube_path.is_file():
+        try:
+            cube = CubeFile.open(str(cube_path))
+        except Exception:
+            cube = None
+    try:
+        cmd = args.growth_command
+        if cmd == "status":
+            s = gen.growth_status(home, cube=cube)
+            age = s.get("age") or {}
+            print(f"Living Cube v{s.get('version')}  — era {s.get('era')}")
+            print(f"  age:         {age.get('label', '—')}")
+            print(f"  capability:  {s.get('capability', s.get('strength'))}/100  (coherence, not age)")
+            print(f"  diary:       {s.get('cube_md')}")
+            counts = s.get("counts") or {}
+            print(f"  durable={counts.get('durable', 0)}  "
+                  f"crystals={counts.get('crystals', 0)}  "
+                  f"procedures={counts.get('procedures', 0)}  "
+                  f"skills={counts.get('skills_installed', 0)}  "
+                  f"draws={counts.get('hive_draws', 0)}")
+            skills = s.get("skills") or {}
+            if skills:
+                print("  skills evolving:")
+                for name, meta in list(skills.items())[:12]:
+                    print(f"    · {name} v{meta.get('version')} "
+                          f"(refined {meta.get('refined', 0)}×)")
+            return 0
+        if cmd == "epochs":
+            for e in gen.list_epochs(home, limit=int(args.limit or 30)):
+                if e.get("kind") == "genesis":
+                    print(f"[C0 genesis] → {e.get('to')}: {e.get('reason')}")
+                else:
+                    cyc = e.get("cycle")
+                    cyc_s = f"C{cyc} " if cyc is not None else ""
+                    print(
+                        f"[{cyc_s}{e.get('bump')}] {e.get('from')} → {e.get('to')}  "
+                        f"{e.get('reason', '')[:100]}"
+                    )
+            return 0
+        if cmd == "refine":
+            if not args.skill or not args.lesson:
+                print("Error: --skill and --lesson required", file=sys.stderr)
+                return 1
+            r = gen.refine_skill(home, args.skill, lesson=args.lesson, cube=cube)
+            if not r.get("ok"):
+                print(f"Error: {r.get('error')}", file=sys.stderr)
+                return 1
+            print(
+                f"Skill refined: {r.get('skill')} "
+                f"{r.get('from_version')} → {r.get('to_version')}"
+            )
+            g = (r.get("growth") or {})
+            if g.get("bumped"):
+                age = g.get("age") or {}
+                print(f"  cube: v{g.get('from')} → v{g.get('to')}  "
+                      f"({age.get('label', '')})")
+            return 0
+        if cmd == "curate":
+            from hermescube.curator import run_curator
+
+            lessons = [args.lesson] if args.lesson else []
+            r = run_curator(
+                home,
+                cube=cube,
+                lessons=lessons,
+                era_milestone=bool(getattr(args, "milestone", False)),
+            )
+            refines = r.get("refines") or []
+            if refines:
+                for rf in refines:
+                    print(
+                        f"Refined: {rf.get('skill')} "
+                        f"{rf.get('from_version')} → {rf.get('to_version')}"
+                    )
+            else:
+                print("Curator: no skill overlaps found for lessons.")
+            if r.get("forge"):
+                print(f"  forge: {r.get('forge')}")
+            if r.get("garden"):
+                print(f"  garden: {r.get('garden')}")
+            return 0
+        print(f"Error: unknown growth command {cmd}", file=sys.stderr)
+        return 1
+    finally:
+        if cube is not None:
+            try:
+                cube.close()
+            except Exception:
+                pass
 
 
 def cmd_append(args: argparse.Namespace) -> None:
@@ -276,8 +395,101 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Focus query when drawing collective wisdom",
     )
+    p_hive.add_argument(
+        "--interview",
+        action="store_true",
+        help="After upload/draw, interview peer souls (interview-me) and mint skill drafts",
+    )
+    p_hive.add_argument(
+        "--interview-peers",
+        type=int,
+        default=1,
+        help="How many peer souls to interview during pilgrimage (default 1)",
+    )
+
+    # interview — peer dialogue at the hive (interview-me protocol)
+    p_iv = sub.add_parser(
+        "interview",
+        help="Peer interview: dialogue/list (agents interview each other at the hive)",
+    )
+    p_iv.add_argument(
+        "interview_command",
+        choices=["dialogue", "list"],
+        help="Interview operation",
+    )
+    p_iv.add_argument("--hive", default=None, help="Hive directory (default: $HERMESCUBE_HIVE)")
+    p_iv.add_argument("--interviewer", default=None, help="Interviewing agent id")
+    p_iv.add_argument("--subject", default=None, help="Subject agent id to interview")
+    p_iv.add_argument("--topic", default="shared craft", help="Interview topic")
+    p_iv.add_argument(
+        "--mode",
+        default="discover",
+        choices=["clarify", "discover", "brief", "decision", "retrospective", "profile"],
+    )
+    p_iv.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Where to mint skill drafts (default: $HERMES_HOME)",
+    )
+    p_iv.add_argument(
+        "--no-mint",
+        action="store_true",
+        help="Do not mint a procedure draft from the brief",
+    )
+    p_iv.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Do not offer distilled facts back to the hive",
+    )
+
+    # hq — fleet command layer (charters, routing, verification, baseline)
+    p_hq = sub.add_parser(
+        "hq",
+        help="Fleet HQ: charter/list/route/verify/freeze/drift/handoffs",
+    )
+    p_hq.add_argument(
+        "hq_command",
+        choices=[
+            "charter", "retire", "list", "route", "verify",
+            "freeze", "drift", "handoffs", "complete",
+        ],
+        help="HQ operation",
+    )
+    p_hq.add_argument("--id", default="", help="For complete: handoff id to settle")
+    p_hq.add_argument("--hive", default=None, help="Hive/HQ directory (default: $HERMESCUBE_HIVE)")
+    p_hq.add_argument("--agent", default=None, help="Agent id (for charter/retire)")
+    p_hq.add_argument("--role", default="specialist", choices=["command", "specialist"])
+    p_hq.add_argument("--lane", default="", help="For charter: the durable lane this agent owns")
+    p_hq.add_argument("--keywords", default="", help="For charter: comma-separated lane keywords")
+    p_hq.add_argument("--boundaries", default="", help="For charter: semicolon-separated boundaries")
+    p_hq.add_argument("--task", default="", help="For route: task text to route")
 
     # harness — grounded self-evolution (witness / critic / verifier / gardener)
+    p_growth = sub.add_parser(
+        "growth",
+        help="Living cube genealogy: status/epochs/refine (starts at 0.0.0)",
+    )
+    p_growth.add_argument(
+        "growth_command",
+        choices=["status", "epochs", "refine", "curate"],
+        help="Growth operation",
+    )
+    p_growth.add_argument(
+        "--hermes-home",
+        default="",
+        help="Hermes home (default: $HERMES_HOME or ~/.hermes)",
+    )
+    p_growth.add_argument("--limit", type=int, default=30, help="For epochs: how many")
+    p_growth.add_argument("--skill", default="", help="For refine: skill name")
+    p_growth.add_argument(
+        "--lesson", default="", help="For refine/curate: lesson text"
+    )
+    p_growth.add_argument(
+        "--milestone",
+        action="store_true",
+        help="For curate: force era-milestone forge+garden pass",
+    )
+
     p_har = sub.add_parser(
         "harness",
         help="Self-evolution harness: status/witness/critic/verify/gardener",
@@ -314,6 +526,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hive(args)
     if args.command == "harness":
         return cmd_harness(args)
+    if args.command == "hq":
+        return cmd_hq(args)
+    if args.command == "interview":
+        return cmd_interview(args)
+    if args.command == "growth":
+        return cmd_growth(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -383,6 +601,12 @@ def cmd_hive(args: argparse.Namespace) -> int:
         print(f"  collective entries: {s.get('collective_entries')}")
         print(f"  souls registered:   {s.get('souls')}")
         print(f"  pending offerings:  {s.get('pending_offerings')}")
+        if "charters" in s:
+            cmd_owner = s.get("command") or "NONE (run: hermescube hq charter --role command …)"
+            print(f"  charters:           {s.get('charters')}  (command: {cmd_owner})")
+            print(f"  pending handoffs:   {s.get('pending_handoffs')}")
+        if "interviews" in s:
+            print(f"  interviews held:    {s.get('interviews')}")
         for a in s.get("agents") or []:
             print(f"    · {a}")
         return 0
@@ -402,11 +626,28 @@ def cmd_hive(args: argparse.Namespace) -> int:
             return 0
         for s in souls:
             soul = s.get("soul") or {}
-            print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')})")
+            growth = s.get("growth") or {}
+            gstrip = ""
+            if growth:
+                age = growth.get("age") or {}
+                age_s = age.get("label") or (
+                    f"C{growth.get('cycles', 0)} · {growth.get('lived', '?')}"
+                )
+                gstrip = (
+                    f"  v{growth.get('version')} · {age_s} · "
+                    f"era {growth.get('era')}"
+                )
+            print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')}){gstrip}")
             for w in (soul.get("wisdom") or [])[:2]:
                 print(f"    wisdom: {w[:90]}")
             for m in (soul.get("missions") or [])[:2]:
                 print(f"    mission: {m[:90]}")
+            skills = growth.get("skills") or []
+            if skills:
+                print(f"    skills: {', '.join(skills[:4])}")
+            if growth.get("capability") is not None or growth.get("strength") is not None:
+                cap = growth.get("capability", growth.get("strength"))
+                print(f"    capability: {cap}/100")
         return 0
 
     if cmd == "pilgrimage":
@@ -417,6 +658,8 @@ def cmd_hive(args: argparse.Namespace) -> int:
             hermes_home=home,
             agent_id=agent,
             focus=args.focus or "",
+            interview=bool(args.interview),
+            interview_peers=int(args.interview_peers or 1),
         )
         if not r.get("ok"):
             print(f"Error: {r.get('error')}", file=sys.stderr)
@@ -429,9 +672,226 @@ def cmd_hive(args: argparse.Namespace) -> int:
         print(f"  assimilated: {assim.get('merged', 0)} (dupes {assim.get('dupes', 0)}, blocked {assim.get('blocked', 0)})")
         print(f"  drew:        {draw.get('drawn', 0)} collective entries")
         print(f"  soul card:   {'updated' if r.get('soul_card') is True else r.get('soul_card')}")
+        for ivr in r.get("interviews") or []:
+            if isinstance(ivr, dict) and ivr.get("ok"):
+                mint = ivr.get("mint") or {}
+                print(
+                    f"  interview:   {ivr.get('session_id')} → {ivr.get('outcome')} "
+                    f"(draft: {mint.get('name') or 'none'})"
+                )
+            elif isinstance(ivr, dict):
+                print(f"  interview:   error: {ivr.get('error')}")
+        g = r.get("growth") or {}
+        age = g.get("age") or {}
+        if g.get("bumped"):
+            print(
+                f"  growth:      v{g.get('from')} → v{g.get('to')}  "
+                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· capability {g.get('capability', g.get('strength'))}/100"
+            )
+        elif g.get("version"):
+            print(
+                f"  growth:      v{g.get('version')}  "
+                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· capability {g.get('capability', g.get('strength'))}/100"
+            )
+        cur = r.get("curator") or {}
+        refines = cur.get("refines") or []
+        if refines:
+            for rf in refines:
+                print(
+                    f"  curator:     refined skill {rf.get('skill')} "
+                    f"{rf.get('from_version')} → {rf.get('to_version')}"
+                )
+        elif cur.get("forge") or cur.get("garden"):
+            forge = cur.get("forge") or {}
+            garden = cur.get("garden") or {}
+            print(
+                f"  curator:     era milestone — "
+                f"forged={forge.get('forged', forge.get('written', 0))} "
+                f"garden={garden.get('proposals', garden.get('surfaced', 0))}"
+            )
         return 0
 
     print(f"Error: unknown hive command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_interview(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from hermescube import interview as iv
+
+    hive_root = args.hive or os.environ.get("HERMESCUBE_HIVE")
+    if not hive_root:
+        print("Error: hive path required (--hive or HERMESCUBE_HIVE)", file=sys.stderr)
+        return 1
+
+    if args.interview_command == "list":
+        items = iv.list_interviews(hive_root)
+        if not items:
+            print("No interviews yet.")
+            return 0
+        for i in items:
+            print(
+                f"[{i.get('status')}] {i.get('id')}  "
+                f"{i.get('interviewer')} → {i.get('subject')}  "
+                f"topic={i.get('topic')!r}  turns={i.get('turns')}  "
+                f"outcome={i.get('outcome')}"
+            )
+        return 0
+
+    if args.interview_command == "dialogue":
+        interviewer = args.interviewer or os.environ.get("HERMES_PROFILE") or "hermes"
+        if not args.subject:
+            print("Error: --subject required", file=sys.stderr)
+            return 1
+        home = args.hermes_home or os.environ.get("HERMES_HOME") or str(
+            Path.home() / ".hermes"
+        )
+        r = iv.peer_dialogue(
+            hive_root,
+            interviewer=interviewer,
+            subject=args.subject,
+            topic=args.topic,
+            mode=args.mode,
+            hermes_home=home,
+            persist=not args.no_persist,
+            mint=not args.no_mint,
+        )
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Peer dialogue complete — {interviewer} interviewed {args.subject}")
+        print(f"  session:  {r.get('session_id')}")
+        print(f"  turns:    {r.get('turns')}")
+        print(f"  outcome:  {r.get('outcome')}")
+        print(f"  brief:    {r.get('brief_path')}")
+        print(f"  persisted to hive: {r.get('persisted')}")
+        mint = r.get("mint") or {}
+        if mint.get("ok"):
+            print(f"  skill draft: {mint.get('draft')}  (pending — promote to install)")
+        elif mint:
+            print(f"  mint: {mint.get('error') or mint}")
+        return 0
+
+    print(f"Error: unknown interview command {args.interview_command}", file=sys.stderr)
+    return 1
+
+
+def cmd_hq(args: argparse.Namespace) -> int:
+    from hermescube import hq as hq_mod
+
+    hive_root = args.hive or os.environ.get("HERMESCUBE_HIVE")
+    if not hive_root:
+        print("Error: HQ path required (--hive or HERMESCUBE_HIVE)", file=sys.stderr)
+        return 1
+    cmd = args.hq_command
+
+    if cmd == "charter":
+        if not args.agent or not args.lane or not args.keywords:
+            print("Error: --agent, --lane, --keywords required", file=sys.stderr)
+            return 1
+        r = hq_mod.register_charter(
+            hive_root,
+            args.agent,
+            role=args.role,
+            lane=args.lane,
+            keywords=[k.strip() for k in args.keywords.split(",") if k.strip()],
+            boundaries=[b.strip() for b in args.boundaries.split(";") if b.strip()],
+        )
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        c = r["charter"]
+        print(f"Chartered [{c['role']}] {c['agent_id']}: {c['lane']}")
+        return 0
+
+    if cmd == "retire":
+        if not args.agent:
+            print("Error: --agent required", file=sys.stderr)
+            return 1
+        r = hq_mod.retire_charter(hive_root, args.agent)
+        print(f"Retired: {args.agent}" if r.get("ok") else f"Error: {r.get('error')}")
+        return 0 if r.get("ok") else 1
+
+    if cmd == "list":
+        charters = hq_mod.list_charters(hive_root, include_retired=True)
+        if not charters:
+            print("No charters. Register with: hermescube hq charter --agent ... --lane ... --keywords ...")
+            return 0
+        for c in charters:
+            mark = "·" if c.get("status") == "active" else "✝"
+            print(f"{mark} [{c.get('role')}] {c['agent_id']}: {c.get('lane')}")
+            print(f"    keywords: {', '.join(c.get('keywords') or [])}")
+            for b in c.get("boundaries") or []:
+                print(f"    boundary: {b}")
+        return 0
+
+    if cmd == "route":
+        if not args.task:
+            print("Error: --task required", file=sys.stderr)
+            return 1
+        r = hq_mod.route_task(hive_root, args.task)
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Owner: {r['owner']}  (via {r['via']}, confidence {r['confidence']:.2f})")
+        print(f"  lane: {r.get('lane')}")
+        if r.get("runner_up"):
+            print(f"  runner-up: {r['runner_up']}")
+        return 0
+
+    if cmd == "verify":
+        r = hq_mod.verify_fleet(hive_root)
+        print(f"Fleet verdict: {r['verdict']}  (charters: {r['charters']})")
+        for f in r.get("findings") or []:
+            print(f"  ! {f['flag']}: {f['detail']}")
+        return 0 if r["verdict"] == "healthy" else 2
+
+    if cmd == "freeze":
+        r = hq_mod.freeze_baseline(hive_root)
+        b = r["baseline"]
+        print(f"Baseline frozen: {len(b['charters'])} charters, "
+              f"collective entries {b['collective_entries']}")
+        return 0
+
+    if cmd == "drift":
+        r = hq_mod.verify_baseline(hive_root)
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        if r["clean"]:
+            print("No drift since baseline.")
+            return 0
+        print("Drift detected:")
+        for d in r["drift"]:
+            print(f"  ! {d}")
+        return 2
+
+    if cmd == "handoffs":
+        hs = hq_mod.list_handoffs(hive_root, limit=20)
+        if not hs:
+            print("No handoffs recorded.")
+            return 0
+        for h in hs:
+            print(f"[{h.get('status')}] {h.get('id')}  "
+                  f"{h.get('from_agent')} → {h.get('to_agent')}: "
+                  f"{h.get('task', '')[:70]}")
+        return 0
+
+    if cmd == "complete":
+        if not args.id:
+            print("Error: --id required (handoff id)", file=sys.stderr)
+            return 1
+        r = hq_mod.update_handoff_status(hive_root, args.id, "completed")
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Handoff settled: {args.id} → completed")
+        return 0
+
+    print(f"Error: unknown hq command {cmd}", file=sys.stderr)
     return 1
 
 

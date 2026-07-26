@@ -294,6 +294,40 @@ def extract_fact_lines(assistant: str, *, max_facts: int = 3) -> list[tuple[str,
     return out
 
 
+def maturity_multiplier(
+    data: dict | None,
+    *,
+    era: str = "genesis",
+    strength: float = 0.0,
+) -> float:
+    """Living-cube maturity shapes retrieval — elder cubes prefer distilled knowledge.
+
+    As the archive strengthens (genealogy era/strength), durable crystals and
+    procedures rise; raw ephemeral turns fall. Lexical identity still wins
+    (caller damps this under high lex). Bounded to keep IR honest.
+    """
+    era_w = {
+        "genesis": 0.0,
+        "awakening": 0.35,
+        "formed": 0.65,
+        "seasoned": 0.90,
+        "elder": 1.0,
+    }.get((era or "genesis").lower(), 0.0)
+    # strength softens the curve so mid-era cubes with high strength still benefit
+    w = max(era_w, min(1.0, float(strength or 0) / 100.0) * 0.85)
+    if w <= 0.05:
+        return 1.0
+    d = data if isinstance(data, dict) else {}
+    if d.get("crystal") or d.get("procedure"):
+        return 1.0 + 0.18 * w
+    if d.get("durable") or d.get("hive_shared"):
+        return 1.0 + 0.10 * w
+    # ephemeral / unverified chatter — demote as the cube matures
+    if not d.get("durable") and not d.get("mirror"):
+        return 1.0 - 0.12 * w
+    return 1.0
+
+
 def composite_score(
     semantic: float,
     *,
@@ -305,17 +339,24 @@ def composite_score(
     description: str = "",
     data: dict | None = None,
     yield_boost: float = 1.0,
+    maturity_era: str = "genesis",
+    maturity_strength: float = 0.0,
 ) -> float:
     """Combine hybrid similarity with bio priors for ranking.
 
     yield_boost: query-conditioned payoff multiplier from YieldGradient
     (closed learning loop — what paid off for *similar queries*).
+    maturity_*: living genealogy era/strength — seasoned cubes prefer
+    distilled knowledge over raw turns.
     """
     sim = hybrid_semantic(semantic, lexical)
     r = recency_weight(delta_hours, entry_type, data=data)
     yb = float(yield_boost) if yield_boost and yield_boost > 0 else 1.0
     # keep yield influence bounded
     yb = max(0.75, min(1.40, yb))
+    mm = maturity_multiplier(
+        data, era=maturity_era, strength=maturity_strength
+    )
     # strong lexical match: damp prestige priors so crystals don't bury gold
     prior = type_prior(entry_type)
     src = source_boost(data)
@@ -328,6 +369,7 @@ def composite_score(
         src = 1.0 + (src - 1.0) * 0.25
         tm = 1.0 + (tm - 1.0) * 0.40
         yb = 1.0 + (yb - 1.0) * 0.30
+        mm = 1.0 + (mm - 1.0) * 0.35
     score = (
         float(sim)
         * r
@@ -336,6 +378,7 @@ def composite_score(
         * om
         * src
         * yb
+        * mm
     )
     # explicit high-coverage lift (self-retrieval / exact topic)
     if lx >= 0.75:
