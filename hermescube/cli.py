@@ -277,6 +277,33 @@ def main(argv: list[str] | None = None) -> int:
         help="Focus query when drawing collective wisdom",
     )
 
+    # harness — grounded self-evolution (witness / critic / verifier / gardener)
+    p_har = sub.add_parser(
+        "harness",
+        help="Self-evolution harness: status/witness/critic/verify/gardener",
+    )
+    p_har.add_argument(
+        "harness_command",
+        choices=["status", "witness", "critic", "verify", "gardener"],
+        help="Harness operation",
+    )
+    p_har.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Agent HERMES_HOME (default: $HERMES_HOME)",
+    )
+    p_har.add_argument(
+        "--desc",
+        default="",
+        help="For witness: describe the real friction",
+    )
+    p_har.add_argument(
+        "--severity",
+        default="medium",
+        choices=["low", "medium", "high"],
+        help="For witness: friction severity",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -285,6 +312,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_update(args)
     if args.command == "hive":
         return cmd_hive(args)
+    if args.command == "harness":
+        return cmd_harness(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -403,6 +432,84 @@ def cmd_hive(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Error: unknown hive command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_harness(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from hermescube import self_evolution as se
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cmd = args.harness_command
+
+    if cmd == "witness":
+        if not args.desc:
+            print("Error: --desc required (describe the real friction)", file=sys.stderr)
+            return 1
+        rec = se.record_witness(home, args.desc, severity=args.severity, kind="manual", source="cli")
+        print(f"Witness recorded [{rec['severity']}]: {rec['description'][:100]}")
+        return 0
+
+    if cmd == "status":
+        s = se.harness_status(home)
+        print(f"Harness status ({home})")
+        print(f"  open witnesses: {s['open_witnesses']}")
+        p = s["predictions"]
+        print(f"  predictions: open={p['open']} confirmed={p['confirmed']} "
+              f"refuted={p['refuted']} expired={p['expired']}")
+        lc = s.get("last_critique")
+        if lc:
+            print(f"  last critique: {lc['verdict']}")
+            for f in lc.get("findings") or []:
+                print(f"    ! {f['flag']}: {f['detail']}")
+        for c in (s.get("recent_cycles") or [])[-5:]:
+            print(f"  cycle [{c['kind']}] → {c['outcome']}")
+        return 0
+
+    if cmd == "critic":
+        r = se.run_critic(home)
+        print(f"Critic verdict: {r['verdict']} "
+              f"(cycles reviewed: {r['cycles_reviewed']}, open witnesses: {r['open_witnesses']})")
+        for f in r.get("findings") or []:
+            print(f"  ! {f['flag']}: {f['detail']}")
+        return 0
+
+    if cmd == "verify":
+        cube_path = Path(home) / "memories" / "memory.cube"
+        cube = None
+        if cube_path.is_file():
+            from hermescube.cube import CubeFile
+
+            cube = CubeFile.open(str(cube_path))
+        try:
+            stats = se.verify_predictions(home, cube=cube)
+        finally:
+            if cube is not None:
+                cube.close()
+        print(f"Verifier: open={stats['open']} confirmed={stats['confirmed']} "
+              f"refuted={stats['refuted']} expired={stats['expired']}")
+        return 0
+
+    if cmd == "gardener":
+        cube_path = Path(home) / "memories" / "memory.cube"
+        if not cube_path.is_file():
+            print(f"Error: cube missing: {cube_path}", file=sys.stderr)
+            return 1
+        from hermescube.cube import CubeFile
+
+        with CubeFile.open(str(cube_path)) as cube:
+            r = se.run_gardener(cube, home)
+        print(f"Gardener: scanned {r['durable_scanned']} durable entries, "
+              f"{len(r['dormant_candidates'])} dormant candidates")
+        for c in r["dormant_candidates"][:10]:
+            print(f"  · [{c['type']}] {c['description'][:80]} "
+                  f"(trust {c['trust']:.2f}, {c['age_days']}d)")
+        if r["dormant_candidates"]:
+            print("  (proposals only — archive via hermescube_manage remove)")
+        return 0
+
+    print(f"Error: unknown harness command {cmd}", file=sys.stderr)
     return 1
 
 

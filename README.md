@@ -262,6 +262,7 @@ Choose the right type for each memory.
 | **[Architecture](docs/ARCHITECTURE.md)** | Design rationale, algorithms, data flow |
 | **[Binary Format Spec](docs/SPEC.md)** | `.cube` file layout, HRR algebra, HAR protocol |
 | **[Hive Nexus](docs/HIVE.md)** | Multi-agent collective memory: pilgrimage, soul cards, trust model |
+| **[Self-Evolution](docs/SELF_EVOLUTION.md)** | Grounded harness: witness ledger, predictions, critic, gardener |
 | **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
 
 ---

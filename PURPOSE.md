@@ -33,6 +33,13 @@ ASSIMILATE (threat-scanned, deduped, branch-tagged) → DRAW focus-relevant
 wisdom back, quarantined as `hive_shared` and labeled `[HIVE:<agent>]`.
 See [docs/HIVE.md](docs/HIVE.md).
 
+**Grounded self-evolution (0.23+):** the Cube improves itself under rules
+enforced in code — real friction lands in an append-only witness ledger,
+every evolve cycle reports (no silent failures), promotions commit
+falsifiable predictions a verifier later settles, a mechanical critic flags
+bookkeeping theatre, and a gardener surfaces dormant memories without
+deleting. See [docs/SELF_EVOLUTION.md](docs/SELF_EVOLUTION.md).
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |
