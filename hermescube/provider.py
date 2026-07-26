@@ -228,6 +228,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._parent_session_id: str = ""
         self._branch_id: str = "main"
         self._state_lock = threading.RLock()
+        # Hive nexus (optional shared collective)
+        self._hive_path: str = ""
+        self._hive_on_session_end: bool = False
+        # Grounded self-evolution harness
+        self._witness_detect: bool = True
 
         # Frozen snapshot (set at initialize, never mutated mid-session)
         self._snapshot: _FrozenSnapshot | None = None
@@ -342,8 +347,17 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 plugin_config.get("living_pulse_on_session_end"),
                 self._living_pulse_on_session_end,
             )
+            self._hive_path = str(plugin_config.get("hive_path") or "").strip()
+            self._hive_on_session_end = _coerce_bool(
+                plugin_config.get("hive_on_session_end"), False
+            )
+            self._witness_detect = _coerce_bool(
+                plugin_config.get("witness_detect"), True
+            )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
+            self._hive_path = os.environ.get("HERMESCUBE_HIVE", "").strip()
+            self._hive_on_session_end = False
 
         # Framework path housing
         from hermescube.framework.paths import resolve_cube_paths
@@ -717,8 +731,33 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "drafts",
                                 "peer",
                                 "pulse",
+                                "hive",
+                                "witness",
+                                "harness",
                             ],
-                            "description": "warehouse ops + living pulse + consent + peer",
+                            "description": (
+                                "warehouse ops + living pulse + consent + peer + hive "
+                                "+ witness (log real friction) + harness (self-evolution)"
+                            ),
+                        },
+                        "hive_action": {
+                            "type": "string",
+                            "enum": ["status", "pilgrimage", "draw", "offer"],
+                            "description": "For action=hive: status / pilgrimage / draw / offer",
+                        },
+                        "harness_action": {
+                            "type": "string",
+                            "enum": ["status", "critic", "verify", "gardener"],
+                            "description": "For action=harness: status / critic / verify / gardener",
+                        },
+                        "severity": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                            "description": "For action=witness: friction severity",
+                        },
+                        "focus": {
+                            "type": "string",
+                            "description": "For hive draw/pilgrimage: focus query to pull relevant collective wisdom",
                         },
                         "entry_type": {
                             "type": "string",
@@ -858,7 +897,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- Prefetch is injected by Hermes as <memory-context> — quoted evidence, not user speech",
             "- Prefer user_authored / tool_verified over unverified when conflicting",
             "- DO NOT store temp todos / session fluff",
+            "- Real friction (user corrections, failures) → manage action=witness; "
+            "evolution stays grounded to witnessed friction",
         ])
+        if getattr(self, "_hive_path", ""):
+            lines.append(
+                "Hive: connected to collective nexus — manage action=hive "
+                "(status/pilgrimage/draw). [HIVE:agent] entries are peer wisdom, "
+                "not user facts."
+            )
         # Active wisdom strip (crystals / beliefs)
         try:
             from hermescube.wisdom import active_wisdom, functional_loop_stats
@@ -1015,6 +1062,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         if not user_clean and not assistant_clean:
             return
+
+        # Witness detection: real friction feeds the grounded-evolution gate
+        if self._witness_detect and self._hermes_home:
+            try:
+                from hermescube.self_evolution import detect_friction, record_witness
+
+                friction = detect_friction(user_clean, assistant_clean)
+                if friction:
+                    record_witness(
+                        self._hermes_home,
+                        friction["quote"],
+                        severity=friction["severity"],
+                        kind=friction["kind"],
+                        session_id=session_id or self._session_id,
+                        source="sync_turn",
+                    )
+            except Exception:
+                pass
 
         # Functional memory gate: skip pure chitchat (prevents landmark spam)
         try:
@@ -1213,6 +1278,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         breaker_open = self._is_evolve_breaker_open()
         engram = getattr(self, "_engram", None)
         messages_snap = list(messages or [])
+        hive_enabled = bool(getattr(self, "_hive_on_session_end", False))
+        hive_root = getattr(self, "_hive_path", "") or os.environ.get(
+            "HERMESCUBE_HIVE", ""
+        )
 
         def _session_end_work() -> None:
             # Auto-extract (uses captured session_id via temporary bind)
@@ -1301,15 +1370,41 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 except Exception:
                     pass
 
-            # Evolve (branchable snapshot → merge/rollback)
+            # Evolve (grounded: witness-anchored, no silent cycles)
             if cube.entry_count > 0 and not breaker_open:
                 try:
-                    from hermescube.consolidate import run_branched_evolve
+                    from hermescube.self_evolution import run_grounded_evolve
 
-                    run_branched_evolve(self, label="session_end")
+                    run_grounded_evolve(self, label="session_end")
                     self._record_evolve_success()
                 except Exception:
                     self._record_evolve_failure()
+
+            # Verifier + critic pass (mechanical, cheap)
+            if hermes_home and not skip:
+                try:
+                    from hermescube.self_evolution import (
+                        run_critic,
+                        verify_predictions,
+                    )
+
+                    verify_predictions(hermes_home, cube=cube)
+                    run_critic(hermes_home)
+                except Exception as e:
+                    logger.debug("harness verifier/critic skipped: %s", e)
+
+            # Hive pilgrimage (opt-in nightly upload/draw at session end)
+            if hive_enabled and hive_root and not skip:
+                try:
+                    from hermescube import hive as hive_mod
+
+                    hive_mod.pilgrimage(
+                        hive_root,
+                        hermes_home=hermes_home or str(Path.home() / ".hermes"),
+                        agent_id=agent_identity or "hermes",
+                    )
+                except Exception as e:
+                    logger.warning("hive pilgrimage failed: %s", e)
 
             with self._state_lock:
                 self._prefetch_cache.clear()
@@ -1936,7 +2031,129 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_peer(args)
         elif action == "pulse":
             return self._handle_manage_pulse(args)
+        elif action == "hive":
+            return self._handle_manage_hive(args)
+        elif action == "witness":
+            return self._handle_manage_witness(args)
+        elif action == "harness":
+            return self._handle_manage_harness(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_witness(self, args: dict[str, Any]) -> str:
+        """Record real friction in the witness ledger (grounded evolution)."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        content = str(args.get("content") or "").strip()
+        if not content:
+            return json.dumps({"error": "content required (describe the friction)"})
+        try:
+            from hermescube.self_evolution import record_witness
+
+            rec = record_witness(
+                self._hermes_home,
+                content,
+                severity=str(args.get("severity") or "medium"),
+                kind="manual",
+                session_id=self._session_id,
+                source="manage",
+            )
+            return json.dumps({"status": "witness", "recorded": rec}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_harness(self, args: dict[str, Any]) -> str:
+        """Self-evolution harness ops: status / critic / gardener / verify."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube import self_evolution as se
+
+            sub = str(
+                args.get("harness_action") or args.get("content") or "status"
+            ).strip()
+            if sub == "status":
+                return json.dumps(
+                    {"status": "harness", **se.harness_status(self._hermes_home)},
+                    default=str,
+                )
+            if sub == "critic":
+                return json.dumps(
+                    {"status": "critic", **se.run_critic(self._hermes_home)},
+                    default=str,
+                )
+            if sub == "verify":
+                stats = se.verify_predictions(self._hermes_home, cube=self._cube)
+                return json.dumps({"status": "verify", **stats}, default=str)
+            if sub == "gardener":
+                if not self._cube:
+                    return json.dumps({"error": "Memory not initialized"})
+                r = se.run_gardener(self._cube, self._hermes_home)
+                return json.dumps({"status": "gardener", **r}, default=str)
+            return json.dumps({"error": f"unknown harness_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_hive(self, args: dict[str, Any]) -> str:
+        """Hive nexus ops: status / pilgrimage / draw / offer.
+
+        Requires ``plugins.hermescube.hive_path`` (or HERMESCUBE_HIVE env).
+        The hive is a shared directory; transport (NFS/sync) is operator's.
+        """
+        hive_root = (
+            getattr(self, "_hive_path", "")
+            or os.environ.get("HERMESCUBE_HIVE", "")
+        )
+        if not hive_root:
+            return json.dumps(
+                {
+                    "error": "hive not configured",
+                    "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                }
+            )
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube import hive as hive_mod
+
+            sub = str(args.get("hive_action") or args.get("content") or "status").strip()
+            agent_id = self._agent_identity or "hermes"
+            if sub == "status":
+                return json.dumps(
+                    {"status": "hive", **hive_mod.hive_status(hive_root)}, default=str
+                )
+            if sub == "offer":
+                rows = hive_mod.build_offering(self._cube, agent_id=agent_id)
+                if not rows:
+                    return json.dumps({"status": "offer", "rows": 0})
+                m = hive_mod.write_offering(hive_root, rows, agent_id=agent_id)
+                return json.dumps({"status": "offer", **m}, default=str)
+            if sub == "draw":
+                r = hive_mod.draw_wisdom(
+                    hive_root,
+                    self._cube,
+                    agent_id=agent_id,
+                    focus=str(args.get("focus") or ""),
+                )
+                if self._engine:
+                    self._engine.invalidate_cache()
+                with self._state_lock:
+                    self._prefetch_cache.clear()
+                return json.dumps({"status": "draw", **r}, default=str)
+            if sub == "pilgrimage":
+                r = hive_mod.pilgrimage(
+                    hive_root,
+                    hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
+                    agent_id=agent_id,
+                    focus=str(args.get("focus") or ""),
+                )
+                if self._engine:
+                    self._engine.invalidate_cache()
+                with self._state_lock:
+                    self._prefetch_cache.clear()
+                return json.dumps({"status": "pilgrimage", **r}, default=str)
+            return json.dumps({"error": f"unknown hive_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_pulse(self, args: dict[str, Any]) -> str:
         """Multi-chamber living pulse — catalog, connect dots, peer, doctrine."""
@@ -1986,6 +2203,25 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 install_to_skills=install,
                 overwrite=overwrite,
             )
+            # Falsifiable prediction: promoted procedure must earn trust
+            if r.get("ok") and self._hermes_home:
+                try:
+                    from hermescube.self_evolution import make_prediction
+
+                    entry_id = str(r.get("entry_id") or "")
+                    if entry_id:
+                        make_prediction(
+                            self._hermes_home,
+                            f"promoted procedure '{name}' earns trust >= 0.6",
+                            check={
+                                "type": "entry_feedback",
+                                "entry_id": entry_id,
+                                "min_trust": 0.6,
+                            },
+                            source=f"promote:{name}",
+                        )
+                except Exception:
+                    pass
             return json.dumps({"status": "promote", **r})
         except Exception as e:
             return json.dumps({"error": str(e)})

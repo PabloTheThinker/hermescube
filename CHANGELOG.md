@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.23.0] - 2026-07-26
+
+### Grounded self-evolution harness (witness → evolve → verify → critique → garden)
+- **Inspired by** [hermes-self-evolution](https://github.com/erenciracioglu-dotcom/hermes-self-evolution): Evolution/Critic/Verifier/Gardener pattern adapted into the Cube's own offline cycle, with the constitution's rules enforced in code
+- **Witness ledger** (`self_evolution.py`): append-only ground truth of real friction — auto-detected from `sync_turn` (user corrections, tracebacks; conservative regexes, `witness_detect` config) or logged manually via `hermescube_manage action=witness` / `hermescube harness witness`
+- **No silent cycles**: every session-end evolve appends a report to `evolution_cycles.jsonl` — `action` (witness-anchored; marks witnesses addressed), `noop` (honest maintenance), or `failed`
+- **Falsifiable predictions**: procedure promotion commits "earns trust ≥ 0.6" predictions; verifier settles verdicts (confirmed / refuted / expired) at session end — `witness_absence` and `entry_feedback` check types
+- **Mechanical critic**: no-LLM heuristics flag bookkeeping theatre (maintenance-only streaks while witnesses sit unaddressed), overdue predictions, failing cycle streaks — zero collusion surface
+- **Gardener**: surfaces dormant durable memories (old + low-trust) as proposals in `gardener_report.json`; archival stays consent-gated, nothing is deleted
+- **CLI**: `hermescube harness status|witness|critic|verify|gardener` (cron-able)
+- **Agent tools**: `hermescube_manage action=witness` (severity low/medium/high), `action=harness harness_action=status|critic|verify|gardener`
+- All ledgers live under `$HERMES_HOME/memories/harness/`
+
+## [0.22.0] - 2026-07-26
+
+### HiveCube — the collective nexus (multi-agent hive mind)
+- **Hive nexus** (`hive.py`): a shared directory where many Hermes Agents pool distilled experience — collective `hive.cube`, per-agent soul cards, quarantined offerings, audit ledger. Local-first: transport (NFS/synced folder) is the operator's choice; no network code
+- **Pilgrimage cycle**: OFFER (durable beliefs, wisdom crystals, procedures, resolves — never raw turns or `private` entries) → ASSIMILATE (threat-scan, content-hash dedup, branch-tag `hive:<agent>`) → DRAW (focus-relevant collective wisdom into the agent's cube, quarantined as `hive_shared`)
+- **Soul cards**: each agent publishes a compact identity — wisdom, missions, resolves, beliefs, procedures — to `agents/<agent>.json`; `hermescube hive souls` lists who is in the hive
+- **CLI**: `hermescube hive init|status|pilgrimage|assimilate|souls` — cron-able nightly upload ("end of the night" ritual)
+- **Agent tool**: `hermescube_manage action=hive hive_action=status|pilgrimage|draw|offer` with optional `focus`
+- **Config**: `hive_path` (or `HERMESCUBE_HIVE`), `hive_on_session_end` (default false; nightly cron recommended)
+- **Evidence packets**: drawn entries bucket separately as **COLLECTIVE (other agents)** — labeled `[HIVE:<agent>]`, ranked below user-authored and tool-verified facts; agents never draw their own offerings back
+- **Trust model**: hive knowledge never overwrites local claims; shared procedures stay consent-gated (no silent skill install)
+
 ## [0.21.0] - 2026-07-26
 
 ### Living Cube — Hermes-aligned lifetime memory
