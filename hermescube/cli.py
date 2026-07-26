@@ -150,6 +150,30 @@ def cmd_growth(args: argparse.Namespace) -> int:
                 print(f"  cube: v{g.get('from')} → v{g.get('to')}  "
                       f"(strength {g.get('strength')})")
             return 0
+        if cmd == "curate":
+            from hermescube.curator import run_curator
+
+            lessons = [args.lesson] if args.lesson else []
+            r = run_curator(
+                home,
+                cube=cube,
+                lessons=lessons,
+                era_milestone=bool(getattr(args, "milestone", False)),
+            )
+            refines = r.get("refines") or []
+            if refines:
+                for rf in refines:
+                    print(
+                        f"Refined: {rf.get('skill')} "
+                        f"{rf.get('from_version')} → {rf.get('to_version')}"
+                    )
+            else:
+                print("Curator: no skill overlaps found for lessons.")
+            if r.get("forge"):
+                print(f"  forge: {r.get('forge')}")
+            if r.get("garden"):
+                print(f"  garden: {r.get('garden')}")
+            return 0
         print(f"Error: unknown growth command {cmd}", file=sys.stderr)
         return 1
     finally:
@@ -442,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_growth.add_argument(
         "growth_command",
-        choices=["status", "epochs", "refine"],
+        choices=["status", "epochs", "refine", "curate"],
         help="Growth operation",
     )
     p_growth.add_argument(
@@ -452,7 +476,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_growth.add_argument("--limit", type=int, default=30, help="For epochs: how many")
     p_growth.add_argument("--skill", default="", help="For refine: skill name")
-    p_growth.add_argument("--lesson", default="", help="For refine: lesson text")
+    p_growth.add_argument(
+        "--lesson", default="", help="For refine/curate: lesson text"
+    )
+    p_growth.add_argument(
+        "--milestone",
+        action="store_true",
+        help="For curate: force era-milestone forge+garden pass",
+    )
 
     p_har = sub.add_parser(
         "harness",
@@ -590,11 +621,21 @@ def cmd_hive(args: argparse.Namespace) -> int:
             return 0
         for s in souls:
             soul = s.get("soul") or {}
-            print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')})")
+            growth = s.get("growth") or {}
+            gstrip = ""
+            if growth:
+                gstrip = (
+                    f"  v{growth.get('version')} "
+                    f"({growth.get('era')}, {growth.get('strength')}/100)"
+                )
+            print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')}){gstrip}")
             for w in (soul.get("wisdom") or [])[:2]:
                 print(f"    wisdom: {w[:90]}")
             for m in (soul.get("missions") or [])[:2]:
                 print(f"    mission: {m[:90]}")
+            skills = growth.get("skills") or []
+            if skills:
+                print(f"    skills: {', '.join(skills[:4])}")
         return 0
 
     if cmd == "pilgrimage":
@@ -638,6 +679,22 @@ def cmd_hive(args: argparse.Namespace) -> int:
             print(
                 f"  growth:      v{g.get('version')}  "
                 f"({g.get('era')}, strength {g.get('strength')}/100)"
+            )
+        cur = r.get("curator") or {}
+        refines = cur.get("refines") or []
+        if refines:
+            for rf in refines:
+                print(
+                    f"  curator:     refined skill {rf.get('skill')} "
+                    f"{rf.get('from_version')} → {rf.get('to_version')}"
+                )
+        elif cur.get("forge") or cur.get("garden"):
+            forge = cur.get("forge") or {}
+            garden = cur.get("garden") or {}
+            print(
+                f"  curator:     era milestone — "
+                f"forged={forge.get('forged', forge.get('written', 0))} "
+                f"garden={garden.get('proposals', garden.get('surfaced', 0))}"
             )
         return 0
 

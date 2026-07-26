@@ -71,6 +71,12 @@ advance the version; helpful feedback *refines* installed skills in place
 (patch bump + lessons ledger); era thresholds (25/50/75/90 strength)
 earn major bumps. The diary is `memories/CUBE.md`. See [docs/GROWTH.md](docs/GROWTH.md).
 
+**Curator + maturity (0.28+):** growth changes behavior. Elder cubes
+prefer distilled knowledge in retrieval; soul cards advertise living
+version to the hive; a curator matches drawn lessons to installed skills
+and refines them (Hermes closed learning loop), forging and gardening on
+era milestones — still consent-gated.
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

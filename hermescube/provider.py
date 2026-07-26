@@ -400,6 +400,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 agent_id=self._agent_identity or "hermes",
                 package_version=_pkg_v,
             )
+            self._refresh_maturity()
         except Exception as e:
             logger.debug("genealogy genesis skipped: %s", e)
 
@@ -465,6 +466,26 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             l2_centroids=centroids,
             entry_count=self._cube.entry_count,
         )
+
+    def _refresh_maturity(self) -> None:
+        """Push living genealogy era/strength onto the HAR engine for ranking."""
+        if not self._engine or not self._hermes_home:
+            return
+        try:
+            from hermescube.genealogy import load_genealogy
+
+            g = load_genealogy(self._hermes_home)
+            setattr(
+                self._engine,
+                "_maturity",
+                {
+                    "era": g.get("era") or "genesis",
+                    "strength": float(g.get("strength") or 0),
+                    "version": g.get("version") or "0.0.0",
+                },
+            )
+        except Exception:
+            pass
 
     def _should_skip_writes(self) -> bool:
         """True when we should NOT persist data.
@@ -767,13 +788,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "hq",
                                 "interview",
                                 "growth",
+                                "curate",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
                                 "+ witness (log real friction) + harness (self-evolution) "
                                 "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
                                 "+ interview (peer dialogue / mint skill drafts) "
-                                "+ growth (living cube version / strength / CUBE.md)"
+                                "+ growth (living cube version / strength / CUBE.md) "
+                                "+ curate (refine skills from lessons / era forge+garden)"
                             ),
                         },
                         "interview_action": {
@@ -1519,22 +1542,45 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
             # Living genealogy — advance the cube's soul-age. Pilgrimage
             # already ticks when it ran; otherwise tick from session deltas.
+            growth_report: dict[str, Any] = {}
             if hermes_home and not skip:
                 try:
                     if pilgrimage_report.get("growth"):
-                        pass  # already advanced inside pilgrimage()
+                        growth_report = pilgrimage_report["growth"]
                     else:
                         from hermescube.genealogy import tick_session
 
                         end_count = int(getattr(cube, "entry_count", 0) or 0)
                         durable_delta = max(0, end_count - int(start_count or 0))
-                        tick_session(
+                        growth_report = tick_session(
                             hermes_home,
                             cube=cube,
                             durable_writes=durable_delta,
                         )
+                    # Ranking must see the new era/strength immediately
+                    self._refresh_maturity()
                 except Exception as e:
                     logger.debug("genealogy tick skipped: %s", e)
+
+            # Curator (when pilgrimage didn't already run it): era milestones
+            # forge/garden; otherwise a quiet pass is skipped.
+            if (
+                hermes_home
+                and not skip
+                and not pilgrimage_report.get("curator")
+                and growth_report.get("bump") == "major"
+            ):
+                try:
+                    from hermescube.curator import run_curator
+
+                    run_curator(
+                        hermes_home,
+                        cube=cube,
+                        lessons=[],
+                        era_milestone=True,
+                    )
+                except Exception as e:
+                    logger.debug("curator skipped: %s", e)
 
             with self._state_lock:
                 self._prefetch_cache.clear()
@@ -2188,7 +2234,36 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_interview(args)
         elif action == "growth":
             return self._handle_manage_growth(args)
+        elif action == "curate":
+            return self._handle_manage_curate(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_curate(self, args: dict[str, Any]) -> str:
+        """Run the growth curator — refine skills from lessons, forge/garden."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube.curator import run_curator
+
+            lesson = str(args.get("content") or args.get("query") or "").strip()
+            lessons = [lesson] if lesson else []
+            # Also pull recent hive draws from the cube as lessons
+            if self._cube and not lessons:
+                for e in list(self._cube.read_l1() or [])[-40:]:
+                    desc = e.description or ""
+                    if desc.startswith("[HIVE:") or desc.startswith("[INTERVIEW:"):
+                        lessons.append(desc)
+            force_era = str(args.get("mode") or "").lower() == "milestone"
+            report = run_curator(
+                self._hermes_home,
+                cube=self._cube,
+                lessons=lessons[-12:],
+                era_milestone=force_era,
+            )
+            self._refresh_maturity()
+            return json.dumps({"status": "curate", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_growth(self, args: dict[str, Any]) -> str:
         """Living cube genealogy — version, strength, eras, skill lineage."""

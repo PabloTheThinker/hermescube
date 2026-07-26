@@ -158,6 +158,21 @@ def build_soul_card(
             "procedures": procedures,
         },
     }
+    # Living growth — peers see how mature this soul's cube is
+    if hermes_home:
+        try:
+            from hermescube.genealogy import load_genealogy
+
+            g = load_genealogy(hermes_home)
+            card["growth"] = {
+                "version": g.get("version") or "0.0.0",
+                "era": g.get("era") or "genesis",
+                "strength": g.get("strength") or 0,
+                "epochs": g.get("epochs") or 0,
+                "skills": list((g.get("skills") or {}).keys())[:12],
+            }
+        except Exception:
+            pass
     # merge peer knowledge if present
     try:
         from hermescube.peer_card import load_card
@@ -441,6 +456,7 @@ def draw_wisdom(
 
     drawn = 0
     skipped_own = 0
+    drawn_lessons: list[str] = []
     with CubeFile.open(str(p["cube"])) as hive_cube:
         candidates: list[tuple[Any, float]]
         if focus.strip():
@@ -482,26 +498,38 @@ def draw_wisdom(
                 verification=DRAW_VERIFICATION,
                 payload={"from_agent": d.get("from_agent"), "offer_hash": ch},
             )
+            # Preserve distillation flags so maturity ranking + skill
+            # matching can see crystals/procedures after the draw.
+            tagged = f"[HIVE:{d.get('from_agent', '?')}] {desc[:400]}"
             agent_cube.append(
                 entry_type=entry.entry_type or "belief",
-                description=f"[HIVE:{d.get('from_agent', '?')}] {desc[:400]}",
+                description=tagged,
                 data=event_to_entry_data(
                     ev,
                     offer_hash=ch,
                     from_agent=d.get("from_agent"),
                     hive_shared=True,
                     durable=True,
+                    crystal=bool(d.get("crystal")),
+                    procedure=bool(d.get("procedure")),
+                    entities=d.get("entities") or [],
                 ),
                 outcome=entry.outcome or "none",
             )
             local_seen.add(ch)
             drawn += 1
+            drawn_lessons.append(tagged)
 
     _ledger_write(
         hive_root,
         {"action": "draw", "agent_id": agent_id, "drawn": drawn, "focus": focus[:120]},
     )
-    return {"ok": True, "drawn": drawn, "skipped_own": skipped_own}
+    return {
+        "ok": True,
+        "drawn": drawn,
+        "skipped_own": skipped_own,
+        "lessons": drawn_lessons,
+    }
 
 
 # ── Pilgrimage (full nightly cycle) ─────────────────────────────────
@@ -541,16 +569,6 @@ def pilgrimage(
             report["offer"] = write_offering(hive_root, rows, agent_id=agent_id)
         else:
             report["offer"] = {"rows": 0}
-
-        # soul card
-        try:
-            card = build_soul_card(
-                list(cube.read_l1() or []), agent_id=agent_id, hermes_home=home
-            )
-            publish_soul_card(hive_root, card)
-            report["soul_card"] = True
-        except Exception as e:
-            report["soul_card"] = f"failed: {e}"
 
         # 2. PEER INTERVIEW (optional — interview-me at the hive).
         # Runs BEFORE assimilate so interview-distilled facts (persisted
@@ -596,6 +614,44 @@ def pilgrimage(
             )
         except Exception as e:
             report["growth"] = {"error": str(e)}
+
+        # 6. CURATOR — drawn lessons refine skills; era milestones forge/garden
+        try:
+            from hermescube.curator import run_curator
+
+            lessons = list((report.get("draw") or {}).get("lessons") or [])
+            # Interview briefs also leave distillable facts as lessons
+            for ivr in report.get("interviews") or []:
+                if isinstance(ivr, dict) and ivr.get("ok"):
+                    topic = ivr.get("outcome") or ""
+                    if ivr.get("session_id"):
+                        lessons.append(
+                            f"peer interview on craft: {topic} "
+                            f"session {ivr.get('session_id')}"
+                        )
+            growth = report.get("growth") or {}
+            report["curator"] = run_curator(
+                home,
+                cube=cube,
+                lessons=lessons,
+                era_milestone=bool(
+                    growth.get("bumped") and growth.get("bump") == "major"
+                ),
+            )
+        except Exception as e:
+            report["curator"] = {"error": str(e)}
+
+        # 7. SOUL CARD — published LAST so peers see post-growth living
+        # version, strength, and skills refined during this visit.
+        try:
+            card = build_soul_card(
+                list(cube.read_l1() or []), agent_id=agent_id, hermes_home=home
+            )
+            publish_soul_card(hive_root, card)
+            report["soul_card"] = True
+            report["soul_growth"] = card.get("growth")
+        except Exception as e:
+            report["soul_card"] = f"failed: {e}"
 
     _ledger_write(hive_root, {"action": "pilgrimage", "agent_id": agent_id})
     return report

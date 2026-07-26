@@ -1,6 +1,6 @@
 """HermesCube — binary columnar archive with holographic associative retrieval."""
 
-__version__ = "0.27.0"
+__version__ = "0.28.0"
 
 from hermescube.hrr import (
     Array,
@@ -29,6 +29,7 @@ from hermescube import self_evolution
 from hermescube import hq
 from hermescube import interview
 from hermescube import genealogy
+from hermescube import curator
 
 __all__ = [
     "Array",
@@ -61,5 +62,6 @@ __all__ = [
     "hq",
     "interview",
     "genealogy",
+    "curator",
     "__version__",
 ]

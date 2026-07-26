@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.28.0] - 2026-07-26
+
+### Growth that strengthens the system — curator + maturity ranking
+- **Maturity-aware retrieval**: `bio_rank.maturity_multiplier` — as the living cube's era/strength rises, crystals and procedures rank higher and ephemeral chatter ranks lower (high lexical identity still wins). Provider pushes genealogy onto `HARQueryEngine._maturity` on init and after every growth tick
+- **Soul cards publish growth**: `build_soul_card` now includes `growth.{version,era,strength,epochs,skills}` so peers at the hive can see how mature each soul's archive is (`hermescube hive souls`)
+- **`curator.py`**: Hermes-style closed learning loop for the Cube — match drawn/interviewed lessons to installed skills by topical overlap and `refine_skill` them; on era milestones (major bumps) also forge procedure drafts + run the gardener (consent-gated)
+- **Pilgrimage step 6**: after growth tick, curator runs automatically; CLI prints refined skills / milestone forge+garden
+- **Draws preserve distillation**: `crystal` / `procedure` / `entities` survive offer → assimilate → draw so maturity ranking and skill matching see peer-distilled knowledge for what it is
+- CLI: `hermescube growth curate [--lesson …] [--milestone]`; tool: `manage action=curate`
+- 354 tests pass
+
 ## [0.27.0] - 2026-07-26
 
 ### Living Cube Growth — from 0.0.0 to elder

@@ -101,6 +101,28 @@ so HAR can recall *when and why* the archive leveled up.
 | Harness | confirmed prediction → minor |
 | Era threshold | strength crosses 25/50/75/90 → major |
 
+## Growth that *does* something (0.28+)
+
+Living version is not a vanity counter. As the cube matures:
+
+1. **Retrieval prefers distilled knowledge** — bio_rank applies a maturity
+   multiplier: crystals and procedures rise; ephemeral chatter falls.
+   Lexical identity still wins (high lex damps the prior).
+2. **Soul cards publish growth** — peers at the hive see
+   `growth.version / era / strength / skills` on every soul card.
+3. **Curator closes the loop** — after pilgrimage draws, overlapping
+   lessons automatically refine installed skills (Hermes-style skill
+   self-improvement). Era milestones also forge procedure drafts and
+   run the gardener (still consent-gated — nothing silent).
+
+```bash
+hermescube growth curate --lesson "triangulate three independent sources"
+hermescube growth curate --milestone   # force forge + garden pass
+```
+
+Drawn hive entries now preserve `crystal` / `procedure` flags so maturity
+ranking and skill matching can see them.
+
 One machine. The cube that starts empty at `0.0.0` is the same cube that,
 weeks later, holds crystallized wisdom, evolving skills, and a diary of
 every epoch it lived through — the All-Spark of that Hermes Agent's life.
