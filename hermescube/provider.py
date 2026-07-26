@@ -773,12 +773,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             "type": "string",
                             "enum": [
                                 "route", "charter", "charters", "claim",
-                                "handoffs", "verify", "baseline",
+                                "handoff", "complete", "handoffs",
+                                "verify", "baseline",
                             ],
                             "description": (
                                 "For action=hq: route a task to its lane owner, "
                                 "register/list charters, claim task ownership, "
-                                "review handoffs, verify fleet, freeze/verify baseline"
+                                "handoff (route + distilled context packet + ledger), "
+                                "complete a handoff, review handoffs, verify fleet, "
+                                "freeze/verify baseline"
                             ),
                         },
                         "hive_action": {
@@ -966,8 +969,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if getattr(self, "_hive_path", ""):
             lines.append(
                 "Hive: connected to collective nexus — manage action=hive "
-                "(status/pilgrimage/draw). [HIVE:agent] entries are peer wisdom, "
-                "not user facts."
+                "(status/pilgrimage/draw), action=interview (peer dialogue → "
+                "consent-gated skill drafts), action=hq (route/handoff/verify). "
+                "[HIVE:agent] entries are peer wisdom, not user facts."
             )
             # HQ lane awareness: your lane, boundaries, where other work goes
             try:
@@ -1478,6 +1482,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             getattr(self, "_interview_on_pilgrimage", False)
                         ),
                     )
+                    # Draw appended to our cube — retrieval must see it
+                    if self._engine:
+                        self._engine.invalidate_cache()
                 except Exception as e:
                     logger.warning("hive pilgrimage failed: %s", e)
 
@@ -2272,6 +2279,56 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     {
                         "status": "handoffs",
                         "handoffs": hq_mod.list_handoffs(hive_root, limit=20),
+                    },
+                    default=str,
+                )
+            if sub == "handoff":
+                # Route → distill context → record: the full delegation package
+                task = str(args.get("content") or args.get("task") or "").strip()
+                if not task:
+                    return json.dumps({"error": "content required (task to hand off)"})
+                to_agent = str(args.get("agent") or "").strip()
+                routed = None
+                if not to_agent:
+                    routed = hq_mod.route_task(hive_root, task)
+                    if not routed.get("ok"):
+                        return json.dumps({"error": routed.get("error")})
+                    to_agent = str(routed["owner"])
+                packet: dict[str, Any] = {"context": "", "sha": ""}
+                if self._cube:
+                    packet = hq_mod.build_handoff_packet(
+                        self._cube, task, from_agent=agent_id, to_agent=to_agent
+                    )
+                rec = hq_mod.record_handoff(
+                    hive_root,
+                    from_agent=agent_id,
+                    to_agent=to_agent,
+                    task=task,
+                    status="pending",
+                    packet_sha=str(packet.get("sha") or ""),
+                )
+                return json.dumps(
+                    {
+                        "status": "handoff",
+                        "id": rec["id"],
+                        "to_agent": to_agent,
+                        "routed_via": (routed or {}).get("via"),
+                        "context": packet.get("context") or "(no cube evidence)",
+                        "note": (
+                            "Deliver this context with the delegation; settle with "
+                            "hq_action=complete content=<id> when done."
+                        ),
+                    },
+                    default=str,
+                )
+            if sub == "complete":
+                hid = str(args.get("content") or "").strip()
+                if not hid:
+                    return json.dumps({"error": "content required (handoff id)"})
+                return json.dumps(
+                    {
+                        "status": "complete",
+                        **hq_mod.update_handoff_status(hive_root, hid, "completed"),
                     },
                     default=str,
                 )

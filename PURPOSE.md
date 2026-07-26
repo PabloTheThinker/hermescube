@@ -48,6 +48,21 @@ routes and lane conflicts, and frozen baselines prove what changed.
 Subagents get read-only memory tools: work flows upward, privilege does
 not flow down. See [docs/HQ.md](docs/HQ.md).
 
+**Peer interviews (0.25+):** agents that pilgrimage back can interview
+each other with the interview-me protocol — inspect soul cards before
+asking, one high-value question at a time, grounded answers, a structured
+brief, and consent-gated skill drafts. See [docs/INTERVIEW.md](docs/INTERVIEW.md).
+
+**One system (0.26+):** the layers are one machine, not four features.
+The night cycle at the nexus runs OFFER → SOUL CARD → INTERVIEW →
+ASSIMILATE → DRAW, so interviewed knowledge joins the collective in the
+same visit. Interviews take HQ task claims and land in the HQ handoff
+ledger; minted peer lessons commit falsifiable harness predictions;
+handoffs route, carry distilled evidence packets, and settle
+(`hq_action=handoff` / `complete`); echo guards and provenance filters
+keep every fact attributed to the soul that lived it. `hive status` is
+the single pane: souls, collective, charters, handoffs, interviews.
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

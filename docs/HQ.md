@@ -82,9 +82,25 @@ Enforced in the provider, not suggested in a prompt:
   (typed, quoted, provenance-tagged) for a delegation — the right context,
   not the whole history, not nothing. Delegations are recorded in the
   handoff ledger automatically.
+- The whole package is one tool call:
+
+```
+hermescube_manage action=hq hq_action=handoff content="debugging the failing release tests"
+# → routes to the lane owner, distills a context packet from your cube,
+#   records a pending handoff, returns the packet to deliver
+hermescube_manage action=hq hq_action=complete content=<handoff-id>
+# → settles the ledger (or: hermescube hq complete --id <handoff-id>)
+```
+
+  Handoffs that never settle are flagged by `hq verify` as stuck — the
+  ledger closes or the fleet hears about it.
 - `claim_task` takes a lease on a task key; a second agent claiming the
   same task gets a conflict with the current owner's name. No more two
-  agents both thinking the task belongs to them.
+  agents both thinking the task belongs to them. **Peer interviews take
+  these claims too** (`interview:<subject>:<topic>`), so two agents never
+  interview the same subject on the same topic at once — and every
+  completed interview lands in the handoff ledger as knowledge flowing
+  subject → interviewer. One ledger, all movement of work and knowledge.
 
 ## Verification: never trust one green status light
 

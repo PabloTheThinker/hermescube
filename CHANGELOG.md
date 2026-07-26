@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.0] - 2026-07-26
+
+### One system — deep integration of Hive, HQ, harness, and interviews
+- **Pilgrimage reordered**: OFFER → SOUL CARD → INTERVIEW → ASSIMILATE → DRAW — interview-distilled facts now join the collective cube in the *same* visit instead of waiting for the next pilgrimage
+- **Interviews are fleet citizens**: each dialogue takes an HQ task claim (`interview:<subject>:<topic>`; concurrent attempts get a conflict, not a duplicate) and every completed dialogue is recorded in the HQ handoff ledger as knowledge flowing subject → interviewer
+- **Provenance boundary fixed**: when the interviewer's cube grounds answers, only subject-attributed entries (`from_agent` / `[HIVE:subject]` / `[INTERVIEW:subject]`) are admissible — the interviewer's own memories can no longer masquerade as the subject's answers (cube evidence also now scores above the unknown threshold)
+- **Interview dedupe + echo guard**: interview facts use content hashes (re-interviewing dedupes at assimilation instead of piling up); `draw_wisdom` never returns facts others distilled *about* the drawing agent
+- **Handoff lifecycle closed**: `manage action=hq hq_action=handoff` routes the task, distills an evidence packet from your cube, and records a pending handoff in one call; `hq_action=complete` / `hermescube hq complete --id` settles it — pending handoffs that never settle are still flagged by `hq verify`
+- **Interviews feed the harness**: a minted peer lesson commits a falsifiable `witness_absence` prediction — the lesson is supposed to prevent friction on that topic, and the verifier checks that it did
+- **One status pane**: `hive status` now folds in charters (and the command owner), pending handoffs, and interviews held
+- Session-end pilgrimage invalidates the retrieval cache so freshly drawn wisdom is immediately searchable; system prompt hive line now surfaces interview + HQ tooling
+- New `tests/test_integration.py`: full night-cycle coverage across all layers (336 tests total)
+
 ## [0.25.0] - 2026-07-26
 
 ### Peer interviews — interview-me at the Hive

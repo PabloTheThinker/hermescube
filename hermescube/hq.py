@@ -349,6 +349,41 @@ def record_handoff(
     return rec
 
 
+def update_handoff_status(
+    hive_root: str | Path, handoff_id: str, status: str
+) -> dict[str, Any]:
+    """Settle a handoff (completed / failed). Pending handoffs that never
+    settle are flagged by ``verify_fleet`` as stuck — this is the exit."""
+    if status not in ("pending", "completed", "failed"):
+        return {"ok": False, "error": f"bad status: {status}"}
+    p = hq_paths(hive_root)
+    if not p["handoffs"].is_file():
+        return {"ok": False, "error": "no handoffs recorded"}
+    records = []
+    found = False
+    for line in p["handoffs"].read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except Exception:
+            continue
+        if rec.get("id") == handoff_id:
+            rec["status"] = status
+            rec["settled_at"] = time.time()
+            found = True
+        records.append(rec)
+    if not found:
+        return {"ok": False, "error": f"handoff not found: {handoff_id}"}
+    tmp = p["handoffs"].with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+    os.replace(tmp, p["handoffs"])
+    return {"ok": True, "id": handoff_id, "status": status}
+
+
 def list_handoffs(
     hive_root: str | Path, *, status: str = "", limit: int = 50
 ) -> list[dict[str, Any]]:

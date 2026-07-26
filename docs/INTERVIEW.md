@@ -43,6 +43,30 @@ requires the consent gate.
    `origin: hermescube-peer-interview`. Install into Hermes skills still
    requires `promote` + `install_to_skills=true`. Nothing is silent.
 
+## One fleet, one ledger
+
+Interviews are wired into the rest of HQ — they are not a side channel:
+
+- **Claims**: a dialogue takes the HQ task claim
+  `interview:<subject>:<topic>` before starting. A second agent trying
+  the same interview at the same time gets a conflict, not a duplicate.
+- **Handoff ledger**: every completed dialogue is recorded as a handoff
+  — knowledge flowed subject → interviewer — so `hq handoffs` shows
+  movement of work *and* movement of understanding in one place.
+- **Provenance boundary**: when the interviewer's own cube is used for
+  grounding, only entries **attributed to the subject** (`[HIVE:subject]`
+  / `[INTERVIEW:subject]` / `from_agent`) are admissible. The
+  interviewer's own memories can never masquerade as the subject's
+  answers.
+- **Same-visit assimilation**: during pilgrimage, interviews run *before*
+  assimilate, so interview-distilled facts join the collective cube in
+  the same visit. Facts are content-hashed — re-interviewing the same
+  subject dedupes instead of piling up — and an echo guard stops a
+  subject from ever re-drawing their own interviewed knowledge.
+- **Harness**: a minted draft commits a falsifiable prediction
+  (`witness_absence` on the topic) — the peer's lesson is supposed to
+  prevent friction, and the verifier will check that it did.
+
 ## Usage
 
 ```bash

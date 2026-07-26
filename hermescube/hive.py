@@ -212,8 +212,18 @@ def _offerable(entry: Any) -> bool:
         return False
     if (d.get("source") or "") in _OFFER_SOURCES_SKIP:
         return False
+    # No wisdom laundering: knowledge that arrived FROM the hive (drawn
+    # entries, hive_shared verification) must never be re-offered under
+    # this agent's name — the collective already holds it with the true
+    # author's provenance.
+    if d.get("hive_shared") or d.get("from_agent") or d.get("offer_hash"):
+        return False
+    if str(d.get("verification") or "") == "hive_shared":
+        return False
     desc = (getattr(entry, "description", "") or "").strip()
     if len(desc) < 12:
+        return False
+    if desc.startswith("[HIVE:") or "[INTERVIEW:" in desc:
         return False
     # only share durable / distilled knowledge
     if not (
@@ -286,7 +296,10 @@ def write_offering(
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in agent_id)[:64]
     agent_dir = p["offerings"] / safe
     agent_dir.mkdir(parents=True, exist_ok=True)
-    fname = f"offering_{int(time.time())}.jsonl.gz"
+    # Nanosecond stamp + entropy: several offerings can land in the same
+    # second during a single pilgrimage (offer, then interview facts) and
+    # must never overwrite each other
+    fname = f"offering_{time.time_ns()}_{os.urandom(3).hex()}.jsonl.gz"
     path = agent_dir / fname
     with gzip.open(path, "wt", encoding="utf-8") as f:
         for row in rows:
@@ -453,6 +466,10 @@ def draw_wisdom(
             desc = (entry.description or "").strip()
             if not desc:
                 continue
+            # Echo guard: never re-absorb your own interviewed knowledge
+            if f"[INTERVIEW:{agent_id}]" in desc:
+                skipped_own += 1
+                continue
             ev = make_event(
                 "hive_draw",
                 session_id="",
@@ -535,15 +552,9 @@ def pilgrimage(
         except Exception as e:
             report["soul_card"] = f"failed: {e}"
 
-        # 2. ASSIMILATE (any pending offerings, from all agents)
-        report["assimilate"] = assimilate_offerings(hive_root)
-
-        # 3. DRAW
-        report["draw"] = draw_wisdom(
-            hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
-        )
-
-        # 4. PEER INTERVIEW (optional — interview-me at the hive)
+        # 2. PEER INTERVIEW (optional — interview-me at the hive).
+        # Runs BEFORE assimilate so interview-distilled facts (persisted
+        # as offerings) join the collective in this same visit.
         if interview:
             try:
                 report["interviews"] = _pilgrimage_interviews(
@@ -555,6 +566,14 @@ def pilgrimage(
                 )
             except Exception as e:
                 report["interviews"] = {"error": str(e)}
+
+        # 3. ASSIMILATE (all pending offerings — including interview facts)
+        report["assimilate"] = assimilate_offerings(hive_root)
+
+        # 4. DRAW
+        report["draw"] = draw_wisdom(
+            hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
+        )
 
     _ledger_write(hive_root, {"action": "pilgrimage", "agent_id": agent_id})
     return report
@@ -627,7 +646,7 @@ def hive_status(hive_root: str | Path) -> dict[str, Any]:
             if d.is_dir()
             for _ in d.glob("offering_*.jsonl.gz")
         )
-    return {
+    status: dict[str, Any] = {
         "ok": True,
         "name": meta.get("name"),
         "root": str(p["root"]),
@@ -636,3 +655,22 @@ def hive_status(hive_root: str | Path) -> dict[str, Any]:
         "souls": len(souls),
         "pending_offerings": pending,
     }
+    # One nexus, one status: fold in HQ + interview surfaces when present
+    try:
+        from hermescube.hq import list_charters, list_handoffs
+
+        charters = list_charters(hive_root)
+        status["charters"] = len(charters)
+        status["command"] = next(
+            (c["agent_id"] for c in charters if c.get("role") == "command"), None
+        )
+        status["pending_handoffs"] = len(list_handoffs(hive_root, status="pending"))
+    except Exception:
+        pass
+    try:
+        from hermescube.interview import list_interviews
+
+        status["interviews"] = len(list_interviews(hive_root, limit=1000))
+    except Exception:
+        pass
+    return status

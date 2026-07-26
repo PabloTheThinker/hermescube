@@ -330,9 +330,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_hq.add_argument(
         "hq_command",
-        choices=["charter", "retire", "list", "route", "verify", "freeze", "drift", "handoffs"],
+        choices=[
+            "charter", "retire", "list", "route", "verify",
+            "freeze", "drift", "handoffs", "complete",
+        ],
         help="HQ operation",
     )
+    p_hq.add_argument("--id", default="", help="For complete: handoff id to settle")
     p_hq.add_argument("--hive", default=None, help="Hive/HQ directory (default: $HERMESCUBE_HIVE)")
     p_hq.add_argument("--agent", default=None, help="Agent id (for charter/retire)")
     p_hq.add_argument("--role", default="specialist", choices=["command", "specialist"])
@@ -451,6 +455,12 @@ def cmd_hive(args: argparse.Namespace) -> int:
         print(f"  collective entries: {s.get('collective_entries')}")
         print(f"  souls registered:   {s.get('souls')}")
         print(f"  pending offerings:  {s.get('pending_offerings')}")
+        if "charters" in s:
+            cmd_owner = s.get("command") or "NONE (run: hermescube hq charter --role command …)"
+            print(f"  charters:           {s.get('charters')}  (command: {cmd_owner})")
+            print(f"  pending handoffs:   {s.get('pending_handoffs')}")
+        if "interviews" in s:
+            print(f"  interviews held:    {s.get('interviews')}")
         for a in s.get("agents") or []:
             print(f"    · {a}")
         return 0
@@ -672,8 +682,20 @@ def cmd_hq(args: argparse.Namespace) -> int:
             print("No handoffs recorded.")
             return 0
         for h in hs:
-            print(f"[{h.get('status')}] {h.get('from_agent')} → {h.get('to_agent')}: "
-                  f"{h.get('task', '')[:80]}")
+            print(f"[{h.get('status')}] {h.get('id')}  "
+                  f"{h.get('from_agent')} → {h.get('to_agent')}: "
+                  f"{h.get('task', '')[:70]}")
+        return 0
+
+    if cmd == "complete":
+        if not args.id:
+            print("Error: --id required (handoff id)", file=sys.stderr)
+            return 1
+        r = hq_mod.update_handoff_status(hive_root, args.id, "completed")
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Handoff settled: {args.id} → completed")
         return 0
 
     print(f"Error: unknown hq command {cmd}", file=sys.stderr)

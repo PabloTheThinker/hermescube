@@ -348,11 +348,19 @@ def answer_from_sources(
     *,
     subject_cube: Any = None,
     topic: str = "",
+    subject_id: str = "",
 ) -> dict[str, Any]:
     """Answer a peer question from dossier + optional subject cube (HAR).
 
     Returns facts with provenance. Never invents — if nothing grounds the
     answer, returns an unknown.
+
+    Provenance boundary: when ``subject_id`` is set and the cube being
+    queried is NOT the subject's own (e.g. the interviewer's cube holding
+    hive-drawn knowledge), only entries attributed to the subject
+    (``from_agent`` / ``[HIVE:subject]``) are admissible — the
+    interviewer's own memories must never masquerade as the subject's
+    answers.
     """
     # 1. Dossier soul/offerings (already sanitized). Rank by topical overlap
     # and source quality — wisdom/procedures/offerings beat generic missions.
@@ -443,6 +451,16 @@ def answer_from_sources(
                 desc = (entry.description or "").strip()
                 if not desc:
                     continue
+                # Provenance filter: only subject-attributed entries count
+                if subject_id:
+                    attributed = (
+                        str(d.get("from_agent") or "") == subject_id
+                        or str(d.get("agent_identity") or "") == subject_id
+                        or desc.startswith(f"[HIVE:{subject_id}]")
+                        or desc.startswith(f"[INTERVIEW:{subject_id}]")
+                    )
+                    if not attributed:
+                        continue
                 # reject injection-shaped content
                 if any(t.severity == "block" for t in scan_text(desc)):
                     continue
@@ -451,7 +469,7 @@ def answer_from_sources(
                         "source": f"cube:{entry.id[:12]}",
                         "text": sanitize_for_storage(desc, 240),
                         "kind": "fact",
-                        "score": float(score),
+                        "score": float(score) + 3.0,
                     }
                 )
         except Exception:
@@ -667,21 +685,30 @@ def close_interview(
     if persist:
         # Offer distilled facts into the hive as an interview offering
         try:
+            from hermescube.events import content_hash
             from hermescube.hive import write_offering
 
             rows = []
+            seen_hashes: set[str] = set()
             for f in session.get("facts") or []:
+                desc = (
+                    f"[INTERVIEW:{session.get('subject')}] {f.get('text')}"
+                )[:1200]
+                # Content-based hash: re-interviewing the same subject on
+                # the same facts dedupes at assimilation instead of piling up
+                ch = content_hash("interview", session.get("subject"), desc)
+                if ch in seen_hashes:
+                    continue
+                seen_hashes.add(ch)
                 rows.append(
                     {
-                        "offer_hash": f"iv-{session_id}-{f.get('source_turn')}",
+                        "offer_hash": ch,
                         "agent_id": session.get("interviewer"),
                         "src_entry_id": session_id,
                         "ts": time.time(),
                         "type": "belief",
                         "outcome": "none",
-                        "description": (
-                            f"[INTERVIEW:{session.get('subject')}] {f.get('text')}"
-                        )[:1200],
+                        "description": desc,
                         "data": {
                             "durable": True,
                             "source": "peer_interview",
@@ -823,7 +850,33 @@ def peer_dialogue(
     inspects the subject's soul/offerings, asks the highest-value questions,
     answers from grounded evidence, produces a brief, and optionally mints
     a consent-gated skill draft.
+
+    Fleet integration:
+    - takes an HQ task claim (``interview:<subject>:<topic>``) so two
+      agents never interview the same subject on the same topic at once;
+    - records the completed dialogue in the HQ handoff ledger (knowledge
+      flowed subject → interviewer) so interviews are fleet history.
     """
+    # Claim the interview slot (one owner per task — HQ rule)
+    claim_key = f"interview:{subject}:{topic.strip().lower()[:80]}"
+    claimed = False
+    try:
+        from hermescube.hq import claim_task, release_claim
+
+        c = claim_task(hive_root, interviewer, claim_key, ttl_s=900)
+        if not c.get("ok"):
+            return {
+                "ok": False,
+                "conflict": True,
+                "error": (
+                    f"interview already claimed by {c.get('owner')} — "
+                    "one owner per task"
+                ),
+            }
+        claimed = True
+    except Exception:
+        pass
+
     started = start_interview(
         hive_root,
         interviewer=interviewer,
@@ -832,6 +885,11 @@ def peer_dialogue(
         mode=mode,
     )
     if not started.get("ok"):
+        if claimed:
+            try:
+                release_claim(hive_root, interviewer, claim_key)
+            except Exception:
+                pass
         return started
     session = started["session"]
     dossier = started["dossier"]
@@ -860,6 +918,7 @@ def peer_dialogue(
             dossier,
             subject_cube=subject_cube,
             topic=topic,
+            subject_id=subject,
         )
         rec = record_turn(
             hive_root,
@@ -884,6 +943,45 @@ def peer_dialogue(
     if mint and hermes_home and closed.get("brief"):
         minted = mint_skill_draft(closed["brief"], hermes_home=hermes_home)
         result["mint"] = minted
+        # Falsifiable prediction: the minted lesson should prevent friction
+        if minted.get("ok"):
+            try:
+                from hermescube.self_evolution import make_prediction
+
+                make_prediction(
+                    hermes_home,
+                    f"peer lesson from {subject} on '{topic}' prevents "
+                    "related friction",
+                    check={
+                        "type": "witness_absence",
+                        "pattern": topic.strip().lower()[:60],
+                    },
+                    source=f"interview:{session_id}",
+                )
+            except Exception:
+                pass
+
+    # Fleet history: interview = knowledge handoff subject → interviewer
+    try:
+        from hermescube.hq import record_handoff
+
+        record_handoff(
+            hive_root,
+            from_agent=subject,
+            to_agent=interviewer,
+            task=f"interview[{mode}]: {topic}",
+            status="completed" if result.get("outcome") not in (None, "STOPPED") else "failed",
+            packet_sha=str(session_id),
+        )
+    except Exception:
+        pass
+
+    # Release the interview claim
+    if claimed:
+        try:
+            release_claim(hive_root, interviewer, claim_key)
+        except Exception:
+            pass
     return result
 
 

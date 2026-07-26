@@ -38,14 +38,24 @@ This preserves the zero-network, local-first principle.
 2. **SOUL CARD** — a compact identity summary (wisdom, missions, resolves,
    beliefs, procedures) is published to `agents/<agent>.json` so any agent — 
    or the operator — can see who is in the hive and what each soul pursues.
-3. **ASSIMILATE** — the hive merges pending offerings into `hive.cube`:
+3. **INTERVIEW** (optional, `--interview`) — the visiting agent interviews
+   peer souls ([docs/INTERVIEW.md](INTERVIEW.md)): claim-guarded,
+   evidence-grounded dialogue whose distilled facts are written as
+   offerings — deliberately *before* assimilation, so they join the
+   collective in this same visit.
+4. **ASSIMILATE** — the hive merges pending offerings into `hive.cube`:
    threat-scanned (prompt-injection patterns blocked), deduplicated by
    content hash, branch-tagged `hive:<agent>`, provenance preserved.
-4. **DRAW** — the agent pulls focus-relevant collective entries into its own
+5. **DRAW** — the agent pulls focus-relevant collective entries into its own
    cube under branch `hive:collective` with verification `hive_shared`.
-   Own offerings are never drawn back. Drawn entries appear in evidence
-   packets under **COLLECTIVE (other agents)** — below user-authored and
-   tool-verified facts, never above them.
+   Own offerings are never drawn back — including facts others distilled
+   *about* this agent in interviews (echo guard). Drawn entries appear in
+   evidence packets under **COLLECTIVE (other agents)** — below
+   user-authored and tool-verified facts, never above them.
+
+`hermescube hive status` is the single pane for the whole nexus: souls,
+collective size, pending offerings, charters and the command owner,
+pending handoffs, and interviews held.
 
 ## Usage
 
