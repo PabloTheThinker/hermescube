@@ -261,6 +261,7 @@ Choose the right type for each memory.
 | **[API Reference](docs/API_REFERENCE.md)** | Every module, class, and function documented |
 | **[Architecture](docs/ARCHITECTURE.md)** | Design rationale, algorithms, data flow |
 | **[Binary Format Spec](docs/SPEC.md)** | `.cube` file layout, HRR algebra, HAR protocol |
+| **[Hive Nexus](docs/HIVE.md)** | Multi-agent collective memory: pilgrimage, soul cards, trust model |
 | **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
 
 ---

@@ -1,12 +1,13 @@
 name: hermescube
 manifest_version: 1
-version: "0.21.0"
+version: "0.22.0"
 description: >-
-  Local holographic .cube memory for Hermes Agent — living archive with
-  HAR retrieval, engram neural network, wisdom crystallization, journey
-  tracking, prospective memory, sleep replay consolidation, peer cards,
-  consent-gated procedure forge, and multi-chamber pulse orchestration.
-  Zero network dependencies, pure Python with optional numpy acceleration.
+  Living Cube memory for Hermes Agent — provenance-preserving events and
+  temporal claims, HAR retrieval, subagent branches, evidence-packet prefetch,
+  branched consolidation, consent-gated procedure→skill bridge, and the Hive
+  nexus for multi-agent collective memory (nightly pilgrimage: offer,
+  assimilate, draw). Zero network dependencies, pure Python with optional
+  numpy acceleration.
 author: PabloTheThinker
 license: MIT
 homepage: https://github.com/PabloTheThinker/hermescube
@@ -68,6 +69,14 @@ config:
     description: Run living archive multi-chamber pulse on session end
     type: bool
     default: true
+  hive_path:
+    description: Shared hive directory for multi-agent collective memory (empty = disabled)
+    type: str
+    default: ""
+  hive_on_session_end:
+    description: Run hive pilgrimage (offer/assimilate/draw) on session end
+    type: bool
+    default: false
 
 tools:
   - hermescube_search

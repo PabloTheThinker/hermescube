@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0] - 2026-07-26
+
+### HiveCube — the collective nexus (multi-agent hive mind)
+- **Hive nexus** (`hive.py`): a shared directory where many Hermes Agents pool distilled experience — collective `hive.cube`, per-agent soul cards, quarantined offerings, audit ledger. Local-first: transport (NFS/synced folder) is the operator's choice; no network code
+- **Pilgrimage cycle**: OFFER (durable beliefs, wisdom crystals, procedures, resolves — never raw turns or `private` entries) → ASSIMILATE (threat-scan, content-hash dedup, branch-tag `hive:<agent>`) → DRAW (focus-relevant collective wisdom into the agent's cube, quarantined as `hive_shared`)
+- **Soul cards**: each agent publishes a compact identity — wisdom, missions, resolves, beliefs, procedures — to `agents/<agent>.json`; `hermescube hive souls` lists who is in the hive
+- **CLI**: `hermescube hive init|status|pilgrimage|assimilate|souls` — cron-able nightly upload ("end of the night" ritual)
+- **Agent tool**: `hermescube_manage action=hive hive_action=status|pilgrimage|draw|offer` with optional `focus`
+- **Config**: `hive_path` (or `HERMESCUBE_HIVE`), `hive_on_session_end` (default false; nightly cron recommended)
+- **Evidence packets**: drawn entries bucket separately as **COLLECTIVE (other agents)** — labeled `[HIVE:<agent>]`, ranked below user-authored and tool-verified facts; agents never draw their own offerings back
+- **Trust model**: hive knowledge never overwrites local claims; shared procedures stay consent-gated (no silent skill install)
+
 ## [0.21.0] - 2026-07-26
 
 ### Living Cube — Hermes-aligned lifetime memory

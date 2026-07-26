@@ -26,6 +26,13 @@ the durable lifetime structure — immutable events → temporal claims →
 verified procedures, with subagent branches and branched consolidation.
 Compression never erases provenance.
 
+**Hive nexus (0.22+):** many agents, one collective. Each agent keeps its
+private cube (its soul-record); a shared hive directory holds the collective
+cube plus soul cards. Nightly pilgrimage: OFFER distilled experience →
+ASSIMILATE (threat-scanned, deduped, branch-tagged) → DRAW focus-relevant
+wisdom back, quarantined as `hive_shared` and labeled `[HIVE:<agent>]`.
+See [docs/HIVE.md](docs/HIVE.md).
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

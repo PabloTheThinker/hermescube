@@ -246,12 +246,45 @@ def main(argv: list[str] | None = None) -> int:
         help="Only report whether update is available (no install)",
     )
 
+    # hive — shared collective nexus for multiple Hermes agents
+    p_hive = sub.add_parser(
+        "hive",
+        help="Hive nexus: init/status/pilgrimage/assimilate (multi-agent collective)",
+    )
+    p_hive.add_argument(
+        "hive_command",
+        choices=["init", "status", "pilgrimage", "assimilate", "souls"],
+        help="Hive operation",
+    )
+    p_hive.add_argument(
+        "--hive",
+        default=None,
+        help="Hive directory (default: $HERMESCUBE_HIVE)",
+    )
+    p_hive.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Agent HERMES_HOME (for pilgrimage; default: $HERMES_HOME)",
+    )
+    p_hive.add_argument(
+        "--agent",
+        default=None,
+        help="Agent id for pilgrimage (default: $HERMES_PROFILE or 'hermes')",
+    )
+    p_hive.add_argument(
+        "--focus",
+        default="",
+        help="Focus query when drawing collective wisdom",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "update":
         return cmd_update(args)
+    if args.command == "hive":
+        return cmd_hive(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -293,6 +326,84 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  path={getattr(args, 'path', '?')}", file=sys.stderr)
             print("  (is the cube file valid? try: hermescube init)", file=sys.stderr)
         return 1
+
+
+def cmd_hive(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from hermescube import hive as hive_mod
+
+    hive_root = args.hive or os.environ.get("HERMESCUBE_HIVE")
+    if not hive_root:
+        print("Error: hive path required (--hive or HERMESCUBE_HIVE)", file=sys.stderr)
+        return 1
+
+    cmd = args.hive_command
+    if cmd == "init":
+        r = hive_mod.init_hive(hive_root)
+        print(f"Hive ready: {r['root']}")
+        print(f"  name: {r['meta'].get('name')}")
+        return 0
+
+    if cmd == "status":
+        s = hive_mod.hive_status(hive_root)
+        if not s.get("ok"):
+            print(f"Error: {s.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Hive: {s.get('name')}  ({s.get('root')})")
+        print(f"  collective entries: {s.get('collective_entries')}")
+        print(f"  souls registered:   {s.get('souls')}")
+        print(f"  pending offerings:  {s.get('pending_offerings')}")
+        for a in s.get("agents") or []:
+            print(f"    · {a}")
+        return 0
+
+    if cmd == "assimilate":
+        r = hive_mod.assimilate_offerings(hive_root)
+        print(
+            f"Assimilated: files={r['files']} rows={r['rows']} "
+            f"merged={r['merged']} dupes={r['dupes']} blocked={r['blocked']}"
+        )
+        return 0
+
+    if cmd == "souls":
+        souls = hive_mod.list_souls(hive_root)
+        if not souls:
+            print("No souls registered yet.")
+            return 0
+        for s in souls:
+            soul = s.get("soul") or {}
+            print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')})")
+            for w in (soul.get("wisdom") or [])[:2]:
+                print(f"    wisdom: {w[:90]}")
+            for m in (soul.get("missions") or [])[:2]:
+                print(f"    mission: {m[:90]}")
+        return 0
+
+    if cmd == "pilgrimage":
+        home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+        agent = args.agent or os.environ.get("HERMES_PROFILE") or "hermes"
+        r = hive_mod.pilgrimage(
+            hive_root,
+            hermes_home=home,
+            agent_id=agent,
+            focus=args.focus or "",
+        )
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        offer = r.get("offer") or {}
+        draw = r.get("draw") or {}
+        assim = r.get("assimilate") or {}
+        print(f"Pilgrimage complete — agent '{agent}' → {hive_root}")
+        print(f"  offered:     {offer.get('rows', 0)} distilled entries")
+        print(f"  assimilated: {assim.get('merged', 0)} (dupes {assim.get('dupes', 0)}, blocked {assim.get('blocked', 0)})")
+        print(f"  drew:        {draw.get('drawn', 0)} collective entries")
+        print(f"  soul card:   {'updated' if r.get('soul_card') is True else r.get('soul_card')}")
+        return 0
+
+    print(f"Error: unknown hive command {cmd}", file=sys.stderr)
+    return 1
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

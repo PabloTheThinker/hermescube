@@ -35,6 +35,8 @@ def _bucket_entry(entry: Any) -> str:
     et = (getattr(entry, "entry_type", "") or "").lower()
     if data.get("superseded") or getattr(entry, "outcome", "") == "superseded":
         return "CONTRADICTIONS"
+    if data.get("hive_shared") or (data.get("branch_id") or "").startswith("hive:"):
+        return "COLLECTIVE (other agents)"
     if data.get("procedure") or et == "evolution":
         return "RELEVANT PROCEDURES"
     if et == "focus" or data.get("open_intent"):
@@ -61,6 +63,7 @@ def build_evidence_packet(
         "PAST EPISODES": [],
         "RELEVANT PROCEDURES": [],
         "OPEN INTENTIONS": [],
+        "COLLECTIVE (other agents)": [],
         "CONTRADICTIONS": [],
     }
     confidence_notes: list[str] = []
@@ -100,6 +103,7 @@ def build_evidence_packet(
         "PAST EPISODES",
         "RELEVANT PROCEDURES",
         "OPEN INTENTIONS",
+        "COLLECTIVE (other agents)",
         "CONTRADICTIONS",
     ):
         items = buckets.get(title) or []
