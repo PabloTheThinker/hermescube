@@ -498,12 +498,16 @@ def pilgrimage(
     focus: str = "",
     offer_limit: int = 200,
     draw_limit: int = 12,
+    interview: bool = False,
+    interview_peers: int = 1,
 ) -> dict[str, Any]:
-    """Full cycle: offer distilled experience → assimilate → draw wisdom.
+    """Full cycle: offer → assimilate → draw → optional peer interview.
 
     Intended to run at a quiet hour (Hermes cron or hive host cron):
     every agent goes to the hive at the end of the night and uploads what
-    it learned, then returns with what the collective knows.
+    it learned, then returns with what the collective knows. When
+    ``interview=True``, the agent also interviews peer souls (interview-me
+    protocol) and may mint consent-gated skill drafts from the briefs.
     """
     if not is_hive(hive_root):
         init_hive(hive_root)
@@ -539,8 +543,67 @@ def pilgrimage(
             hive_root, cube, agent_id=agent_id, focus=focus, limit=draw_limit
         )
 
+        # 4. PEER INTERVIEW (optional — interview-me at the hive)
+        if interview:
+            try:
+                report["interviews"] = _pilgrimage_interviews(
+                    hive_root,
+                    interviewer=agent_id,
+                    hermes_home=home,
+                    focus=focus,
+                    peers=interview_peers,
+                )
+            except Exception as e:
+                report["interviews"] = {"error": str(e)}
+
     _ledger_write(hive_root, {"action": "pilgrimage", "agent_id": agent_id})
     return report
+
+
+def _pilgrimage_interviews(
+    hive_root: str | Path,
+    *,
+    interviewer: str,
+    hermes_home: Path,
+    focus: str,
+    peers: int,
+) -> list[dict[str, Any]]:
+    """Interview up to ``peers`` other souls present in the hive."""
+    from hermescube.interview import peer_dialogue
+
+    souls = [
+        s for s in list_souls(hive_root)
+        if s.get("agent_id") and s.get("agent_id") != interviewer
+    ]
+    # Prefer souls whose missions/wisdom overlap the focus
+    focus_l = (focus or "").lower()
+
+    def score(s: dict[str, Any]) -> int:
+        soul = s.get("soul") or {}
+        blob = " ".join(
+            str(x)
+            for k in ("wisdom", "missions", "procedures", "beliefs")
+            for x in (soul.get(k) or [])
+        ).lower()
+        return sum(1 for t in focus_l.split() if t and t in blob) if focus_l else 1
+
+    souls.sort(key=score, reverse=True)
+    results = []
+    topic = focus.strip() or "shared craft and lessons learned"
+    for s in souls[: max(0, peers)]:
+        results.append(
+            peer_dialogue(
+                hive_root,
+                interviewer=interviewer,
+                subject=str(s["agent_id"]),
+                topic=topic,
+                mode="discover",
+                hermes_home=hermes_home,
+                persist=True,
+                mint=True,
+            )
+        )
+    return results
 
 
 def hive_status(hive_root: str | Path) -> dict[str, Any]:

@@ -276,6 +276,52 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Focus query when drawing collective wisdom",
     )
+    p_hive.add_argument(
+        "--interview",
+        action="store_true",
+        help="After upload/draw, interview peer souls (interview-me) and mint skill drafts",
+    )
+    p_hive.add_argument(
+        "--interview-peers",
+        type=int,
+        default=1,
+        help="How many peer souls to interview during pilgrimage (default 1)",
+    )
+
+    # interview — peer dialogue at the hive (interview-me protocol)
+    p_iv = sub.add_parser(
+        "interview",
+        help="Peer interview: dialogue/list (agents interview each other at the hive)",
+    )
+    p_iv.add_argument(
+        "interview_command",
+        choices=["dialogue", "list"],
+        help="Interview operation",
+    )
+    p_iv.add_argument("--hive", default=None, help="Hive directory (default: $HERMESCUBE_HIVE)")
+    p_iv.add_argument("--interviewer", default=None, help="Interviewing agent id")
+    p_iv.add_argument("--subject", default=None, help="Subject agent id to interview")
+    p_iv.add_argument("--topic", default="shared craft", help="Interview topic")
+    p_iv.add_argument(
+        "--mode",
+        default="discover",
+        choices=["clarify", "discover", "brief", "decision", "retrospective", "profile"],
+    )
+    p_iv.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Where to mint skill drafts (default: $HERMES_HOME)",
+    )
+    p_iv.add_argument(
+        "--no-mint",
+        action="store_true",
+        help="Do not mint a procedure draft from the brief",
+    )
+    p_iv.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Do not offer distilled facts back to the hive",
+    )
 
     # hq — fleet command layer (charters, routing, verification, baseline)
     p_hq = sub.add_parser(
@@ -334,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_harness(args)
     if args.command == "hq":
         return cmd_hq(args)
+    if args.command == "interview":
+        return cmd_interview(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -437,6 +485,8 @@ def cmd_hive(args: argparse.Namespace) -> int:
             hermes_home=home,
             agent_id=agent,
             focus=args.focus or "",
+            interview=bool(args.interview),
+            interview_peers=int(args.interview_peers or 1),
         )
         if not r.get("ok"):
             print(f"Error: {r.get('error')}", file=sys.stderr)
@@ -449,9 +499,80 @@ def cmd_hive(args: argparse.Namespace) -> int:
         print(f"  assimilated: {assim.get('merged', 0)} (dupes {assim.get('dupes', 0)}, blocked {assim.get('blocked', 0)})")
         print(f"  drew:        {draw.get('drawn', 0)} collective entries")
         print(f"  soul card:   {'updated' if r.get('soul_card') is True else r.get('soul_card')}")
+        for ivr in r.get("interviews") or []:
+            if isinstance(ivr, dict) and ivr.get("ok"):
+                mint = ivr.get("mint") or {}
+                print(
+                    f"  interview:   {ivr.get('session_id')} → {ivr.get('outcome')} "
+                    f"(draft: {mint.get('name') or 'none'})"
+                )
+            elif isinstance(ivr, dict):
+                print(f"  interview:   error: {ivr.get('error')}")
         return 0
 
     print(f"Error: unknown hive command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_interview(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from hermescube import interview as iv
+
+    hive_root = args.hive or os.environ.get("HERMESCUBE_HIVE")
+    if not hive_root:
+        print("Error: hive path required (--hive or HERMESCUBE_HIVE)", file=sys.stderr)
+        return 1
+
+    if args.interview_command == "list":
+        items = iv.list_interviews(hive_root)
+        if not items:
+            print("No interviews yet.")
+            return 0
+        for i in items:
+            print(
+                f"[{i.get('status')}] {i.get('id')}  "
+                f"{i.get('interviewer')} → {i.get('subject')}  "
+                f"topic={i.get('topic')!r}  turns={i.get('turns')}  "
+                f"outcome={i.get('outcome')}"
+            )
+        return 0
+
+    if args.interview_command == "dialogue":
+        interviewer = args.interviewer or os.environ.get("HERMES_PROFILE") or "hermes"
+        if not args.subject:
+            print("Error: --subject required", file=sys.stderr)
+            return 1
+        home = args.hermes_home or os.environ.get("HERMES_HOME") or str(
+            Path.home() / ".hermes"
+        )
+        r = iv.peer_dialogue(
+            hive_root,
+            interviewer=interviewer,
+            subject=args.subject,
+            topic=args.topic,
+            mode=args.mode,
+            hermes_home=home,
+            persist=not args.no_persist,
+            mint=not args.no_mint,
+        )
+        if not r.get("ok"):
+            print(f"Error: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"Peer dialogue complete — {interviewer} interviewed {args.subject}")
+        print(f"  session:  {r.get('session_id')}")
+        print(f"  turns:    {r.get('turns')}")
+        print(f"  outcome:  {r.get('outcome')}")
+        print(f"  brief:    {r.get('brief_path')}")
+        print(f"  persisted to hive: {r.get('persisted')}")
+        mint = r.get("mint") or {}
+        if mint.get("ok"):
+            print(f"  skill draft: {mint.get('draft')}  (pending — promote to install)")
+        elif mint:
+            print(f"  mint: {mint.get('error') or mint}")
+        return 0
+
+    print(f"Error: unknown interview command {args.interview_command}", file=sys.stderr)
     return 1
 
 

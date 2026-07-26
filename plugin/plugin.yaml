@@ -1,14 +1,14 @@
 name: hermescube
 manifest_version: 1
-version: "0.24.0"
+version: "0.25.0"
 description: >-
   Living Cube memory for Hermes Agent — provenance-preserving events and
   temporal claims, HAR retrieval, subagent branches, evidence-packet prefetch,
   branched consolidation, consent-gated procedure→skill bridge, the Hive
   nexus for multi-agent collective memory (nightly pilgrimage: offer,
-  assimilate, draw), a grounded self-evolution harness (witness ledger,
-  falsifiable predictions, critic, gardener), and Fleet HQ (charters,
-  routing, handoff packets, task claims, fleet verification, baselines).
+  assimilate, draw), peer interviews (interview-me protocol) that mint
+  consent-gated skill drafts, a grounded self-evolution harness, and Fleet HQ
+  (charters, routing, handoffs, claims, verification, baselines).
   Zero network dependencies, pure Python with optional numpy acceleration.
 author: PabloTheThinker
 license: MIT
@@ -83,6 +83,10 @@ config:
     description: Auto-detect real friction (user corrections, hard errors) into the witness ledger
     type: bool
     default: true
+  interview_on_pilgrimage:
+    description: During hive pilgrimage, interview peer souls (interview-me) and mint skill drafts
+    type: bool
+    default: false
 
 tools:
   - hermescube_search

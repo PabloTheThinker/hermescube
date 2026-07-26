@@ -264,6 +264,7 @@ Choose the right type for each memory.
 | **[Hive Nexus](docs/HIVE.md)** | Multi-agent collective memory: pilgrimage, soul cards, trust model |
 | **[Self-Evolution](docs/SELF_EVOLUTION.md)** | Grounded harness: witness ledger, predictions, critic, gardener |
 | **[Fleet HQ](docs/HQ.md)** | Charters, routing, handoffs, claims, fleet verification, baselines |
+| **[Peer Interviews](docs/INTERVIEW.md)** | interview-me at the Hive: dialogue, briefs, skill drafts |
 | **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
 
 ---

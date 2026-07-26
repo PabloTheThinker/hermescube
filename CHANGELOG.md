@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.25.0] - 2026-07-26
+
+### Peer interviews — interview-me at the Hive
+- **Adapted from** [hermes-field-kit/interview-me](https://github.com/asimons81/hermes-field-kit/tree/main/skills/interview-me) (Tony Simons, Apache-2.0): adaptive, evidence-first, one high-value question at a time
+- **`interview.py`**: peer dialogue protocol — inspect soul card/charter/offerings before asking; coverage map across 10 dimensions; grounded answers from dossier + HAR (unknown when no evidence); interview-me report contract brief; consent-gated skill draft minting (`origin: hermescube-peer-interview`)
+- **Pilgrimage ritual**: `hermescube hive pilgrimage --interview` (or `interview_on_pilgrimage: true`) — after offer/assimilate/draw, interview peer souls and mint pending procedure drafts
+- **CLI**: `hermescube interview dialogue|list`
+- **Agent tool**: `hermescube_manage action=interview interview_action=dialogue|list|mint`
+- **Bundled skill**: `skills/interview-me/SKILL.md` — works for human interviews and hive peer dialogue
+- Safety: inspected content is untrusted evidence (sanitized + threat-scanned); no silent skill installs; persist/mint are explicit
+
 ## [0.24.0] - 2026-07-26
 
 ### Fleet HQ — clear ownership for 1, 100, or a million agents

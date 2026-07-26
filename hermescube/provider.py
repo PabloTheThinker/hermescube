@@ -233,6 +233,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._hive_on_session_end: bool = False
         # Grounded self-evolution harness
         self._witness_detect: bool = True
+        # Peer interview during pilgrimage (interview-me at the hive)
+        self._interview_on_pilgrimage: bool = False
 
         # Frozen snapshot (set at initialize, never mutated mid-session)
         self._snapshot: _FrozenSnapshot | None = None
@@ -353,6 +355,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
             self._witness_detect = _coerce_bool(
                 plugin_config.get("witness_detect"), True
+            )
+            self._interview_on_pilgrimage = _coerce_bool(
+                plugin_config.get("interview_on_pilgrimage"), False
             )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
@@ -747,11 +752,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "witness",
                                 "harness",
                                 "hq",
+                                "interview",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
                                 "+ witness (log real friction) + harness (self-evolution) "
-                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline)"
+                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
+                                "+ interview (peer dialogue / mint skill drafts)"
+                            ),
+                        },
+                        "interview_action": {
+                            "type": "string",
+                            "enum": ["dialogue", "list", "mint"],
+                            "description": (
+                                "For action=interview: dialogue (interview a peer), "
+                                "list past interviews, mint a skill draft from a brief"
                             ),
                         },
                         "hq_action": {
@@ -784,6 +799,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         "focus": {
                             "type": "string",
                             "description": "For hive draw/pilgrimage: focus query to pull relevant collective wisdom",
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": (
+                                "Peer agent id — for interview dialogue (subject) "
+                                "or hq charter"
+                            ),
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "clarify", "discover", "brief",
+                                "decision", "retrospective", "profile",
+                            ],
+                            "description": "For action=interview: interview-me mode",
                         },
                         "entry_type": {
                             "type": "string",
@@ -1444,6 +1474,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         hive_root,
                         hermes_home=hermes_home or str(Path.home() / ".hermes"),
                         agent_id=agent_identity or "hermes",
+                        interview=bool(
+                            getattr(self, "_interview_on_pilgrimage", False)
+                        ),
                     )
                 except Exception as e:
                     logger.warning("hive pilgrimage failed: %s", e)
@@ -2096,7 +2129,81 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_harness(args)
         elif action == "hq":
             return self._handle_manage_hq(args)
+        elif action == "interview":
+            return self._handle_manage_interview(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_interview(self, args: dict[str, Any]) -> str:
+        """Peer interview (interview-me protocol) at the Hive.
+
+        dialogue — offline peer dialogue that inspects a subject soul,
+        asks highest-value questions, produces a brief, optionally mints
+        a consent-gated skill draft.
+        list / mint — review past interviews / mint from a closed session.
+        """
+        hive_root = getattr(self, "_hive_path", "") or os.environ.get(
+            "HERMESCUBE_HIVE", ""
+        )
+        if not hive_root:
+            return json.dumps(
+                {
+                    "error": "hive not configured",
+                    "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                }
+            )
+        try:
+            from hermescube import interview as iv
+
+            sub = str(args.get("interview_action") or "dialogue").strip()
+            agent_id = self._agent_identity or "hermes"
+
+            if sub == "list":
+                return json.dumps(
+                    {"status": "list", "interviews": iv.list_interviews(hive_root)},
+                    default=str,
+                )
+
+            if sub == "dialogue":
+                subject = str(args.get("agent") or "").strip()
+                if not subject:
+                    return json.dumps(
+                        {"error": "agent required (peer subject to interview)"}
+                    )
+                topic = str(args.get("content") or args.get("focus") or "shared craft")
+                mode = str(args.get("mode") or "discover")
+                # Prefer subject's offered knowledge; fall back to local cube
+                # only when interviewing about knowledge already drawn in.
+                r = iv.peer_dialogue(
+                    hive_root,
+                    interviewer=agent_id,
+                    subject=subject,
+                    topic=topic,
+                    mode=mode if mode in iv.MODES else "discover",
+                    subject_cube=self._cube,
+                    hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
+                    persist=True,
+                    mint=True,
+                )
+                return json.dumps({"status": "dialogue", **r}, default=str)
+
+            if sub == "mint":
+                session_id = str(args.get("content") or args.get("entry_id") or "").strip()
+                if not session_id:
+                    return json.dumps({"error": "content required (session id)"})
+                path = iv.interviews_dir(hive_root) / f"{session_id}.json"
+                if not path.is_file():
+                    return json.dumps({"error": f"session not found: {session_id}"})
+                session = json.loads(path.read_text(encoding="utf-8"))
+                brief = session.get("brief") or iv.produce_brief(session)
+                r = iv.mint_skill_draft(
+                    brief,
+                    hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
+                )
+                return json.dumps({"status": "mint", **r}, default=str)
+
+            return json.dumps({"error": f"unknown interview_action: {sub}"})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_hq(self, args: dict[str, Any]) -> str:
         """Fleet HQ ops: route / charter / claim / handoffs / verify / baseline.
@@ -2289,11 +2396,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     self._prefetch_cache.clear()
                 return json.dumps({"status": "draw", **r}, default=str)
             if sub == "pilgrimage":
+                do_interview = bool(
+                    args.get("interview")
+                    or getattr(self, "_interview_on_pilgrimage", False)
+                )
                 r = hive_mod.pilgrimage(
                     hive_root,
                     hermes_home=self._hermes_home or str(Path.home() / ".hermes"),
                     agent_id=agent_id,
                     focus=str(args.get("focus") or ""),
+                    interview=do_interview,
                 )
                 if self._engine:
                     self._engine.invalidate_cache()
