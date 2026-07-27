@@ -479,7 +479,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 self._engine,
                 "_maturity",
                 {
-                    "era": g.get("era") or "genesis",
+                    "era": g.get("era") or "eden",
                     "strength": float(g.get("strength") or 0),
                     "version": g.get("version") or "0.0.0",
                 },

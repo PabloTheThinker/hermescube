@@ -53,7 +53,10 @@ def cmd_info(args: argparse.Namespace) -> None:
             age = g.get("age") or {}
             print(f"\nLiving version: v{g.get('version')}")
             print(f"  age:        {age.get('label', '—')}  (digital cycles + lived time)")
-            print(f"  era:        {g.get('era')}  · capability {g.get('capability', g.get('strength'))}/100")
+            print(
+                f"  era:        {g.get('era_label') or g.get('era')}  · "
+                f"capability {g.get('capability', g.get('strength'))}/100"
+            )
             print(f"  diary:      {g.get('cube_md')}")
         except Exception as e:
             print(f"\nLiving version: n/a ({e})")
@@ -108,7 +111,7 @@ def cmd_growth(args: argparse.Namespace) -> int:
         if cmd == "status":
             s = gen.growth_status(home, cube=cube)
             age = s.get("age") or {}
-            print(f"Living Cube v{s.get('version')}  — era {s.get('era')}")
+            print(f"Living Cube v{s.get('version')}  — {s.get('era_label') or s.get('era')}")
             print(f"  age:         {age.get('label', '—')}")
             print(f"  capability:  {s.get('capability', s.get('strength'))}/100  (coherence, not age)")
             print(f"  diary:       {s.get('cube_md')}")
@@ -127,8 +130,8 @@ def cmd_growth(args: argparse.Namespace) -> int:
             return 0
         if cmd == "epochs":
             for e in gen.list_epochs(home, limit=int(args.limit or 30)):
-                if e.get("kind") == "genesis":
-                    print(f"[C0 genesis] → {e.get('to')}: {e.get('reason')}")
+                if e.get("kind") in ("eden", "genesis"):
+                    print(f"[C0 Cube of Eden] → {e.get('to')}: {e.get('reason')}")
                 else:
                     cyc = e.get("cycle")
                     cyc_s = f"C{cyc} " if cyc is not None else ""
@@ -633,9 +636,9 @@ def cmd_hive(args: argparse.Namespace) -> int:
                 age_s = age.get("label") or (
                     f"C{growth.get('cycles', 0)} · {growth.get('lived', '?')}"
                 )
+                era_s = growth.get("era_label") or growth.get("era") or "Cube of Eden"
                 gstrip = (
-                    f"  v{growth.get('version')} · {age_s} · "
-                    f"era {growth.get('era')}"
+                    f"  v{growth.get('version')} · {age_s} · {era_s}"
                 )
             print(f"— {s.get('agent_id')}  (entries: {s.get('entry_count')}){gstrip}")
             for w in (soul.get("wisdom") or [])[:2]:
@@ -686,13 +689,13 @@ def cmd_hive(args: argparse.Namespace) -> int:
         if g.get("bumped"):
             print(
                 f"  growth:      v{g.get('from')} → v{g.get('to')}  "
-                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· {age.get('label', '')} · {g.get('era_label') or g.get('era')} "
                 f"· capability {g.get('capability', g.get('strength'))}/100"
             )
         elif g.get("version"):
             print(
                 f"  growth:      v{g.get('version')}  "
-                f"· {age.get('label', '')} · era {g.get('era')} "
+                f"· {age.get('label', '')} · {g.get('era_label') or g.get('era')} "
                 f"· capability {g.get('capability', g.get('strength'))}/100"
             )
         cur = r.get("curator") or {}

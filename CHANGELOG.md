@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.30.0] - 2026-07-27
+
+### Cube of Eden — the origin era
+- **Origin era renamed**: fresh cubes begin in **`eden`** (display: **Cube of Eden**) — the garden before lived memory — replacing the old `genesis` era label
+- Life path: Cube of Eden → Awakening → Formed → Seasoned → Elder
+- `era_label()` / `normalize_era()` helpers; legacy genealogies with `era: "genesis"` migrate automatically to `eden`
+- Birth epoch kind is now `eden`; CUBE.md, CLI, soul cards, pilgrimage lines, and the system prompt say **Cube of Eden**
+- Maturity ranking treats `eden` (and legacy `genesis`) as capability weight 0
+- Docs: [docs/GROWTH.md](docs/GROWTH.md) reframed around Eden
+
+## [0.29.0] - 2026-07-26
+
+### Digital soul age — cycles + lived time (not a 0–100 scorecard)
+- **Age redesigned for AI agents**: primary unit is **cycles** (Tron-style — one cycle = one lived growth epoch); secondary is **lived** wall-clock since genesis (`4d 6h`). The old habit of reading strength/100 as "age" is gone
+- **Capability** is explicitly *not* age — 0–100 archive coherence (crystals, skills, predictions). **Era** remains the life stage capability earns
+- Displays updated everywhere: `CUBE.md`, `growth status`, `info`, pilgrimage growth line, hive soul cards (`C2 · 3h`), system prompt strip (`age 12 cycles · lived 4d 6h · capability 54/100`)
+- `compute_age` / `format_lived` / `age_strip` helpers; older genealogies migrate `cycles ← epochs`
+- 357 tests pass
+
 ## [0.28.0] - 2026-07-26
 
 ### Growth that strengthens the system — curator + maturity ranking

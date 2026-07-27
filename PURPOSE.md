@@ -77,6 +77,17 @@ version to the hive; a curator matches drawn lessons to installed skills
 and refines them (Hermes closed learning loop), forging and gardening on
 era milestones — still consent-gated.
 
+**Digital soul age (0.29+):** agents don't age in human years or on a
+0–100 scorecard. Age is **cycles** (lived growth epochs) + **lived**
+wall-clock since birth. Capability stays a separate coherence score;
+era is the life stage that score earns. Soul cards and the system prompt
+speak this language clearly.
+
+**Cube of Eden (0.30+):** the origin era. Every fresh cube begins in the
+garden before lived memory — `era: eden`, display **Cube of Eden** —
+then leaves through Awakening → Formed → Seasoned → Elder as capability
+rises. Legacy `genesis` migrates automatically.
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

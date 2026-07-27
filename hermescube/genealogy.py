@@ -18,7 +18,9 @@ Age in the digital world (not a human 0–100 scorecard):
     matters for "how long has this soul been online."
   - **capability** — 0–100 coherence of the archive (crystals, skills,
     confirmed predictions). This is *how strong* the cube is, never its age.
-  - **era** — life stage derived from capability (genesis → elder).
+  - **era** — life stage derived from capability (Cube of Eden → elder).
+    The origin era is **eden** (display: Cube of Eden) — the garden before
+    lived memory. Legacy ``genesis`` migrates to ``eden``.
 
 Version scheme (semver for a life):
   - **patch** — a session left durable knowledge, a draw landed, feedback
@@ -26,7 +28,7 @@ Version scheme (semver for a life):
   - **minor** — a procedure was forged/promoted, a skill installed, a
     prediction confirmed, a crystal formed
   - **major** — capability crossed a threshold (25 / 50 / 75 / 90) — the
-    cube entered a new era
+    cube left Eden (or advanced further) into a new era
 """
 
 from __future__ import annotations
@@ -41,13 +43,38 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-GENESIS = "0.0.0"
+GENESIS = "0.0.0"  # living version at birth (not the era name)
+
+# Origin era — the garden before lived memory. Display: "Cube of Eden".
+ERA_EDEN = "eden"
+ERA_LABELS: dict[str, str] = {
+    "eden": "Cube of Eden",
+    "genesis": "Cube of Eden",  # legacy alias
+    "awakening": "Awakening",
+    "formed": "Formed",
+    "seasoned": "Seasoned",
+    "elder": "Elder",
+}
 
 # Capability thresholds that earn a major bump (eras of the cube's life)
 _ERA_THRESHOLDS = (25, 50, 75, 90)
 
 _FRONT_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.S)
 _VERSION_LINE = re.compile(r"(?m)^(version:\s*)(.+)$")
+
+
+def normalize_era(era: str | None) -> str:
+    """Map legacy ``genesis`` → ``eden``; empty → eden."""
+    e = (era or "").strip().lower()
+    if not e or e == "genesis":
+        return ERA_EDEN
+    return e
+
+
+def era_label(era: str | None) -> str:
+    """Human display name — Cube of Eden, Awakening, …"""
+    e = normalize_era(era)
+    return ERA_LABELS.get(e, e.title() if e else "Cube of Eden")
 
 
 # ── Digital age (cycles + wall-clock) ────────────────────────────────
@@ -231,7 +258,7 @@ def measure_strength(
     score += min(7.0, counts["mean_trust"] * 7.0)
     score = round(min(100.0, score), 1)
 
-    era = "genesis"
+    era = ERA_EDEN
     for thr in _ERA_THRESHOLDS:
         if score >= thr:
             era = {25: "awakening", 50: "formed", 75: "seasoned", 90: "elder"}[thr]
@@ -239,6 +266,7 @@ def measure_strength(
     return {
         "score": score,
         "era": era,
+        "era_label": era_label(era),
         "counts": counts,
     }
 
@@ -252,7 +280,7 @@ def _default_state() -> dict[str, Any]:
         "born_at": time.time(),
         "updated_at": time.time(),
         "strength": 0.0,  # capability 0–100 (not age)
-        "era": "genesis",
+        "era": ERA_EDEN,  # Cube of Eden — origin garden
         "epochs": 0,  # version bumps
         "cycles": 0,  # digital age — equals epochs; named for soul display
         "events": {
@@ -287,6 +315,8 @@ def load_genealogy(hermes_home: str | Path | None = None) -> dict[str, Any]:
         # Migrate older genealogies: cycles ← epochs when missing
         if "cycles" not in data:
             base["cycles"] = int(base.get("epochs") or 0)
+        # Cube of Eden: legacy genesis era → eden
+        base["era"] = normalize_era(base.get("era"))
         return base
     except Exception:
         return _default_state()
@@ -295,6 +325,7 @@ def load_genealogy(hermes_home: str | Path | None = None) -> dict[str, Any]:
 def save_genealogy(state: dict[str, Any], hermes_home: str | Path | None = None) -> Path:
     d = growth_dir(hermes_home)
     d.mkdir(parents=True, exist_ok=True)
+    state["era"] = normalize_era(state.get("era"))
     state["updated_at"] = time.time()
     p = genealogy_path(hermes_home)
     tmp = p.with_suffix(".tmp")
@@ -309,13 +340,20 @@ def ensure_genesis(
     agent_id: str = "",
     package_version: str = "",
 ) -> dict[str, Any]:
-    """Birth the living cube at 0.0.0 if it has never lived before."""
+    """Birth the living cube at 0.0.0 in the Cube of Eden if never lived before."""
     p = genealogy_path(hermes_home)
     if p.is_file():
         state = load_genealogy(hermes_home)
+        dirty = False
         # Backfill package_version if missing
         if package_version and not state.get("package_version"):
             state["package_version"] = package_version
+            dirty = True
+        # Migrate legacy genesis → eden
+        if state.get("era") == "genesis" or not state.get("era"):
+            state["era"] = ERA_EDEN
+            dirty = True
+        if dirty:
             save_genealogy(state, hermes_home)
         return state
 
@@ -330,12 +368,14 @@ def ensure_genesis(
     _append_epoch(
         hermes_home,
         {
-            "kind": "genesis",
+            "kind": "eden",
             "from": None,
             "to": GENESIS,
-            "reason": "cube born — empty archive, ready to live",
+            "reason": "Cube of Eden — empty archive, garden before lived memory",
             "strength": 0.0,
-            "era": "genesis",
+            "era": ERA_EDEN,
+            "era_label": era_label(ERA_EDEN),
+            "cycle": 0,
         },
     )
     _rewrite_cube_md(state, hermes_home)
@@ -436,11 +476,13 @@ def record_growth(
             crossed.append(thr)
             bump = "major"
             detail = (
-                f"era threshold {thr} crossed → {strength['era']}"
+                f"left for {era_label(strength['era'])} "
+                f"(capability threshold {thr})"
                 + (f"; {detail}" if detail else "")
             )
             break
     state["eras_crossed"] = crossed
+    state["era"] = normalize_era(strength["era"])
 
     after = before
     age = compute_age(state)
@@ -459,7 +501,8 @@ def record_growth(
                 "to": after,
                 "reason": detail or kind,
                 "strength": strength["score"],
-                "era": strength["era"],
+                "era": normalize_era(strength["era"]),
+                "era_label": era_label(strength["era"]),
                 "cycle": age["cycles"],
                 "skill": skill or None,
             },
@@ -481,7 +524,7 @@ def record_growth(
                 description=(
                     f"[GROWTH] cube {before} → {after} ({bump}) — "
                     f"cycle {age['cycles']} · {detail or kind} · "
-                    f"capability {strength['score']} · era {strength['era']}"
+                    f"capability {strength['score']} · {era_label(strength['era'])}"
                 )[:1200],
                 data={
                     "source": "genealogy",
@@ -490,7 +533,8 @@ def record_growth(
                     "bump": bump,
                     "cycle": age["cycles"],
                     "strength": strength["score"],
-                    "era": strength["era"],
+                    "era": normalize_era(strength["era"]),
+                    "era_label": era_label(strength["era"]),
                     "trust": 0.8,
                 },
                 outcome="success",
@@ -506,7 +550,8 @@ def record_growth(
         "to": after,
         "strength": strength["score"],
         "capability": strength["score"],
-        "era": strength["era"],
+        "era": normalize_era(strength["era"]),
+        "era_label": era_label(strength["era"]),
         "version": after,
         "kind": kind,
         "age": age,
@@ -577,7 +622,7 @@ def tick_session(
     state = load_genealogy(hermes_home)
     strength = measure_strength(cube, hermes_home=hermes_home)
     state["strength"] = strength["score"]
-    state["era"] = strength["era"]
+    state["era"] = normalize_era(strength["era"])
     state["counts"] = strength["counts"]
     if state.get("cycles") is None:
         state["cycles"] = int(state.get("epochs") or 0)
@@ -591,7 +636,8 @@ def tick_session(
         "to": state.get("version"),
         "strength": strength["score"],
         "capability": strength["score"],
-        "era": strength["era"],
+        "era": normalize_era(strength["era"]),
+        "era_label": era_label(strength["era"]),
         "version": state.get("version"),
         "kind": "noop",
         "age": age,
@@ -691,7 +737,8 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
     p.parent.mkdir(parents=True, exist_ok=True)
     ver = state.get("version") or GENESIS
     capability = state.get("strength") or 0
-    era = state.get("era") or "genesis"
+    era = normalize_era(state.get("era"))
+    era_disp = era_label(era)
     ev = state.get("events") or {}
     counts = state.get("counts") or {}
     age = compute_age(state)
@@ -714,8 +761,10 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
             lines = [ln for ln in ep.read_text(encoding="utf-8").splitlines() if ln.strip()]
             for ln in lines[-12:]:
                 rec = json.loads(ln)
-                if rec.get("kind") == "genesis":
-                    recent.append(f"- cycle 0 — cube born at {GENESIS}")
+                if rec.get("kind") in ("eden", "genesis"):
+                    recent.append(
+                        f"- cycle 0 — Cube of Eden · born at {GENESIS}"
+                    )
                 else:
                     cyc = rec.get("cycle")
                     cyc_s = f"C{cyc} " if cyc is not None else ""
@@ -726,19 +775,20 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
         except Exception:
             pass
     if not recent:
-        recent = ["- *(awaiting first lived cycle)*"]
+        recent = ["- *(still in the Cube of Eden — awaiting first lived cycle)*"]
 
     body = f"""# CUBE.md — living genealogy
 
-> Soul-age of this archive. Age is **cycles** (digital life) + wall-clock
-> lived time — not a human 0–100 score. Capability is how coherent the
-> cube has become; era is the life stage that capability earns.
+> Soul-age of this archive. Every cube begins in the **Cube of Eden** —
+> the garden before lived memory. Age is **cycles** (digital life) +
+> wall-clock lived time — not a human 0–100 score. Capability is how
+> coherent the cube has become; era is the life stage that capability earns.
 
 | | |
 |---|---|
 | **Living version** | `{ver}` |
 | **Age** | {age['label']} |
-| **Era** | {era} |
+| **Era** | {era_disp} |
 | **Capability** | {capability}/100 (coherence — not age) |
 | **Package** | hermescube {state.get('package_version') or '?'} |
 
@@ -771,7 +821,8 @@ def _rewrite_cube_md(state: dict[str, Any], hermes_home: str | Path | None) -> N
 
 ---
 *Rewritten by hermescube.genealogy — append-only truth lives in*
-*`memories/growth/epochs.jsonl`. Age unit: one cycle = one lived growth epoch.*
+*`memories/growth/epochs.jsonl`. Origin era: Cube of Eden. Age unit:*
+*one cycle = one lived growth epoch.*
 """
     p.write_text(body, encoding="utf-8")
 
@@ -785,7 +836,7 @@ def growth_status(
     state = ensure_genesis(hermes_home)
     strength = measure_strength(cube, hermes_home=hermes_home)
     state["strength"] = strength["score"]
-    state["era"] = strength["era"]
+    state["era"] = normalize_era(strength["era"])
     state["counts"] = strength["counts"]
     if state.get("cycles") is None:
         state["cycles"] = int(state.get("epochs") or 0)
@@ -793,10 +844,12 @@ def growth_status(
     save_genealogy(state, hermes_home)
     _rewrite_cube_md(state, hermes_home)
     age = compute_age(state)
+    era = normalize_era(strength["era"])
     return {
         "ok": True,
         "version": state.get("version"),
-        "era": strength["era"],
+        "era": era,
+        "era_label": era_label(era),
         "strength": strength["score"],
         "capability": strength["score"],
         "age": age,
@@ -818,11 +871,11 @@ def prompt_strip(hermes_home: str | Path | None = None) -> str:
     if not genealogy_path(hermes_home).is_file():
         return ""
     ver = state.get("version") or GENESIS
-    era = state.get("era") or "genesis"
+    era = normalize_era(state.get("era"))
     capability = state.get("strength") or 0
     age = compute_age(state)
     return (
-        f"Living Cube v{ver} · age {age['label']} · era {era} · "
+        f"Living Cube v{ver} · age {age['label']} · {era_label(era)} · "
         f"capability {capability}/100 — see memories/CUBE.md"
     )
 

@@ -70,14 +70,33 @@ class TestDigitalAge:
 
 
 class TestGenesisAndGrowth:
-    def test_fresh_cube_starts_at_zero(self):
+    def test_fresh_cube_starts_in_cube_of_eden(self):
         with tempfile.TemporaryDirectory() as td:
             state = ensure_genesis(td, agent_id="coder")
             assert state["version"] == "0.0.0"
-            assert state["era"] == "genesis"
+            assert state["era"] == "eden"
             assert (Path(td) / "memories" / "CUBE.md").is_file()
             epochs = list_epochs(td)
-            assert epochs and epochs[0]["kind"] == "genesis"
+            assert epochs and epochs[0]["kind"] == "eden"
+            assert "Cube of Eden" in (Path(td) / "memories" / "CUBE.md").read_text()
+            from hermescube.genealogy import era_label
+
+            assert era_label(state["era"]) == "Cube of Eden"
+
+    def test_legacy_genesis_migrates_to_eden(self):
+        with tempfile.TemporaryDirectory() as td:
+            ensure_genesis(td)
+            # Simulate pre-0.30 genealogy written raw (bypass normalize)
+            from hermescube.genealogy import genealogy_path, load_genealogy
+            import json
+
+            p = genealogy_path(td)
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            raw["era"] = "genesis"
+            p.write_text(json.dumps(raw), encoding="utf-8")
+            migrated = ensure_genesis(td)
+            assert migrated["era"] == "eden"
+            assert load_genealogy(td)["era"] == "eden"
 
     def test_session_with_durable_writes_bumps_patch(self):
         with tempfile.TemporaryDirectory() as td:

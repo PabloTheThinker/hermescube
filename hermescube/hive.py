@@ -161,13 +161,15 @@ def build_soul_card(
     # Living growth — peers see how mature this soul's cube is
     if hermes_home:
         try:
-            from hermescube.genealogy import compute_age, load_genealogy
+            from hermescube.genealogy import compute_age, era_label, load_genealogy
 
             g = load_genealogy(hermes_home)
             age = compute_age(g)
+            era = g.get("era") or "eden"
             card["growth"] = {
                 "version": g.get("version") or "0.0.0",
-                "era": g.get("era") or "genesis",
+                "era": era,
+                "era_label": era_label(era),
                 "capability": g.get("strength") or 0,
                 "strength": g.get("strength") or 0,  # compat alias
                 "age": age,
