@@ -394,10 +394,14 @@ def run_triage(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    entries: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Read L1, triage, optionally persist the plan."""
+    """Triage L1 entries (or provided list), optionally persist the plan."""
     try:
-        entries = list(cube.read_l1() or []) if cube is not None else []
+        if entries is None:
+            entries = list(cube.read_l1() or []) if cube is not None else []
+        else:
+            entries = list(entries)
     except Exception as e:
         return {"error": str(e), "counts": {}}
     plan = triage_entries(entries, per_route_limit=per_route_limit)

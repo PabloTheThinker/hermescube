@@ -98,3 +98,36 @@ def test_decay_edges_prunes_weak_and_scales_strong(tmp_path):
     net.decay_edges(0.9, floor=0.08)
     assert net._edges["c"]["d"] == pytest.approx(0.54)
     assert strong_before > 0
+
+
+def test_pattern_scores_numpy_matches_python(tmp_path: Path):
+    net = EngramNet(tmp_path / "engram_net.json")
+    dim = 64
+    for i in range(12):
+        v = [0.0] * dim
+        v[i % dim] = 1.0
+        v[(i * 3) % dim] = 0.4
+        net._patterns.append({"v": v, "ids": [f"e{i}", f"e{(i + 1) % 12}"]})
+    q = [0.0] * dim
+    q[0] = 1.0
+    py = net._pattern_scores_python(q, beta=12.0)
+    try:
+        from hermescube.hrr import has_numpy
+
+        if not has_numpy():
+            pytest.skip("numpy unavailable")
+    except Exception:
+        pytest.skip("numpy unavailable")
+    np_scores = net._pattern_scores_numpy(q, beta=12.0)
+    assert len(np_scores) == len(py)
+    # Compare mass on overlapping id sets (order may differ slightly)
+    mass_py: dict[str, float] = {}
+    mass_np: dict[str, float] = {}
+    for w, ids in py:
+        for i in ids:
+            mass_py[i] = mass_py.get(i, 0.0) + w
+    for w, ids in np_scores:
+        for i in ids:
+            mass_np[i] = mass_np.get(i, 0.0) + w
+    for k in set(mass_py) | set(mass_np):
+        assert mass_py.get(k, 0.0) == pytest.approx(mass_np.get(k, 0.0), abs=1e-5)

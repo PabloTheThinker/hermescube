@@ -121,6 +121,49 @@ def _already_crystal(entry: Any) -> bool:
     return bool(d and d.get("crystal") is True)
 
 
+def crystalize_id_cap(
+    triage_plan: dict[str, Any] | None,
+    entries: list[Any],
+    *,
+    max_candidates: int = 200,
+) -> set[str] | None:
+    """Build a capped candidate id set from triage queues ∪ recent durable.
+
+    Returns None when no triage plan — caller may crystalize without a hard
+    id filter (still subject to max_candidates on the wisdom-type pool).
+    """
+    ids: list[str] = []
+    seen: set[str] = set()
+    plan = triage_plan or {}
+    queues = plan.get("queues") or {}
+    for qname in ("consolidate", "reconsolidate", "working_set"):
+        for item in queues.get(qname) or []:
+            mid = str(item.get("item_id") or item.get("id") or "")
+            if mid and mid not in seen:
+                seen.add(mid)
+                ids.append(mid)
+    # Recent durable / wisdom-bearing entries fill remaining slots
+    for e in reversed(list(entries or [])):
+        if len(ids) >= max_candidates:
+            break
+        eid = str(getattr(e, "id", "") or "")
+        if not eid or eid in seen:
+            continue
+        et = (getattr(e, "entry_type", "") or "").lower()
+        if et not in WISDOM_TYPES:
+            continue
+        if (getattr(e, "outcome", "") or "") == "superseded":
+            continue
+        data = getattr(e, "data", None) or {}
+        if data.get("crystal"):
+            continue
+        seen.add(eid)
+        ids.append(eid)
+    if not ids and not plan:
+        return None
+    return set(ids[:max_candidates])
+
+
 def crystalize(
     cube: "CubeFile",
     *,
@@ -128,17 +171,34 @@ def crystalize(
     jaccard_threshold: float = 0.42,
     max_crystals: int = 12,
     dry_run: bool = False,
+    entries: list[Any] | None = None,
+    candidate_ids: set[str] | None = None,
+    max_candidates: int = 200,
+    triage_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Consolidate near-duplicate wisdom entries into belief crystals.
 
     Returns stats. Mutates cube unless dry_run=True.
+
+    When ``entries`` is provided, skips ``read_l1``. When ``candidate_ids`` or
+    ``triage_plan`` is set, O(n²) clustering runs only on a capped subset
+    (consolidate queue ∪ recent durable, max ``max_candidates``).
     """
-    entries = list(cube.read_l1() or [])
+    if entries is None:
+        entries = list(cube.read_l1() or [])
+    else:
+        entries = list(entries)
+    if candidate_ids is None and triage_plan is not None:
+        candidate_ids = crystalize_id_cap(
+            triage_plan, entries, max_candidates=max_candidates
+        )
     candidates: list[Any] = []
     # Tokenise each candidate once. Clustering below is O(n²) comparisons;
     # tokenising inside that loop made it O(n²) regex passes instead.
     tok_by_id: dict[str, frozenset[str]] = {}
     for e in entries:
+        if candidate_ids is not None and str(e.id) not in candidate_ids:
+            continue
         et = (e.entry_type or "").lower()
         if et not in WISDOM_TYPES:
             continue
@@ -157,6 +217,12 @@ def crystalize(
             continue
         candidates.append(e)
         tok_by_id[e.id] = tok
+
+    # Hard cap even without triage (recent/high-trust first already sorted later)
+    if candidate_ids is None and len(candidates) > max_candidates:
+        candidates.sort(key=lambda e: -_trust(e))
+        candidates = candidates[:max_candidates]
+        tok_by_id = {e.id: tok_by_id[e.id] for e in candidates}
 
     # Greedy clustering
     used: set[str] = set()

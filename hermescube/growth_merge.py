@@ -86,6 +86,7 @@ def detect_axes(
     hermes_home: str | Path | None = None,
     engram: Any = None,
     session_stats: dict[str, Any] | None = None,
+    entries: list[Any] | None = None,
 ) -> GrowthAxes:
     """Inspect the archive + session deltas for compounding surfaces."""
     stats = dict(session_stats or {})
@@ -95,10 +96,13 @@ def detect_axes(
     if durable_delta >= 1:
         axes.durable = True
 
-    try:
-        entries = list(cube.read_l1() or []) if cube is not None else []
-    except Exception:
-        entries = []
+    if entries is None:
+        try:
+            entries = list(cube.read_l1() or []) if cube is not None else []
+        except Exception:
+            entries = []
+    else:
+        entries = list(entries)
 
     # Recent session digest / sync_turn counts as durable even without delta
     if not axes.durable:
@@ -214,13 +218,30 @@ def merge_session_growth(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    entries: list[Any] | None = None,
 ) -> GrowthMergeResult:
     """Emit one growth-merge crystal when ≥2 axes fired.
 
     Returns a result dict-friendly object. Mutates the cube unless dry_run.
     """
+    if entries is None:
+        try:
+            entries = list(cube.read_l1() or []) if cube is not None else []
+        except Exception as e:
+            return GrowthMergeResult(
+                merged=False,
+                axes=GrowthAxes(),
+                reason=f"read_l1: {e}",
+            )
+    else:
+        entries = list(entries)
+
     axes = detect_axes(
-        cube, hermes_home=hermes_home, engram=engram, session_stats=session_stats
+        cube,
+        hermes_home=hermes_home,
+        engram=engram,
+        session_stats=session_stats,
+        entries=entries,
     )
     if not axes.merge_ready():
         return GrowthMergeResult(
@@ -228,11 +249,6 @@ def merge_session_growth(
             axes=axes,
             reason=f"need ≥2 axes, have {axes.present() or ['none']}",
         )
-
-    try:
-        entries = list(cube.read_l1() or [])
-    except Exception as e:
-        return GrowthMergeResult(merged=False, axes=axes, reason=f"read_l1: {e}")
 
     if _already_merged_recently(entries):
         return GrowthMergeResult(

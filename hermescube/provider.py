@@ -1518,9 +1518,17 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 finally:
                     self._session_id = prev
 
+            # Single L1 deserialize for the closure (plus intentional reread
+            # after crystalize/digest appends if those fire).
+            try:
+                entries = list(cube.read_l1() or [])
+            except Exception:
+                entries = []
+            l1_reads = 1
+
             # Triage — decide what offline work is worth doing this cycle
             triage_plan: dict = {}
-            if not skip and cube.entry_count >= 4 and hermes_home:
+            if not skip and len(entries) >= 4 and hermes_home:
                 try:
                     from hermescube.triage import run_triage
 
@@ -1528,6 +1536,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         cube,
                         hermes_home=hermes_home,
                         per_route_limit=8,
+                        entries=entries,
                         **path_kw,
                     )
                 except Exception:
@@ -1540,19 +1549,35 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 else True
             )
             crystalized = False
-            if not skip and cube.entry_count >= 4 and should_crystal:
+            if not skip and len(entries) >= 4 and should_crystal:
                 try:
                     from hermescube.wisdom import crystalize
-                    st = crystalize(cube, min_cluster=2, max_crystals=8)
-                    crystalized = bool((st or {}).get("crystals_made") or (st or {}).get("crystals"))
+
+                    st = crystalize(
+                        cube,
+                        min_cluster=2,
+                        max_crystals=8,
+                        entries=entries,
+                        triage_plan=triage_plan or None,
+                        max_candidates=200,
+                    )
+                    crystalized = bool(
+                        (st or {}).get("crystals_made") or (st or {}).get("crystals")
+                    )
+                    if crystalized:
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
                 except Exception:
                     pass
 
             # Sleep replay
-            if replay_enabled and not skip and cube.entry_count >= 6 and engram:
+            if replay_enabled and not skip and len(entries) >= 6 and engram:
                 try:
                     from hermescube.sleep_replay import sleep_replay
-                    rstats = sleep_replay(cube, engram, max_patterns=16)
+
+                    rstats = sleep_replay(
+                        cube, engram, max_patterns=16, entries=entries
+                    )
                     engram.save()
                     if rstats.get("patterns_added"):
                         logger.info("sleep_replay: %s", rstats)
@@ -1576,7 +1601,6 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             # Session digest + peer card
             if not skip:
                 try:
-                    ents = list(cube.read_l1() or [])
                     if digest_enabled and messages_snap:
                         from hermescube.session_digest import digest_messages, digest_entry_description
                         dig = digest_messages(messages_snap, open_intents=[])
@@ -1593,9 +1617,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             },
                             outcome="success",
                         )
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
                     from hermescube.peer_card import refresh_card
                     refresh_card(
-                        ents,
+                        entries,
                         hermes_home=hermes_home,
                         peer_name=agent_identity or "user",
                         min_interval_s=peer_cadence,
@@ -1604,7 +1630,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     pass
 
             # Living pulse
-            if pulse_enabled and not skip and cube.entry_count >= 4:
+            if pulse_enabled and not skip and len(entries) >= 4:
                 try:
                     from hermescube.living import chamber_pulse
                     chamber_pulse(
@@ -1614,13 +1640,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         max_connect=3,
                         do_crystalize=False,
                         do_peer=False,
+                        entries=entries,
                         **path_kw,
                     )
                 except Exception:
                     pass
 
             # Growth merge — compound when ≥2 Cube axes fired this session
-            if not skip and cube.entry_count >= 4 and hermes_home:
+            if not skip and len(entries) >= 4 and hermes_home:
                 try:
                     from hermescube.growth_merge import merge_session_growth
 
@@ -1633,10 +1660,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             "durable_writes": max(0, end_count - int(start_count or 0)),
                             "crystalized": crystalized,
                         },
+                        entries=entries,
                         **path_kw,
                     )
                 except Exception as e:
                     logger.debug("growth_merge skipped: %s", e)
+
+            try:
+                setattr(self, "_last_session_end_l1_reads", l1_reads)
+            except Exception:
+                pass
 
             # Evolve (grounded: witness-anchored, no silent cycles)
             if cube.entry_count > 0 and not breaker_open:

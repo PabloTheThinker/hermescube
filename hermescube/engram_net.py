@@ -264,6 +264,7 @@ class EngramNet:
         """Return multiplicative boosts ~[0.88, 1.42] for candidate ids.
 
         Fast path: empty net → {} so HAR skips re-rank work.
+        Pattern bank scoring uses a (K,d) matmul when numpy is available.
         """
         if not candidate_ids:
             return {}
@@ -274,35 +275,10 @@ class EngramNet:
 
         # 1) Pattern completion — Hopfield-like attention over pattern bank
         if query_vec and self._patterns:
-            # pre-norm query once
-            qn = math.sqrt(sum(float(x) * float(x) for x in query_vec)) or 1.0
-            scores: list[tuple[float, list[str]]] = []
-            for pat in self._patterns:
-                v = pat.get("v")
-                ids = pat.get("ids") or []
-                if not isinstance(v, list) or not ids or len(v) != len(query_vec):
-                    continue
-                # fused cos without extra allocs
-                dot = s2 = 0.0
-                for i in range(len(query_vec)):
-                    y = float(v[i])
-                    dot += float(query_vec[i]) * y
-                    s2 += y * y
-                if s2 <= 1e-12:
-                    continue
-                c = dot / (qn * math.sqrt(s2))
-                if c <= 0.05:
-                    continue
-                scores.append((c, [str(x) for x in ids]))
+            scores = self._pattern_scores(query_vec, beta=beta)
             if scores:
-                m = max(s for s, _ in scores)
-                weights = []
-                for s, ids in scores:
-                    weights.append((math.exp(beta * (s - m)), ids))
-                z = sum(w for w, _ in weights) or 1.0
                 mass: dict[str, float] = defaultdict(float)
-                for w, ids in weights:
-                    p = w / z
+                for p, ids in scores:
                     for i in ids:
                         if i in idset:
                             mass[i] += p
@@ -325,6 +301,80 @@ class EngramNet:
         for i in boosts:
             boosts[i] = max(0.88, min(1.42, float(boosts[i])))
         return boosts
+
+    def _pattern_scores(
+        self, query_vec: list[float], *, beta: float = 12.0
+    ) -> list[tuple[float, list[str]]]:
+        """Softmax-attention masses per pattern → (weight, member_ids)."""
+        try:
+            from hermescube.hrr import has_numpy
+
+            if has_numpy():
+                return self._pattern_scores_numpy(query_vec, beta=beta)
+        except Exception:
+            pass
+        return self._pattern_scores_python(query_vec, beta=beta)
+
+    def _pattern_scores_numpy(
+        self, query_vec: list[float], *, beta: float = 12.0
+    ) -> list[tuple[float, list[str]]]:
+        import numpy as np
+
+        d = len(query_vec)
+        mats: list[list[float]] = []
+        id_rows: list[list[str]] = []
+        for pat in self._patterns:
+            v = pat.get("v")
+            ids = pat.get("ids") or []
+            if not isinstance(v, list) or not ids or len(v) != d:
+                continue
+            mats.append([float(x) for x in v])
+            id_rows.append([str(x) for x in ids])
+        if not mats:
+            return []
+        P = np.asarray(mats, dtype=np.float64)  # (K, d)
+        q = np.asarray(query_vec, dtype=np.float64)
+        qn = float(np.linalg.norm(q)) or 1.0
+        pn = np.linalg.norm(P, axis=1)
+        dots = P @ q
+        cos = dots / (qn * np.maximum(pn, 1e-12))
+        idxs = np.nonzero(cos > 0.05)[0]
+        if idxs.size == 0:
+            return []
+        cos_k = cos[idxs]
+        ids_k = [id_rows[int(i)] for i in idxs]
+        m = float(np.max(cos_k))
+        w = np.exp(beta * (cos_k - m))
+        z = float(np.sum(w)) or 1.0
+        return [(float(wi / z), ids) for wi, ids in zip(w, ids_k)]
+
+    def _pattern_scores_python(
+        self, query_vec: list[float], *, beta: float = 12.0
+    ) -> list[tuple[float, list[str]]]:
+        qn = math.sqrt(sum(float(x) * float(x) for x in query_vec)) or 1.0
+        scores: list[tuple[float, list[str]]] = []
+        for pat in self._patterns:
+            v = pat.get("v")
+            ids = pat.get("ids") or []
+            if not isinstance(v, list) or not ids or len(v) != len(query_vec):
+                continue
+            dot = s2 = 0.0
+            for i in range(len(query_vec)):
+                y = float(v[i])
+                dot += float(query_vec[i]) * y
+                s2 += y * y
+            if s2 <= 1e-12:
+                continue
+            c = dot / (qn * math.sqrt(s2))
+            if c <= 0.05:
+                continue
+            scores.append((c, [str(x) for x in ids]))
+        if not scores:
+            return []
+        m = max(s for s, _ in scores)
+        weights = [(math.exp(beta * (s - m)), ids) for s, ids in scores]
+        z = sum(w for w, _ in weights) or 1.0
+        return [(w / z, ids) for w, ids in weights]
 
     def stats(self) -> dict[str, Any]:
         return {

@@ -280,6 +280,7 @@ def chamber_pulse(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    entries: list[Any] | None = None,
 ) -> dict[str, Any]:
     """One living pulse — all chambers improve the shared archive."""
     pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
@@ -294,7 +295,10 @@ def chamber_pulse(
         return report
 
     try:
-        entries = list(cube.read_l1() or [])
+        if entries is None:
+            entries = list(cube.read_l1() or [])
+        else:
+            entries = list(entries)
     except Exception as e:
         report["error"] = str(e)
         return report
@@ -325,7 +329,8 @@ def chamber_pulse(
         try:
             from hermescube.wisdom import crystalize, functional_loop_stats
 
-            st = crystalize(cube, min_cluster=2, max_crystals=4)
+            st = crystalize(cube, min_cluster=2, max_crystals=4, entries=entries)
+            # Intentional reread after crystal appends
             entries = list(cube.read_l1() or [])
             loop = functional_loop_stats(entries)
             report["chambers"]["doctrine"] = {"crystalize": st, "loop": loop}
@@ -404,6 +409,7 @@ def chamber_pulse(
             hermes_home=hermes_home,
             per_route_limit=6,
             persist=True,
+            entries=entries,
             **pkw,
         )
         report["chambers"]["triage"] = {
@@ -419,7 +425,9 @@ def chamber_pulse(
     try:
         from hermescube.growth_merge import detect_axes
 
-        axes = detect_axes(cube, hermes_home=hermes_home, engram=engram)
+        axes = detect_axes(
+            cube, hermes_home=hermes_home, engram=engram, entries=entries
+        )
         merge_info: dict[str, Any] = {"axes": axes.to_dict(), "present": axes.present()}
         # Pulse does not force-merge (session_end owns the write); report readiness.
         merge_info["ready"] = axes.merge_ready()

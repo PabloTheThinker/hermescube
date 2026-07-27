@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0] - 2026-07-26
+
+### Night-job cost + hot-path polish
+- Session-end reads L1 once and threads `entries` into triage / crystalize / sleep_replay / living / growth_merge (intentional reread only after crystalize or digest appends)
+- Crystalize candidate set capped (~200) via triage consolidate∪recent durable
+- Engram `association_boosts` pattern bank uses (K,d) numpy matmul with pure-Python fallback
+- `assoc_recall_bench` cost gates: session-end at N=2k/5k, prefetch p50, growth-merge fire
+
 ## [0.32.0] - 2026-07-26
 
 ### Multi-project sidecar isolation

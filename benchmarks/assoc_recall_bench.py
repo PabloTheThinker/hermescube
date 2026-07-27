@@ -223,6 +223,108 @@ def measure_colony(p) -> dict:
     }
 
 
+def measure_cost_gates() -> dict:
+    """Session-end L1 once + capped crystalize + growth-merge at scale.
+
+    Uses synthetic in-memory entries so the gate measures closure work, not
+    CubeFile.append WAL refresh cost (O(n²) when building huge archives).
+    """
+    from hermescube.growth_merge import merge_session_growth
+    from hermescube.triage import run_triage
+    from hermescube.wisdom import crystalize
+
+    class _E:
+        __slots__ = ("id", "entry_type", "description", "data", "outcome", "timestamp")
+
+        def __init__(self, i: int, *, crystal: bool = False):
+            self.id = f"e{i:06d}"
+            self.entry_type = "belief"
+            self.description = (
+                f"Cluster fact {i} AuthService Redis Postgres topic-{i % 11}"
+                if not crystal
+                else "AuthService crystal: Redis sessions are durable"
+            )
+            self.data = {
+                "source": "seed",
+                "trust": 0.9 if crystal else 0.7,
+                "durable": True,
+                **({"crystal": True, "source": "wisdom_crystalizer"} if crystal else {}),
+            }
+            self.outcome = "success"
+            self.timestamp = "2026-07-26T12:00:00"
+
+    class _Cube:
+        def __init__(self, entries):
+            self._entries = entries
+            self.entry_count = len(entries)
+            self.reads = 0
+
+        def read_l1(self):
+            self.reads += 1
+            return list(self._entries)
+
+        def append(self, *a, **k):
+            raise RuntimeError("dry_run cost gate must not append")
+
+    def _run_at(n: int) -> dict:
+        tmp = tempfile.mkdtemp(prefix=f"hccost-{n}-")
+        try:
+            entries = [_E(i) for i in range(n)]
+            entries.append(_E(n, crystal=True))
+            cube = _Cube(entries)
+            t0 = time.perf_counter()
+            snap = list(cube.read_l1() or [])
+            plan = run_triage(
+                cube, hermes_home=tmp, entries=snap, persist=False, per_route_limit=8
+            )
+            crystalize(
+                cube,
+                dry_run=True,
+                entries=snap,
+                triage_plan=plan,
+                max_candidates=200,
+            )
+            merge = merge_session_growth(
+                cube,
+                hermes_home=tmp,
+                session_stats={"durable_writes": 3, "crystalized": True},
+                dry_run=True,
+                entries=snap,
+            )
+            wall_ms = (time.perf_counter() - t0) * 1000
+            return {
+                "n": n,
+                "l1_reads": cube.reads,
+                "wall_ms": round(wall_ms, 2),
+                "candidates_cap": 200,
+                "growth_merge_ready": bool(merge.axes.merge_ready()),
+                "growth_merge_fired": bool(merge.merged),
+            }
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    n_small = int(os.environ.get("HERMESCUBE_COST_N_2K", "2000"))
+    n_large = int(os.environ.get("HERMESCUBE_COST_N_5K", "5000"))
+    out = {"n_2k": _run_at(n_small), "n_5k": _run_at(n_large)}
+    # Prefetch p50 on the fixed-archive style build (same as retrieval path)
+    tmp = tempfile.mkdtemp(prefix="hcpref-")
+    try:
+        p = _build(tmp)
+        lat = []
+        for q, _ in IR_PROBES * 3:
+            t0 = time.perf_counter()
+            p.prefetch(q)
+            lat.append((time.perf_counter() - t0) * 1000)
+        lat.sort()
+        out["prefetch_p50_ms"] = round(lat[len(lat) // 2], 3) if lat else 0
+        p.shutdown()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    out["ok_l1_once_5k"] = out["n_5k"]["l1_reads"] <= 1
+    out["ok_merge_fires"] = bool(out["n_5k"]["growth_merge_fired"])
+    return out
+
+
 def main() -> int:
     out = {"version": __import__("hermescube").__version__}
     out["entities"] = measure_entity_recall()
@@ -234,6 +336,8 @@ def main() -> int:
         p.shutdown()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+    if os.environ.get("HERMESCUBE_SKIP_COST", "").strip() not in ("1", "true", "yes"):
+        out["cost"] = measure_cost_gates()
 
     print(json.dumps(out, indent=2))
     # Results land outside the git tree, same convention as real_use_bench.
@@ -260,6 +364,14 @@ def main() -> int:
     print(f"hit@1 / @3 / @5      {r['hit@1']} / {r['hit@3']} / {r['hit@5']}")
     print(f"mrr                  {r['mrr']}")
     print(f"query_p50_ms         {r['query_p50_ms']}")
+    cost = out.get("cost") or {}
+    if cost:
+        print(
+            f"session_end_5k       l1_reads={cost.get('n_5k', {}).get('l1_reads')} "
+            f"wall_ms={cost.get('n_5k', {}).get('wall_ms')} "
+            f"merge={cost.get('ok_merge_fires')}"
+        )
+        print(f"prefetch_p50_ms      {cost.get('prefetch_p50_ms')}")
     return 0
 
 
