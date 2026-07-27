@@ -462,6 +462,75 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
     assoc = ch.get("associate") or {}
     if assoc.get("dot_links"):
         lines.append(f"- New dot-links last pulse: {assoc.get('dot_links')}")
+
+    # Triage / growth — make compounding queues agent-visible
+    triage = ch.get("triage") or {}
+    if triage.get("next_focus") or triage.get("counts"):
+        counts = triage.get("counts") or {}
+        cparts = [
+            f"{k}:{counts[k]}"
+            for k in ("working_set", "reconsolidate", "consolidate", "archive")
+            if counts.get(k)
+        ]
+        focus = triage.get("next_focus") or "—"
+        line = f"- Triage focus: {focus}"
+        if cparts:
+            line += " · " + " ".join(cparts[:4])
+        lines.append(line)
+
+    growth = ch.get("growth") or {}
+    if growth.get("ready") or growth.get("present"):
+        present = growth.get("present") or [
+            k for k, v in (growth.get("axes") or {}).items() if v
+        ]
+        if growth.get("ready"):
+            lines.append(
+                "- Growth merge ready: axes="
+                + (",".join(present) if present else "multi")
+                + " → manage action=merge"
+            )
+        elif present:
+            lines.append("- Growth axes seen: " + ",".join(present))
+
+    # Open SPO relations (entity hubs from catalog) — capped
+    try:
+        from hermescube.relations import RelationStore
+
+        store = RelationStore(hermes_home)
+        entities = []
+        # Prefer catalog entities from living state / catalog.json
+        cat_ents = cat.get("entities")
+        if isinstance(cat_ents, dict):
+            entities = [
+                k
+                for k, _ in sorted(
+                    cat_ents.items(), key=lambda kv: -int(kv[1] or 0)
+                )[:4]
+            ]
+        elif isinstance(cat_ents, list):
+            entities = [str(x) for x in cat_ents[:4]]
+        if not entities:
+            # fall back to topic hubs labels
+            for hub in (cat.get("topic_hubs") or [])[:3]:
+                if isinstance(hub, dict) and hub.get("topic"):
+                    entities.append(str(hub["topic"]))
+        hits = []
+        seen = set()
+        for ent in entities:
+            for r in store.query(str(ent), limit=2):
+                if r.relation_id in seen:
+                    continue
+                seen.add(r.relation_id)
+                hits.append(r)
+            if len(hits) >= 4:
+                break
+        if hits:
+            lines.append("- Relations:")
+            for r in hits[:4]:
+                lines.append(f"  · {r.subject} —{r.predicate}→ {r.object}")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 

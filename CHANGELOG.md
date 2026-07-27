@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.0] - 2026-07-26
+
+### Compounding surfaces are agent-visible
+- Living `prompt_strip` shows triage focus/queue counts, growth-merge readiness, and open SPO relations
+- System prompt hints when to call `triage` / `merge` / `relations`
+- Prefetch appends relation lines for who/owns/related queries (even if HAR is empty)
+- `hermescube doctor` / `info` report triage plan, relations stats, last growth-merge id
+
 ## [0.30.0] - 2026-07-26
 
 ### AgentDrive-inspired compounding (Cube-native)

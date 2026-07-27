@@ -1009,7 +1009,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "Tools:",
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts / forge / promote(+optional skill install) / growth",
+            "- hermescube_manage — durable facts / forge / promote / growth / "
+            "triage / merge / relations",
             "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
             "",
             "Guidance:",
@@ -1019,6 +1020,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- DO NOT store temp todos / session fluff",
             "- Real friction (user corrections, failures) → manage action=witness; "
             "evolution stays grounded to witnessed friction",
+            "- Offline queues: manage action=triage (what to promote); action=merge when "
+            "Living strip says merge ready; action=relations for who/owns/related facts",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -1138,29 +1141,90 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 del self._prefetch_cache[oldest_key]
             self._prefetch_cache[cache_key] = results
 
-        if not results:
+        if results:
+            try:
+                self._last_prefetch_ids = [
+                    str(getattr(e, "id", "") or "")
+                    for e, _ in results
+                    if getattr(e, "id", None)
+                ]
+            except Exception:
+                self._last_prefetch_ids = []
+            # periodic engram flush
+            try:
+                net = getattr(self, "_engram", None)
+                if net is not None and self._turn_count % 5 == 0:
+                    net.save()
+            except Exception:
+                pass
+            if self._void is not None:
+                body = self._void.format_prefetch(results)
+            else:
+                lines = ["[Relevant memories from past sessions:]"]
+                for entry, _score in results[:5]:
+                    ts = entry.timestamp[:10] if entry.timestamp else "unknown"
+                    lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
+                body = "\n".join(lines)
+        else:
+            self._last_prefetch_ids = []
+            body = ""
+        rel_block = self._relational_prefetch_assist(retrieval_query, results or [])
+        if rel_block:
+            return body + "\n\n" + rel_block if body else rel_block
+        return body
+
+    @staticmethod
+    def _query_looks_relational(query: str) -> bool:
+        q = (query or "").lower()
+        cues = (
+            "who ",
+            "who's",
+            "whose ",
+            "owns ",
+            "owned ",
+            "related",
+            "relation",
+            "belongs",
+            "responsible",
+            "depends on",
+            "linked to",
+        )
+        return any(c in q for c in cues)
+
+    def _relational_prefetch_assist(
+        self,
+        query: str,
+        results: list,
+    ) -> str:
+        """Append SPO relations when the query looks relational."""
+        if not self._hermes_home or not self._query_looks_relational(query):
             return ""
         try:
-            self._last_prefetch_ids = [
-                str(getattr(e, "id", "") or "") for e, _ in results if getattr(e, "id", None)
-            ]
+            from hermescube.mirror import extract_entities
+            from hermescube.relations import RelationStore, format_for_prompt
+
+            store = RelationStore(self._hermes_home)
+            entities = extract_entities(query, max_entities=4)
+            for entry, _ in (results or [])[:4]:
+                data = getattr(entry, "data", None) or {}
+                for ent in data.get("entities") or []:
+                    if str(ent) not in entities:
+                        entities.append(str(ent))
+                if len(entities) >= 6:
+                    break
+            hits = []
+            seen: set[str] = set()
+            for ent in entities:
+                for r in store.query(str(ent), limit=3):
+                    if r.relation_id in seen:
+                        continue
+                    seen.add(r.relation_id)
+                    hits.append(r)
+                if len(hits) >= 6:
+                    break
+            return format_for_prompt(hits, limit=6)
         except Exception:
-            self._last_prefetch_ids = []
-        # periodic engram flush
-        try:
-            net = getattr(self, "_engram", None)
-            if net is not None and self._turn_count % 5 == 0:
-                net.save()
-        except Exception:
-            pass
-        if self._void is not None:
-            return self._void.format_prefetch(results)
-        # minimal fallback
-        lines = ["[Relevant memories from past sessions:]"]
-        for entry, _score in results[:5]:
-            ts = entry.timestamp[:10] if entry.timestamp else "unknown"
-            lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
-        return "\n".join(lines)
+            return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
         """Background prefetch for next turn (non-blocking)."""

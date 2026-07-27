@@ -1104,3 +1104,20 @@ class TestProviderEdgeCases:
             block = provider.system_prompt_block()
             assert "dark mode" in block or "pytest" in block or "Stored:" in block
             provider.shutdown()
+
+
+def test_relational_prefetch_assist_appends_spo(tmp_path, monkeypatch):
+    from hermescube.provider import CubeMemoryProvider
+    from hermescube.relations import RelationStore
+
+    hh = tmp_path / "home"
+    (hh / "memories").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(hh))
+    RelationStore(hh).record("alice", "owns", "AuthService")
+
+    p = CubeMemoryProvider()
+    p._hermes_home = str(hh)
+    assert p._query_looks_relational("who owns AuthService")
+    block = p._relational_prefetch_assist("who owns AuthService", [])
+    assert "### Relations" in block
+    assert "alice" in block and "AuthService" in block
