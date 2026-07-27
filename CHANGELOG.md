@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1] - 2026-07-27
+
+### Sync queue + stress benches
+- `_SyncQueue.flush(timeout=…)` now **honors timeout** — previously `wait=True` could hang forever on a wedged background worker (bench hang / session_end risk)
+- `benchmarks/cross_exam_bench.py` — hardened A/B/C stress: paraphrase, noise flood, capacity overflow, mid-session freeze, cross-session reopen, MemoryManager wiring, scale to N=2000
+- `benchmarks/hermes_usage_bench.py` — Hermes MemoryProvider lifecycle gates
+
 ## [0.38.0] - 2026-07-27
 
 ### Cube of Eden — the origin era

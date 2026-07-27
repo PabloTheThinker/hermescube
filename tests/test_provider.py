@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+import threading
 import time
 
 from hermescube.cube import CubeFile
@@ -637,6 +638,21 @@ class TestSyncQueueRegression:
             entries = provider._cube.read_l1()
             assert len(entries) == 20
             provider.shutdown()
+
+    def test_flush_honors_timeout_against_stuck_worker(self):
+        """flush(timeout=…) must return even if a worker is wedged."""
+        q = CubeMemoryProvider()._sync_queue
+        barrier = threading.Event()
+
+        def _stuck() -> None:
+            barrier.wait(30)  # held until test ends
+
+        q.submit(_stuck)
+        t0 = time.perf_counter()
+        q.flush(timeout=0.3)
+        elapsed = time.perf_counter() - t0
+        barrier.set()
+        assert elapsed < 2.0, f"flush hung for {elapsed:.1f}s (timeout ignored)"
 
 
 class TestHermesCubeFeedback:
