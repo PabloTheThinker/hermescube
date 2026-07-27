@@ -22,9 +22,16 @@ from hermescube.provider import CubeMemoryProvider
 
 
 def test_memory_safety_blocks_credentials_and_logs():
-    s = memory_safety("rotate api_key sk-abcdef", "password=hunter2")
+    s = memory_safety("rotate credentials", "password=hunter2 api_key=abcd")
     assert s["status"] == "blocked"
     assert "sensitive_credential_like_text" in s["review_reasons"]
+
+    # Prose that merely mentions "secret" must NOT block durable project facts
+    prose = memory_safety(
+        "vault",
+        "Operator vault credential for project alpha is tok 0001 secret unlocked via service",
+    )
+    assert prose["status"] != "blocked"
 
     loggy = memory_safety(
         "build failed",
@@ -103,7 +110,7 @@ def test_curation_and_doctor():
             cube.append("belief", "Duplicate fact about Redis", data={"durable": True, "trust": 0.2})
             cube.append(
                 "belief",
-                "Operator password is hunter2 forever",
+                "Operator password=hunter2 forever",
                 data={"durable": True},
             )
             capture_candidate(str(home), "pending oasis fact", source="test")

@@ -45,8 +45,13 @@ CLAIM_BOUNDARY = (
 )
 
 _RE_SENSITIVE = re.compile(
-    r"(?i)\b(?:secret|password|passwd|private[_-]?key|api[_-]?key|apikey|"
-    r"access[_-]?token|auth[_-]?token|bearer\s+[a-z0-9._\-]{16,}|sk-[a-z0-9]{16,})\b"
+    r"(?i)(?:"
+    r"\b(?:password|passwd|private[_-]?key|api[_-]?key|apikey)\s*[:=]\s*\S+"
+    r"|\b(?:access[_-]?token|auth[_-]?token|bearer)\s+[a-z0-9._\-]{16,}"
+    r"|\bsk-[a-z0-9]{16,}\b"
+    r"|\b(?:aws|ghp|github_pat)_[a-z0-9]{12,}\b"
+    r"|\bBEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY\b"
+    r")"
 )
 _RE_PR = re.compile(r"(?i)\b(?:PR|pull request)\s*#?\d+\b")
 _RE_COMMIT = re.compile(r"\b[0-9a-f]{7,40}\b", re.I)
