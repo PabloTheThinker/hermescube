@@ -90,6 +90,7 @@ era milestones — still consent-gated.
 - Not a cloud memory SaaS  
 - Not a replacement for MEMORY.md  
 - Not “HAR always beats scan” marketing — lex-first + bio rank; honest benches  
+- Not AgentDrive / Mission Control — borrow algorithms (merge, triage, SPO), not the conductor OS  
 
 ## Yield Gradient (0.8+)
 
@@ -102,6 +103,7 @@ Closed loop: feedback teaches which memories *pay off for similar queries* (quer
 3. **IR useful** — hybrid lexical+HRR; score-first; labeled recall tracked  
 4. **User data isolation** — only `$HERMES_HOME/memories/memory.cube`  
 5. **Company agents** — same plugin socket; cube = deep extension per profile  
+6. **Compounding sessions** — ≥2 axes → growth-merge crystal; triage skips empty crystalize  
 
 ## Research spine (Fudoshin)
 

@@ -143,11 +143,20 @@ def connect_dots(
     entries: list[Any],
     *,
     max_links: int = 5,
+    hermes_home: str | Path | None = None,
 ) -> dict[str, Any]:
     """Write soft relationship links when two durable entries share rare entities."""
-    stats = {"links": 0, "skipped": 0}
+    stats = {"links": 0, "skipped": 0, "relations": 0}
     if cube is None or len(entries) < 4:
         return stats
+    rel_store = None
+    if hermes_home is not None:
+        try:
+            from hermescube.relations import RelationStore, ingest_entry
+
+            rel_store = RelationStore(hermes_home)
+        except Exception:
+            rel_store = None
 
     # entity → entry ids
     inv: dict[str, list[Any]] = defaultdict(list)
@@ -185,7 +194,7 @@ def connect_dots(
         da = (a.description or "")[:80]
         db = (b.description or "")[:80]
         try:
-            cube.append(
+            entry = cube.append(
                 entry_type="relationship",
                 description=f"[DOT] {ent}: {da} ↔ {db}",
                 data={
@@ -198,6 +207,13 @@ def connect_dots(
                 },
                 outcome="success",
             )
+            if rel_store is not None:
+                try:
+                    from hermescube.relations import ingest_entry
+
+                    stats["relations"] += len(ingest_entry(entry, rel_store))
+                except Exception:
+                    pass
             existing.add(key)
             written += 1
             stats["links"] = written
@@ -312,17 +328,48 @@ def chamber_pulse(
 
     # --- associate chamber (connect dots + engram hubs) ---
     try:
-        dots = connect_dots(cube, entries, max_links=max_connect)
+        dots = connect_dots(
+            cube, entries, max_links=max_connect, hermes_home=hermes_home
+        )
         hubs = []
         if engram is not None and hasattr(engram, "hub_ids"):
             hubs = engram.hub_ids(limit=6)
         report["chambers"]["associate"] = {
             "dot_links": dots.get("links", 0),
+            "relations": dots.get("relations", 0),
             "engram_hubs": hubs[:6],
             "engram": engram.stats() if engram is not None and hasattr(engram, "stats") else {},
         }
     except Exception as e:
         report["chambers"]["associate"] = {"error": str(e)}
+
+    # --- triage chamber (consolidation routing plan) ---
+    try:
+        from hermescube.triage import run_triage
+
+        plan = run_triage(
+            cube, hermes_home=hermes_home, per_route_limit=6, persist=True
+        )
+        report["chambers"]["triage"] = {
+            "counts": plan.get("counts"),
+            "next_focus": (plan.get("control_plan") or {}).get("next_focus"),
+            "should_crystalize": plan.get("should_crystalize"),
+            "path": plan.get("path"),
+        }
+    except Exception as e:
+        report["chambers"]["triage"] = {"error": str(e)}
+
+    # --- growth chamber (multi-axis merge; dry detect in pulse) ---
+    try:
+        from hermescube.growth_merge import detect_axes
+
+        axes = detect_axes(cube, hermes_home=hermes_home, engram=engram)
+        merge_info: dict[str, Any] = {"axes": axes.to_dict(), "present": axes.present()}
+        # Pulse does not force-merge (session_end owns the write); report readiness.
+        merge_info["ready"] = axes.merge_ready()
+        report["chambers"]["growth"] = merge_info
+    except Exception as e:
+        report["chambers"]["growth"] = {"error": str(e)}
 
     # --- narrative chamber ---
     try:
@@ -383,6 +430,10 @@ def _summary_line(report: dict[str, Any]) -> str:
         parts.append(f"drafts={ch['procedure'].get('drafts_pending')}")
     if "identity" in ch and isinstance(ch["identity"], dict):
         parts.append(f"peer={ch['identity'].get('peer')}")
+    if "triage" in ch and isinstance(ch["triage"], dict):
+        parts.append(f"focus={ch['triage'].get('next_focus')}")
+    if "growth" in ch and isinstance(ch["growth"], dict) and ch["growth"].get("ready"):
+        parts.append("merge_ready")
     return "Living pulse: " + " · ".join(str(p) for p in parts)
 
 

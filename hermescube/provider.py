@@ -789,6 +789,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "interview",
                                 "growth",
                                 "curate",
+                                "triage",
+                                "merge",
+                                "relations",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
@@ -796,7 +799,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
                                 "+ interview (peer dialogue / mint skill drafts) "
                                 "+ growth (living cube version / strength / CUBE.md) "
-                                "+ curate (refine skills from lessons / era forge+garden)"
+                                "+ curate (refine skills from lessons / era forge+garden) "
+                                "+ triage (consolidation queues) + merge (multi-axis growth) "
+                                "+ relations (SPO query/record)"
                             ),
                         },
                         "interview_action": {
@@ -1420,11 +1425,30 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 finally:
                     self._session_id = prev
 
-            # Wisdom crystalize
-            if not skip and cube.entry_count >= 4:
+            # Triage — decide what offline work is worth doing this cycle
+            triage_plan: dict = {}
+            if not skip and cube.entry_count >= 4 and hermes_home:
+                try:
+                    from hermescube.triage import run_triage
+
+                    triage_plan = run_triage(
+                        cube, hermes_home=hermes_home, per_route_limit=8
+                    )
+                except Exception:
+                    triage_plan = {}
+
+            # Wisdom crystalize (skip when triage says nothing to consolidate)
+            should_crystal = bool(
+                triage_plan.get("should_crystalize", True)
+                if triage_plan
+                else True
+            )
+            crystalized = False
+            if not skip and cube.entry_count >= 4 and should_crystal:
                 try:
                     from hermescube.wisdom import crystalize
-                    crystalize(cube, min_cluster=2, max_crystals=8)
+                    st = crystalize(cube, min_cluster=2, max_crystals=8)
+                    crystalized = bool((st or {}).get("crystals_made") or (st or {}).get("crystals"))
                 except Exception:
                     pass
 
@@ -1496,6 +1520,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     )
                 except Exception:
                     pass
+
+            # Growth merge — compound when ≥2 Cube axes fired this session
+            if not skip and cube.entry_count >= 4 and hermes_home:
+                try:
+                    from hermescube.growth_merge import merge_session_growth
+
+                    end_count = int(getattr(cube, "entry_count", 0) or 0)
+                    merge_session_growth(
+                        cube,
+                        hermes_home=hermes_home,
+                        engram=engram,
+                        session_stats={
+                            "durable_writes": max(0, end_count - int(start_count or 0)),
+                            "crystalized": crystalized,
+                        },
+                    )
+                except Exception as e:
+                    logger.debug("growth_merge skipped: %s", e)
 
             # Evolve (grounded: witness-anchored, no silent cycles)
             if cube.entry_count > 0 and not breaker_open:
@@ -2241,6 +2283,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_growth(args)
         elif action == "curate":
             return self._handle_manage_curate(args)
+        elif action == "triage":
+            return self._handle_manage_triage(args)
+        elif action == "merge":
+            return self._handle_manage_merge(args)
+        elif action == "relations":
+            return self._handle_manage_relations(args)
         return json.dumps({"error": f"Unknown action: {action}"})
 
     def _handle_manage_curate(self, args: dict[str, Any]) -> str:
@@ -2267,6 +2315,99 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
             self._refresh_maturity()
             return json.dumps({"status": "curate", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_triage(self, args: dict[str, Any]) -> str:
+        """Build / return consolidation triage plan."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.triage import run_triage, load_plan
+
+            if str(args.get("mode") or args.get("content") or "").lower() == "load":
+                plan = load_plan(self._hermes_home) or {}
+                return json.dumps({"status": "triage", "loaded": True, **plan}, default=str)
+            plan = run_triage(
+                self._cube,
+                hermes_home=self._hermes_home,
+                per_route_limit=int(args.get("top_k") or 8),
+            )
+            return json.dumps({"status": "triage", **plan}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_merge(self, args: dict[str, Any]) -> str:
+        """Multi-axis growth merge (AgentDrive-inspired, Cube-native)."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.growth_merge import merge_session_growth
+
+            dry = str(args.get("mode") or "").lower() == "dry"
+            result = merge_session_growth(
+                self._cube,
+                hermes_home=self._hermes_home,
+                engram=getattr(self, "_engram", None),
+                session_stats={"durable_writes": 1},
+                dry_run=dry,
+            )
+            if result.merged and not dry and self._engine:
+                self._engine.invalidate_cache()
+                self._refresh_maturity()
+            return json.dumps({"status": "merge", **result.to_dict()}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_relations(self, args: dict[str, Any]) -> str:
+        """SPO relations: query / record / stats / expire."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube.relations import RelationStore
+
+            store = RelationStore(self._hermes_home)
+            content = str(args.get("content") or args.get("query") or "").strip()
+            mode = str(args.get("mode") or "").lower()
+            if not mode:
+                if content.startswith("record:") or "|" in content and content.count("|") >= 2:
+                    mode = "record"
+                elif content in ("", "stats"):
+                    mode = "stats"
+                else:
+                    mode = "query"
+            if mode == "stats":
+                return json.dumps({"status": "relations", **store.stats()}, default=str)
+            if mode == "record":
+                raw = content[7:] if content.lower().startswith("record:") else content
+                parts = [p.strip() for p in raw.split("|")]
+                if len(parts) < 3:
+                    return json.dumps({
+                        "error": "record needs subject|predicate|object",
+                    })
+                rel = store.record(parts[0], parts[1], parts[2])
+                return json.dumps({"status": "recorded", **rel.to_dict()}, default=str)
+            if mode == "expire":
+                raw = content[7:] if content.lower().startswith("expire:") else content
+                parts = [p.strip() for p in raw.split("|")]
+                if len(parts) < 3:
+                    return json.dumps({"error": "expire needs subject|predicate|object"})
+                n = store.expire(parts[0], parts[1], parts[2])
+                return json.dumps({"status": "expired", "count": n})
+            # query
+            entity = content
+            if content.lower().startswith("query:"):
+                entity = content[6:].strip()
+            hits = store.query(entity, limit=int(args.get("top_k") or 20))
+            return json.dumps(
+                {
+                    "status": "relations",
+                    "entity": entity,
+                    "count": len(hits),
+                    "relations": [h.to_dict() for h in hits],
+                },
+                default=str,
+            )
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -3135,6 +3276,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             },
             outcome=outcome,
         )
+        try:
+            from hermescube.relations import RelationStore, ingest_entry
+
+            ingest_entry(entry, RelationStore(self._hermes_home))
+        except Exception:
+            pass
         closed_info = None
         try:
             from hermescube.journey import log_event

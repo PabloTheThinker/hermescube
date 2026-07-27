@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.30.0] - 2026-07-26
+
+### AgentDrive-inspired compounding (Cube-native)
+
+Borrowed the *algorithms*, not the AgentDrive OS. HermesCube stays a
+Hermes MemoryProvider; these make offline consolidation and session growth
+structurally smarter.
+
+- **`growth_merge.py`**: when ≥2 of durable / procedure / association /
+  yield / wisdom fire in a session, append one `[GROWTH-MERGE]` evolution
+  crystal with evidence ids + engram coactivation (session-end +
+  `manage action=merge`)
+- **`triage.py`**: route L1 into working_set / reconsolidate / consolidate /
+  archive with rehearsal-sensitive retention; persist
+  `memories/triage_plan.json`; session-end skips crystalize when nothing
+  needs promotion; living pulse reports `next_focus`
+- **`relations.py`**: time-bounded SPO store at
+  `memories/relations.sqlite3` (`as_of` query, expire, ingest from
+  relationship/DOT entries and manage-add); tool
+  `manage action=relations`
+- Living pulse gains **triage** + **growth** chambers; connect_dots writes
+  relation edges when a Hermes home is present
+- Manage enum: `triage`, `merge`, `relations`
+- 389 tests
+
 ## [0.28.0] - 2026-07-26
 
 ### Growth that strengthens the system — curator + maturity ranking
