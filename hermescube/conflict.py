@@ -198,7 +198,7 @@ def scan_numeric_conflict_pairs(
                 id2 = str(getattr(e2, "id", "") or "")
                 if not id1 or not id2 or id1 == id2:
                     continue
-                key = tuple(sorted((id1, id2)))
+                key: tuple[str, str] = (id1, id2) if id1 <= id2 else (id2, id1)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -230,8 +230,10 @@ def scan_numeric_conflict_pairs(
                     continue
                 id1 = str(getattr(e1, "id", "") or "")
                 id2 = str(getattr(e2, "id", "") or "")
-                key = tuple(sorted((id1, id2)))
-                if not id1 or not id2 or id1 == id2 or key in seen:
+                if not id1 or not id2 or id1 == id2:
+                    continue
+                key = (id1, id2) if id1 <= id2 else (id2, id1)
+                if key in seen:
                     continue
                 seen.add(key)
                 pairs.append(

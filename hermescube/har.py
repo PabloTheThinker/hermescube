@@ -275,6 +275,7 @@ class HARQueryEngine:
             except Exception:
                 pass
         now_ts = entries[-1].timestamp if entries else ""
+        q_toks = bio_rank.tokenize(text) if text else set()
 
         if hrr.has_numpy():
             import numpy as _np
@@ -301,7 +302,16 @@ class HARQueryEngine:
             scored: list[tuple[CubeEntry, float]] = []
             for i, entry in enumerate(entries):
                 scored.append(
-                    (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text, q_tokens=q_toks))
+                    (
+                        entry,
+                        self._rank_entry(
+                            entry,
+                            float(sims[i]),
+                            now=now_ts,
+                            query=text,
+                            q_tokens=q_toks,
+                        ),
+                    )
                 )
             scored.sort(key=lambda x: -x[1])
             primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
@@ -311,7 +321,16 @@ class HARQueryEngine:
         for entry in entries:
             score = hrr.cosine_sim(q, entry.vector)
             scored.append(
-                (entry, self._rank_entry(entry, float(score), now=now_ts, query=text))
+                (
+                    entry,
+                    self._rank_entry(
+                        entry,
+                        float(score),
+                        now=now_ts,
+                        query=text,
+                        q_tokens=q_toks,
+                    ),
+                )
             )
         scored.sort(key=lambda x: -x[1])
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
