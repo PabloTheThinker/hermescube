@@ -26,13 +26,14 @@ class TestMaturityRanking:
         ephemeral = {"trust": 0.4}
         assert maturity_multiplier(crystal, era="elder", strength=92) > 1.0
         assert maturity_multiplier(ephemeral, era="elder", strength=92) < 1.0
-        assert maturity_multiplier(crystal, era="genesis", strength=0) == 1.0
+        assert maturity_multiplier(crystal, era="eden", strength=0) == 1.0
+        assert maturity_multiplier(crystal, era="genesis", strength=0) == 1.0  # legacy
 
     def test_composite_uses_maturity(self):
         data = {"crystal": True, "durable": True, "trust": 0.9}
         base = composite_score(
             0.8, entry_type="belief", trust=0.9, data=data,
-            maturity_era="genesis", maturity_strength=0,
+            maturity_era="eden", maturity_strength=0,
         )
         elder = composite_score(
             0.8, entry_type="belief", trust=0.9, data=data,

@@ -296,7 +296,7 @@ def extract_fact_lines(assistant: str, *, max_facts: int = 3) -> list[tuple[str,
 def maturity_multiplier(
     data: dict | None,
     *,
-    era: str = "genesis",
+    era: str = "eden",
     strength: float = 0.0,
 ) -> float:
     """Living-cube maturity shapes retrieval — elder cubes prefer distilled knowledge.
@@ -305,13 +305,16 @@ def maturity_multiplier(
     procedures rise; raw ephemeral turns fall. Lexical identity still wins
     (caller damps this under high lex). Bounded to keep IR honest.
     """
+    e = (era or "eden").lower()
+    if e == "genesis":
+        e = "eden"
     era_w = {
-        "genesis": 0.0,
+        "eden": 0.0,
         "awakening": 0.35,
         "formed": 0.65,
         "seasoned": 0.90,
         "elder": 1.0,
-    }.get((era or "genesis").lower(), 0.0)
+    }.get(e, 0.0)
     # strength softens the curve so mid-era cubes with high strength still benefit
     w = max(era_w, min(1.0, float(strength or 0) / 100.0) * 0.85)
     if w <= 0.05:
@@ -338,7 +341,7 @@ def composite_score(
     description: str = "",
     data: dict | None = None,
     yield_boost: float = 1.0,
-    maturity_era: str = "genesis",
+    maturity_era: str = "eden",
     maturity_strength: float = 0.0,
 ) -> float:
     """Combine hybrid similarity with bio priors for ranking.

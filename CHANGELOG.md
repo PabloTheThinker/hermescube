@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.38.0] - 2026-07-27
+
+### Cube of Eden — the origin era
+- **Origin era renamed**: fresh cubes begin in **`eden`** (display: **Cube of Eden**) — the garden before lived memory — replacing the old `genesis` era label
+- Life path: Cube of Eden → Awakening → Formed → Seasoned → Elder
+- `era_label()` / `normalize_era()` helpers; legacy genealogies with `era: "genesis"` migrate automatically to `eden`
+- Birth epoch kind is now `eden`; CUBE.md, CLI, soul cards, pilgrimage lines, and the system prompt say **Cube of Eden**
+- Maturity ranking treats `eden` (and legacy `genesis`) as capability weight 0
+- Docs: [docs/GROWTH.md](docs/GROWTH.md) reframed around Eden
+
+
 ## [0.37.0] - 2026-07-26
 
 ### Compaction-safe extract (Hermes holographic algorithm)

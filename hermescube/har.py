@@ -410,7 +410,7 @@ class HARQueryEngine:
             description=entry.description or "",
             data=data,
             yield_boost=float(yb),
-            maturity_era=str(mat.get("era") or "genesis"),
+            maturity_era=str(mat.get("era") or "eden"),
             maturity_strength=float(mat.get("strength") or 0),
         )
         # Soft vault affinity — never hard-drop unlabeled legacy entries

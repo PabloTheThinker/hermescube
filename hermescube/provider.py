@@ -476,6 +476,20 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception as e:
             logger.debug("genealogy genesis skipped: %s", e)
 
+        # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
+        try:
+            from hermescube.genealogy import ensure_genesis
+            from hermescube import __version__ as _pkg_v
+
+            ensure_genesis(
+                self._hermes_home or None,
+                agent_id=self._agent_identity or "hermes",
+                package_version=_pkg_v,
+            )
+            self._refresh_maturity()
+        except Exception as e:
+            logger.debug("genealogy genesis skipped: %s", e)
+
         # Colony + void OS
         try:
             self._colony = ColonyGraph(self._paths.colony_graph)
@@ -551,7 +565,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 self._engine,
                 "_maturity",
                 {
-                    "era": g.get("era") or "genesis",
+                    "era": g.get("era") or "eden",
                     "strength": float(g.get("strength") or 0),
                     "version": g.get("version") or "0.0.0",
                 },
@@ -866,9 +880,13 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "relations",
                             ],
                             "description": (
-                                "Warehouse ops. Common: add, crystalize, pulse, triage, "
-                                "merge, relations, growth, peer, hive, hq, interview. "
-                                "See system prompt hints for when to use triage/merge/relations."
+                                "warehouse ops + living pulse + consent + peer + hive "
+                                "+ witness (log real friction) + harness (self-evolution) "
+                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
+                                "+ interview (peer dialogue / mint skill drafts) "
+                                "+ growth (living cube version / CUBE.md) "
+                                "+ curate (refine skills from lessons / era forge+garden) "
+                                "+ triage / merge / relations (compounding)"
                             ),
                         },
                         "interview_action": {
@@ -1077,7 +1095,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
             "- hermescube_manage — durable facts / forge / promote / growth / "
-            "triage / merge / relations",
+            "curate / triage / merge / relations",
             "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
             "",
             "Guidance:",
