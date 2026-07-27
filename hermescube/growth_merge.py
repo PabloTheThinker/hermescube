@@ -211,6 +211,9 @@ def merge_session_growth(
     engram: Any = None,
     session_stats: dict[str, Any] | None = None,
     dry_run: bool = False,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> GrowthMergeResult:
     """Emit one growth-merge crystal when ≥2 axes fired.
 
@@ -287,7 +290,12 @@ def merge_session_growth(
         try:
             from hermescube.relations import RelationStore
 
-            store = RelationStore(hermes_home)
+            store = RelationStore(
+                hermes_home,
+                agent_identity=agent_identity,
+                agent_workspace=agent_workspace,
+                nest_profiles=nest_profiles,
+            )
             for axis in present:
                 store.record("session", "compounds", axis, memory_id=eid or None)
             for mid in evidence[:6]:

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.32.0] - 2026-07-26
+
+### Multi-project sidecar isolation
+- Sidecars (engram, yield, relations, triage, journey, living) nest under `memories/profiles/<identity>/<workspace>/` when both identity and workspace are set
+- Shared `.cube` warehouse stays at `memories/memory.cube` so unlabeled legacy memories still recall
+- Optional `data.vault` / `data.topic` tags on durable writes; HAR soft vault affinity (never hard-drops unlabeled)
+- One-shot legacy sidecar migrate (copy, no delete) into nested profile dirs
+
 ## [0.31.0] - 2026-07-26
 
 ### Compounding surfaces are agent-visible

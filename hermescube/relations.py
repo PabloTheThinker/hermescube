@@ -22,9 +22,21 @@ from typing import Any
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_.\-]{2,}")
 
 
-def default_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "relations.sqlite3"
+def default_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).relations
 
 
 @dataclass
@@ -52,8 +64,24 @@ class RelationRecord:
 class RelationStore:
     """Per-Hermes-home SQLite relation store."""
 
-    def __init__(self, hermes_home: str | Path | None = None) -> None:
-        self.path = default_path(hermes_home)
+    def __init__(
+        self,
+        hermes_home: str | Path | None = None,
+        *,
+        path: str | Path | None = None,
+        agent_identity: str = "",
+        agent_workspace: str = "",
+        nest_profiles: bool = False,
+    ) -> None:
+        if path is not None:
+            self.path = Path(path)
+        else:
+            self.path = default_path(
+                hermes_home,
+                agent_identity=agent_identity,
+                agent_workspace=agent_workspace,
+                nest_profiles=nest_profiles,
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 

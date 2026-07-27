@@ -41,9 +41,21 @@ ROUTE_ACTIONS: dict[str, dict[str, str]] = {
 }
 
 
-def plan_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "triage_plan.json"
+def plan_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).triage_plan
 
 
 def forgetting_curve_strength(
@@ -333,15 +345,38 @@ def triage_entries(
     return plan
 
 
-def save_plan(hermes_home: str | Path | None, plan: dict[str, Any]) -> Path:
-    path = plan_path(hermes_home)
+def save_plan(
+    hermes_home: str | Path | None,
+    plan: dict[str, Any],
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    path = plan_path(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(plan, indent=2, default=str), encoding="utf-8")
     return path
 
 
-def load_plan(hermes_home: str | Path | None = None) -> dict[str, Any] | None:
-    path = plan_path(hermes_home)
+def load_plan(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> dict[str, Any] | None:
+    path = plan_path(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     if not path.is_file():
         return None
     try:
@@ -356,6 +391,9 @@ def run_triage(
     hermes_home: str | Path | None = None,
     per_route_limit: int = 8,
     persist: bool = True,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Read L1, triage, optionally persist the plan."""
     try:
@@ -365,7 +403,15 @@ def run_triage(
     plan = triage_entries(entries, per_route_limit=per_route_limit)
     if persist and hermes_home is not None:
         try:
-            plan["path"] = str(save_plan(hermes_home, plan))
+            plan["path"] = str(
+                save_plan(
+                    hermes_home,
+                    plan,
+                    agent_identity=agent_identity,
+                    agent_workspace=agent_workspace,
+                    nest_profiles=nest_profiles,
+                )
+            )
         except Exception as e:
             plan["persist_error"] = str(e)
     return plan

@@ -69,8 +69,21 @@ def _mean_vec(vecs: list[list[float]]) -> list[float] | None:
     return [x / norm for x in out]
 
 
-def default_path(hermes_home: str | Path) -> Path:
-    return Path(hermes_home) / "memories" / "engram_net.json"
+def default_path(
+    hermes_home: str | Path,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).engram
 
 
 class EngramNet:

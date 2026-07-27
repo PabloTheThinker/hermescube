@@ -47,14 +47,50 @@ CHAMBERS = (
 )
 
 
-def state_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "living_state.json"
+def _path_kw(
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> dict:
+    return {
+        "agent_identity": agent_identity or "",
+        "agent_workspace": agent_workspace or "",
+        "nest_profiles": bool(nest_profiles),
+    }
 
 
-def catalog_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "catalog.json"
+def state_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).living_state
+
+
+def catalog_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).catalog
 
 
 def _toks(text: str) -> set[str]:
@@ -144,6 +180,9 @@ def connect_dots(
     *,
     max_links: int = 5,
     hermes_home: str | Path | None = None,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Write soft relationship links when two durable entries share rare entities."""
     stats = {"links": 0, "skipped": 0, "relations": 0}
@@ -154,7 +193,12 @@ def connect_dots(
         try:
             from hermescube.relations import RelationStore, ingest_entry
 
-            rel_store = RelationStore(hermes_home)
+            rel_store = RelationStore(
+                hermes_home,
+                agent_identity=agent_identity,
+                agent_workspace=agent_workspace,
+                nest_profiles=nest_profiles,
+            )
         except Exception:
             rel_store = None
 
@@ -233,8 +277,12 @@ def chamber_pulse(
     max_connect: int = 4,
     do_crystalize: bool = True,
     do_peer: bool = True,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """One living pulse — all chambers improve the shared archive."""
+    pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
     report: dict[str, Any] = {
         "ts": time.time(),
         "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -257,7 +305,7 @@ def chamber_pulse(
     # --- catalog chamber ---
     try:
         cat = build_catalog(entries)
-        cp = catalog_path(hermes_home)
+        cp = catalog_path(hermes_home, **pkw)
         cp.parent.mkdir(parents=True, exist_ok=True)
         cp.write_text(json.dumps(cat, indent=2), encoding="utf-8")
         report["chambers"]["catalog"] = {
@@ -329,7 +377,11 @@ def chamber_pulse(
     # --- associate chamber (connect dots + engram hubs) ---
     try:
         dots = connect_dots(
-            cube, entries, max_links=max_connect, hermes_home=hermes_home
+            cube,
+            entries,
+            max_links=max_connect,
+            hermes_home=hermes_home,
+            **pkw,
         )
         hubs = []
         if engram is not None and hasattr(engram, "hub_ids"):
@@ -348,7 +400,11 @@ def chamber_pulse(
         from hermescube.triage import run_triage
 
         plan = run_triage(
-            cube, hermes_home=hermes_home, per_route_limit=6, persist=True
+            cube,
+            hermes_home=hermes_home,
+            per_route_limit=6,
+            persist=True,
+            **pkw,
         )
         report["chambers"]["triage"] = {
             "counts": plan.get("counts"),
@@ -375,13 +431,13 @@ def chamber_pulse(
     try:
         from hermescube.journey import read_events, default_paths
 
-        ev = read_events(hermes_home, limit=500)
+        ev = read_events(hermes_home, limit=500, **pkw)
         sessions = sum(
             1
             for e in entries
             if (getattr(e, "description", "") or "").startswith("[SESSION]")
         )
-        jpath, md = default_paths(hermes_home)
+        jpath, md = default_paths(hermes_home, **pkw)
         report["chambers"]["narrative"] = {
             "journey_events": len(ev),
             "session_digests": sessions,
@@ -395,7 +451,7 @@ def chamber_pulse(
     report["alive"] = True
     report["summary"] = _summary_line(report)
     try:
-        sp = state_path(hermes_home)
+        sp = state_path(hermes_home, **pkw)
         sp.parent.mkdir(parents=True, exist_ok=True)
         sp.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         report["state_path"] = str(sp)
@@ -410,6 +466,7 @@ def chamber_pulse(
             report.get("summary") or "living pulse",
             hermes_home=hermes_home,
             meta={"links": (report.get("chambers") or {}).get("associate", {}).get("dot_links")},
+            **pkw,
         )
     except Exception:
         pass
@@ -437,9 +494,17 @@ def _summary_line(report: dict[str, Any]) -> str:
     return "Living pulse: " + " · ".join(str(p) for p in parts)
 
 
-def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = False) -> str:
+def prompt_strip(
+    hermes_home: str | Path | None = None,
+    *,
+    high_load: bool = False,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> str:
     """Compact living-archive face for system prompt."""
-    sp = state_path(hermes_home)
+    pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
+    sp = state_path(hermes_home, **pkw)
     if not sp.is_file():
         return ""
     try:
@@ -496,7 +561,7 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
     try:
         from hermescube.relations import RelationStore
 
-        store = RelationStore(hermes_home)
+        store = RelationStore(hermes_home, **pkw)
         entities = []
         # Prefer catalog entities from living state / catalog.json
         cat_ents = cat.get("entities")
@@ -508,7 +573,12 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
                 )[:4]
             ]
         elif isinstance(cat_ents, list):
-            entities = [str(x) for x in cat_ents[:4]]
+            entities = []
+            for x in cat_ents[:4]:
+                if isinstance(x, dict) and x.get("name"):
+                    entities.append(str(x["name"]))
+                elif x:
+                    entities.append(str(x))
         if not entities:
             # fall back to topic hubs labels
             for hub in (cat.get("topic_hubs") or [])[:3]:
@@ -534,8 +604,19 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
     return "\n".join(lines)
 
 
-def load_state(hermes_home: str | Path | None = None) -> dict[str, Any] | None:
-    sp = state_path(hermes_home)
+def load_state(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> dict[str, Any] | None:
+    sp = state_path(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     if not sp.is_file():
         return None
     try:

@@ -365,16 +365,32 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._hive_on_session_end = False
 
         # Framework path housing
-        from hermescube.framework.paths import resolve_cube_paths
+        from hermescube.framework.paths import (
+            migrate_legacy_sidecars,
+            resolve_cube_paths,
+            should_nest_profiles,
+        )
         from hermescube.framework.void import CubeVoid
         from hermescube.colony import ColonyGraph
 
-        # hermes_home is already the storage root (profile-scoped by Hermes).
+        # Nest sidecars when both identity and workspace are set so two
+        # workspaces under one HERMES_HOME do not share engram/relations.
+        self._nest_profiles = should_nest_profiles(
+            self._agent_identity, self._agent_workspace
+        )
         self._paths = resolve_cube_paths(
             self._hermes_home or None,
-            nest_profiles=False,
+            agent_identity=self._agent_identity or "",
+            agent_workspace=self._agent_workspace or "",
+            nest_profiles=self._nest_profiles,
         )
         self._paths.ensure()
+        if self._nest_profiles:
+            try:
+                migrate_legacy_sidecars(self._paths)
+            except Exception as e:
+                logger.debug("sidecar migrate: %s", e)
+        self._vault = (self._agent_workspace or self._agent_identity or "").strip()
         cube_dir = self._paths.memories_dir
         self._cube_path = str(self._paths.cube)
 
@@ -389,6 +405,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
 
         self._engine = HARQueryEngine(self._cube)
+        if getattr(self, "_vault", ""):
+            setattr(self._engine, "_active_vault", self._vault)
 
         # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
         try:
@@ -430,7 +448,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.yield_trail import YieldGradient, default_path
 
-            self._yield = YieldGradient(default_path(self._hermes_home or Path.home() / ".hermes"))
+            self._yield = YieldGradient(self._paths.yield_gradient)
             setattr(self._engine, "_yield_gradient", self._yield)
         except Exception as e:
             logger.debug("yield gradient skipped: %s", e)
@@ -440,7 +458,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.engram_net import EngramNet, default_path as engram_path
 
-            self._engram = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+            self._engram = EngramNet(self._paths.engram)
             setattr(self._engine, "_engram_net", self._engram)
         except Exception as e:
             logger.debug("engram net skipped: %s", e)
@@ -1092,7 +1110,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 try:
                     from hermescube.living import prompt_strip as living_strip
 
-                    ls = living_strip(self._hermes_home, high_load=False)
+                    ls = living_strip(self._hermes_home, high_load=False, **self._path_kw())
                     if ls:
                         lines.append("")
                         lines.append(ls)
@@ -1203,7 +1221,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             from hermescube.mirror import extract_entities
             from hermescube.relations import RelationStore, format_for_prompt
 
-            store = RelationStore(self._hermes_home)
+            store = self._relation_store()
             entities = extract_entities(query, max_entities=4)
             for entry, _ in (results or [])[:4]:
                 data = getattr(entry, "data", None) or {}
@@ -1305,6 +1323,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             extra["trust"] = 0.45
         else:
             extra["trust"] = 0.55
+        vault = getattr(self, "_vault", "") or ""
+        if vault:
+            extra["vault"] = vault
+            if self._agent_workspace:
+                extra["topic"] = str(self._agent_workspace)[:80]
 
         outcome = "none"
         if assistant_clean:
@@ -1476,6 +1499,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         hive_root = getattr(self, "_hive_path", "") or os.environ.get(
             "HERMESCUBE_HIVE", ""
         )
+        path_kw = {
+            "agent_identity": self._agent_identity or "",
+            "agent_workspace": self._agent_workspace or "",
+            "nest_profiles": bool(getattr(self, "_nest_profiles", False)),
+        }
+        vault = getattr(self, "_vault", "") or ""
 
         def _session_end_work() -> None:
             start_count = int(getattr(cube, "entry_count", 0) or 0)
@@ -1496,7 +1525,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     from hermescube.triage import run_triage
 
                     triage_plan = run_triage(
-                        cube, hermes_home=hermes_home, per_route_limit=8
+                        cube,
+                        hermes_home=hermes_home,
+                        per_route_limit=8,
+                        **path_kw,
                     )
                 except Exception:
                     triage_plan = {}
@@ -1557,6 +1589,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "trust": 0.65,
                                 "durable": True,
                                 "verification": "observed",
+                                **({"vault": vault} if vault else {}),
                             },
                             outcome="success",
                         )
@@ -1581,6 +1614,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         max_connect=3,
                         do_crystalize=False,
                         do_peer=False,
+                        **path_kw,
                     )
                 except Exception:
                     pass
@@ -1599,6 +1633,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             "durable_writes": max(0, end_count - int(start_count or 0)),
                             "crystalized": crystalized,
                         },
+                        **path_kw,
                     )
                 except Exception as e:
                     logger.debug("growth_merge skipped: %s", e)
@@ -2382,6 +2417,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+
+    def _path_kw(self) -> dict[str, Any]:
+        return {
+            "agent_identity": self._agent_identity or "",
+            "agent_workspace": self._agent_workspace or "",
+            "nest_profiles": bool(getattr(self, "_nest_profiles", False)),
+        }
+
+    def _relation_store(self):
+        from hermescube.relations import RelationStore
+
+        if getattr(self, "_paths", None) is not None:
+            return RelationStore(path=self._paths.relations)
+        return RelationStore(self._hermes_home, **self._path_kw())
+
     def _handle_manage_triage(self, args: dict[str, Any]) -> str:
         """Build / return consolidation triage plan."""
         if not self._cube:
@@ -2389,13 +2439,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.triage import run_triage, load_plan
 
+            pkw = self._path_kw()
             if str(args.get("mode") or args.get("content") or "").lower() == "load":
-                plan = load_plan(self._hermes_home) or {}
+                plan = load_plan(self._hermes_home, **pkw) or {}
                 return json.dumps({"status": "triage", "loaded": True, **plan}, default=str)
             plan = run_triage(
                 self._cube,
                 hermes_home=self._hermes_home,
                 per_route_limit=int(args.get("top_k") or 8),
+                **pkw,
             )
             return json.dumps({"status": "triage", **plan}, default=str)
         except Exception as e:
@@ -2415,6 +2467,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 engram=getattr(self, "_engram", None),
                 session_stats={"durable_writes": 1},
                 dry_run=dry,
+                **self._path_kw(),
             )
             if result.merged and not dry and self._engine:
                 self._engine.invalidate_cache()
@@ -2430,7 +2483,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.relations import RelationStore
 
-            store = RelationStore(self._hermes_home)
+            store = self._relation_store()
             content = str(args.get("content") or args.get("query") or "").strip()
             mode = str(args.get("mode") or "").lower()
             if not mode:
@@ -2867,6 +2920,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 max_connect=int(args.get("max_connect") or 4),
                 do_crystalize=bool(args.get("crystalize", True)),
                 do_peer=bool(args.get("peer", True)),
+                **self._path_kw(),
             )
             if report.get("ok"):
                 self._prefetch_cache.clear()
@@ -3277,7 +3331,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             if net is None:
                 from hermescube.engram_net import EngramNet, default_path as engram_path
 
-                net = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+                net = EngramNet(self._paths.engram)
                 self._engram = net
                 if self._engine is not None:
                     setattr(self._engine, "_engram_net", net)
@@ -3337,13 +3391,18 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "session_id": self._session_id,
                 "platform": self._platform,
                 "trust": 0.72 if entry_type in ("focus", "resolve") else 0.5,
+                **(
+                    {"vault": self._vault, "topic": (self._agent_workspace or "")[:80]}
+                    if getattr(self, "_vault", "")
+                    else {}
+                ),
             },
             outcome=outcome,
         )
         try:
-            from hermescube.relations import RelationStore, ingest_entry
+            from hermescube.relations import ingest_entry
 
-            ingest_entry(entry, RelationStore(self._hermes_home))
+            ingest_entry(entry, self._relation_store())
         except Exception:
             pass
         closed_info = None

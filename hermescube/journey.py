@@ -30,10 +30,22 @@ from pathlib import Path
 from typing import Any
 
 
-def default_paths(hermes_home: str | Path | None = None) -> tuple[Path, Path]:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    mem = hh / "memories"
-    return mem / "journey.jsonl", mem / "journey.md"
+def default_paths(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> tuple[Path, Path]:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    paths = resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
+    return paths.journey_events, paths.journey_md
 
 
 def log_event(
@@ -43,6 +55,9 @@ def log_event(
     hermes_home: str | Path | None = None,
     entry_id: str = "",
     meta: dict[str, Any] | None = None,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> None:
     """Append one journey milestone (best-effort, never raises to callers)."""
     summary = (summary or "").strip()
@@ -56,7 +71,12 @@ def log_event(
             return
     except Exception:
         pass
-    jsonl, _md = default_paths(hermes_home)
+    jsonl, _md = default_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     try:
         jsonl.parent.mkdir(parents=True, exist_ok=True)
         rec = {
@@ -79,8 +99,16 @@ def read_events(
     hermes_home: str | Path | None = None,
     *,
     limit: int = 200,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> list[dict[str, Any]]:
-    jsonl, _ = default_paths(hermes_home)
+    jsonl, _ = default_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     if not jsonl.is_file():
         return []
     out: list[dict[str, Any]] = []
