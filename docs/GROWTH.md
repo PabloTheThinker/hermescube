@@ -10,7 +10,7 @@ skills, confirmed predictions, refined lessons — advances the version and
 carries the soul out of Eden into lived eras. The diary lives at
 `memories/CUBE.md`.
 
-This is **not** the package version (`hermescube 0.30.x`) and **not** the
+This is **not** the package version (`hermescube 0.38.x`) and **not** the
 binary format version (`CubeFile.VERSION = 1`). It is the soul-record of one
 agent's archive.
 
@@ -154,3 +154,36 @@ One machine. The cube that starts in the **Cube of Eden** at `0.0.0` is
 the same cube that, weeks later, holds crystallized wisdom, evolving
 skills, and a diary of every cycle it lived through — the All-Spark of
 that Hermes Agent's life.
+
+## Multi-axis growth merge (0.30+)
+
+Inspired by AgentDrive's growth-merge gate, but Cube-native. When a session
+touches **≥2** of these surfaces, HermesCube writes one compound crystal
+instead of leaving the wins scattered:
+
+| Axis | Signal |
+|------|--------|
+| durable | sync_turn / digest / manage writes |
+| procedure | `[PROCEDURE]` / trajectory / pending drafts |
+| association | engram edges or `[DOT]` links |
+| yield | helpful feedback |
+| wisdom | active crystals |
+
+```bash
+# Inspect consolidation queues
+# manage action=triage  → memories/triage_plan.json
+
+# Force a merge check
+# manage action=merge   (mode=dry for preview)
+
+# SPO facts with validity windows
+# manage action=relations content=AuthService
+# manage action=relations mode=record content=alice|owns|auth-service
+```
+
+Offline crystalize now consults triage: if nothing is in the consolidate
+queue, session-end skips a no-op wisdom pass.
+
+One machine. The cube that starts empty at `0.0.0` is the same cube that,
+weeks later, holds crystallized wisdom, evolving skills, and a diary of
+every epoch it lived through — the All-Spark of that Hermes Agent's life.

@@ -141,9 +141,15 @@ class LearnedEmbedder:
 
         if hrr.has_numpy():
             import numpy as _np
+            import hashlib
 
-            # Deterministic seed from vocab hash
-            seed = hash(tuple(sorted(self._vocab.keys()))) % (2**31)
+            # Deterministic seed from vocab — builtin hash() is salted per
+            # process (PYTHONHASHSEED), so identical training data used to
+            # produce a different projection on every restart.
+            vocab_digest = hashlib.sha256(
+                "\0".join(sorted(self._vocab.keys())).encode()
+            ).hexdigest()
+            seed = int(vocab_digest[:16], 16) % (2**31)
             rng = _np.random.RandomState(seed)
             # Gaussian projection (better than sparse for small vocab)
             self._projection = rng.randn(vocab_size, self.dim).tolist()

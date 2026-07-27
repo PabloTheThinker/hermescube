@@ -61,6 +61,31 @@ def cmd_info(args: argparse.Namespace) -> None:
         except Exception as e:
             print(f"\nLiving version: n/a ({e})")
         try:
+            from hermescube.triage import load_plan
+            from hermescube.relations import RelationStore
+
+            plan = load_plan(home)
+            if plan:
+                cp = plan.get("control_plan") or {}
+                print(
+                    f"\nTriage: focus={cp.get('next_focus')} "
+                    f"counts={plan.get('counts')}"
+                )
+            rel = RelationStore(home).stats()
+            print(
+                f"Relations: {rel.get('relations')} open "
+                f"(path={rel.get('path')})"
+            )
+            merges = [
+                e
+                for e in (cube.read_l1() or [])
+                if (getattr(e, "data", None) or {}).get("growth_merge")
+            ]
+            if merges:
+                print(f"Growth merge: last={merges[-1].id}")
+        except Exception as e:
+            print(f"\nCompounding: n/a ({e})")
+        try:
             dens = cube.density_stats()
             print("\nDensity (archive packing):")
             print(f"  bytes/entry: {dens['bytes_per_entry']:.0f}")
@@ -1048,6 +1073,48 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 )
             except Exception as e:
                 print(f"  functional_loop: n/a ({e})")
+            # Compounding surfaces (triage / relations / last growth merge)
+            try:
+                from hermescube.triage import load_plan, plan_path
+
+                plan = load_plan(home)
+                pp = plan_path(home)
+                if plan:
+                    cp = plan.get("control_plan") or {}
+                    print(
+                        f"  triage: focus={cp.get('next_focus')} "
+                        f"counts={plan.get('counts')} path={pp}"
+                    )
+                else:
+                    print(f"  triage: no plan yet ({pp})")
+            except Exception as e:
+                print(f"  triage: n/a ({e})")
+            try:
+                from hermescube.relations import RelationStore
+
+                st = RelationStore(home).stats()
+                print(
+                    f"  relations: {st.get('relations')} "
+                    f"(open={st.get('open')}) path={st.get('path')}"
+                )
+            except Exception as e:
+                print(f"  relations: n/a ({e})")
+            try:
+                merges = [
+                    e
+                    for e in ents
+                    if (getattr(e, "data", None) or {}).get("growth_merge")
+                ]
+                if merges:
+                    last = merges[-1]
+                    print(
+                        f"  growth_merge: last_id={last.id} "
+                        f"axes={(last.data or {}).get('axes')}"
+                    )
+                else:
+                    print("  growth_merge: none yet")
+            except Exception as e:
+                print(f"  growth_merge: n/a ({e})")
             if not integ.get("ok"):
                 return 1
         except Exception as e:

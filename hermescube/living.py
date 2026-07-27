@@ -47,14 +47,50 @@ CHAMBERS = (
 )
 
 
-def state_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "living_state.json"
+def _path_kw(
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> dict:
+    return {
+        "agent_identity": agent_identity or "",
+        "agent_workspace": agent_workspace or "",
+        "nest_profiles": bool(nest_profiles),
+    }
 
 
-def catalog_path(hermes_home: str | Path | None = None) -> Path:
-    hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
-    return hh / "memories" / "catalog.json"
+def state_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).living_state
+
+
+def catalog_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).catalog
 
 
 def _toks(text: str) -> set[str]:
@@ -143,11 +179,28 @@ def connect_dots(
     entries: list[Any],
     *,
     max_links: int = 5,
+    hermes_home: str | Path | None = None,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Write soft relationship links when two durable entries share rare entities."""
-    stats = {"links": 0, "skipped": 0}
+    stats = {"links": 0, "skipped": 0, "relations": 0}
     if cube is None or len(entries) < 4:
         return stats
+    rel_store = None
+    if hermes_home is not None:
+        try:
+            from hermescube.relations import RelationStore, ingest_entry
+
+            rel_store = RelationStore(
+                hermes_home,
+                agent_identity=agent_identity,
+                agent_workspace=agent_workspace,
+                nest_profiles=nest_profiles,
+            )
+        except Exception:
+            rel_store = None
 
     # entity → entry ids
     inv: dict[str, list[Any]] = defaultdict(list)
@@ -185,7 +238,7 @@ def connect_dots(
         da = (a.description or "")[:80]
         db = (b.description or "")[:80]
         try:
-            cube.append(
+            entry = cube.append(
                 entry_type="relationship",
                 description=f"[DOT] {ent}: {da} ↔ {db}",
                 data={
@@ -198,6 +251,13 @@ def connect_dots(
                 },
                 outcome="success",
             )
+            if rel_store is not None:
+                try:
+                    from hermescube.relations import ingest_entry
+
+                    stats["relations"] += len(ingest_entry(entry, rel_store))
+                except Exception:
+                    pass
             existing.add(key)
             written += 1
             stats["links"] = written
@@ -217,8 +277,13 @@ def chamber_pulse(
     max_connect: int = 4,
     do_crystalize: bool = True,
     do_peer: bool = True,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+    entries: list[Any] | None = None,
 ) -> dict[str, Any]:
     """One living pulse — all chambers improve the shared archive."""
+    pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
     report: dict[str, Any] = {
         "ts": time.time(),
         "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -230,7 +295,10 @@ def chamber_pulse(
         return report
 
     try:
-        entries = list(cube.read_l1() or [])
+        if entries is None:
+            entries = list(cube.read_l1() or [])
+        else:
+            entries = list(entries)
     except Exception as e:
         report["error"] = str(e)
         return report
@@ -241,12 +309,14 @@ def chamber_pulse(
     # --- catalog chamber ---
     try:
         cat = build_catalog(entries)
-        cp = catalog_path(hermes_home)
+        cp = catalog_path(hermes_home, **pkw)
         cp.parent.mkdir(parents=True, exist_ok=True)
         cp.write_text(json.dumps(cat, indent=2), encoding="utf-8")
         report["chambers"]["catalog"] = {
             "n": n,
             "types": cat.get("by_type"),
+            # prompt_strip renders the chamber breakdown from this key
+            "by_chamber": cat.get("by_chamber"),
             "topic_hubs": len(cat.get("topic_hubs") or []),
             "entities": len(cat.get("entities") or []),
             "path": str(cp),
@@ -259,7 +329,8 @@ def chamber_pulse(
         try:
             from hermescube.wisdom import crystalize, functional_loop_stats
 
-            st = crystalize(cube, min_cluster=2, max_crystals=4)
+            st = crystalize(cube, min_cluster=2, max_crystals=4, entries=entries)
+            # Intentional reread after crystal appends
             entries = list(cube.read_l1() or [])
             loop = functional_loop_stats(entries)
             report["chambers"]["doctrine"] = {"crystalize": st, "loop": loop}
@@ -310,29 +381,71 @@ def chamber_pulse(
 
     # --- associate chamber (connect dots + engram hubs) ---
     try:
-        dots = connect_dots(cube, entries, max_links=max_connect)
+        dots = connect_dots(
+            cube,
+            entries,
+            max_links=max_connect,
+            hermes_home=hermes_home,
+            **pkw,
+        )
         hubs = []
         if engram is not None and hasattr(engram, "hub_ids"):
             hubs = engram.hub_ids(limit=6)
         report["chambers"]["associate"] = {
             "dot_links": dots.get("links", 0),
+            "relations": dots.get("relations", 0),
             "engram_hubs": hubs[:6],
             "engram": engram.stats() if engram is not None and hasattr(engram, "stats") else {},
         }
     except Exception as e:
         report["chambers"]["associate"] = {"error": str(e)}
 
+    # --- triage chamber (consolidation routing plan) ---
+    try:
+        from hermescube.triage import run_triage
+
+        plan = run_triage(
+            cube,
+            hermes_home=hermes_home,
+            per_route_limit=6,
+            persist=True,
+            entries=entries,
+            **pkw,
+        )
+        report["chambers"]["triage"] = {
+            "counts": plan.get("counts"),
+            "next_focus": (plan.get("control_plan") or {}).get("next_focus"),
+            "should_crystalize": plan.get("should_crystalize"),
+            "path": plan.get("path"),
+        }
+    except Exception as e:
+        report["chambers"]["triage"] = {"error": str(e)}
+
+    # --- growth chamber (multi-axis merge; dry detect in pulse) ---
+    try:
+        from hermescube.growth_merge import detect_axes
+
+        axes = detect_axes(
+            cube, hermes_home=hermes_home, engram=engram, entries=entries
+        )
+        merge_info: dict[str, Any] = {"axes": axes.to_dict(), "present": axes.present()}
+        # Pulse does not force-merge (session_end owns the write); report readiness.
+        merge_info["ready"] = axes.merge_ready()
+        report["chambers"]["growth"] = merge_info
+    except Exception as e:
+        report["chambers"]["growth"] = {"error": str(e)}
+
     # --- narrative chamber ---
     try:
         from hermescube.journey import read_events, default_paths
 
-        ev = read_events(hermes_home, limit=500)
+        ev = read_events(hermes_home, limit=500, **pkw)
         sessions = sum(
             1
             for e in entries
             if (getattr(e, "description", "") or "").startswith("[SESSION]")
         )
-        jpath, md = default_paths(hermes_home)
+        jpath, md = default_paths(hermes_home, **pkw)
         report["chambers"]["narrative"] = {
             "journey_events": len(ev),
             "session_digests": sessions,
@@ -346,7 +459,7 @@ def chamber_pulse(
     report["alive"] = True
     report["summary"] = _summary_line(report)
     try:
-        sp = state_path(hermes_home)
+        sp = state_path(hermes_home, **pkw)
         sp.parent.mkdir(parents=True, exist_ok=True)
         sp.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         report["state_path"] = str(sp)
@@ -361,6 +474,7 @@ def chamber_pulse(
             report.get("summary") or "living pulse",
             hermes_home=hermes_home,
             meta={"links": (report.get("chambers") or {}).get("associate", {}).get("dot_links")},
+            **pkw,
         )
     except Exception:
         pass
@@ -381,12 +495,25 @@ def _summary_line(report: dict[str, Any]) -> str:
         parts.append(f"drafts={ch['procedure'].get('drafts_pending')}")
     if "identity" in ch and isinstance(ch["identity"], dict):
         parts.append(f"peer={ch['identity'].get('peer')}")
+    if "triage" in ch and isinstance(ch["triage"], dict):
+        parts.append(f"focus={ch['triage'].get('next_focus')}")
+    if "growth" in ch and isinstance(ch["growth"], dict) and ch["growth"].get("ready"):
+        parts.append("merge_ready")
     return "Living pulse: " + " · ".join(str(p) for p in parts)
 
 
-def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = False) -> str:
+def prompt_strip(
+    hermes_home: str | Path | None = None,
+    *,
+    high_load: bool = False,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+    vault: str = "",
+) -> str:
     """Compact living-archive face for system prompt."""
-    sp = state_path(hermes_home)
+    pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
+    sp = state_path(hermes_home, **pkw)
     if not sp.is_file():
         return ""
     try:
@@ -397,22 +524,111 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
         return ""
     lines = ["### Living archive (chambers)"]
     lines.append(f"- {st.get('summary') or 'pulse ok'}")
+    vault = (vault or "").strip()
+    if vault:
+        lines.append(f"- Active vault: {vault} (unlabeled memories still recall)")
     if high_load:
         return "\n".join(lines)
     ch = st.get("chambers") or {}
     cat = ch.get("catalog") or {}
     if cat.get("by_chamber"):
         bc = cat["by_chamber"]
-        parts = [f"{k}:{v}" for k, v in list(bc.items())[:6]]
+        ranked = sorted(bc.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))
+        parts = [f"{k}:{v}" for k, v in ranked[:6]]
         lines.append("- Chambers: " + " · ".join(parts))
     assoc = ch.get("associate") or {}
     if assoc.get("dot_links"):
         lines.append(f"- New dot-links last pulse: {assoc.get('dot_links')}")
+
+    # Triage / growth — make compounding queues agent-visible
+    triage = ch.get("triage") or {}
+    if triage.get("next_focus") or triage.get("counts"):
+        counts = triage.get("counts") or {}
+        cparts = [
+            f"{k}:{counts[k]}"
+            for k in ("working_set", "reconsolidate", "consolidate", "archive")
+            if counts.get(k)
+        ]
+        focus = triage.get("next_focus") or "—"
+        line = f"- Triage focus: {focus}"
+        if cparts:
+            line += " · " + " ".join(cparts[:4])
+        lines.append(line)
+
+    growth = ch.get("growth") or {}
+    if growth.get("ready") or growth.get("present"):
+        present = growth.get("present") or [
+            k for k, v in (growth.get("axes") or {}).items() if v
+        ]
+        if growth.get("ready"):
+            lines.append(
+                "- Growth merge ready: axes="
+                + (",".join(present) if present else "multi")
+                + " → manage action=merge"
+            )
+        elif present:
+            lines.append("- Growth axes seen: " + ",".join(present))
+
+    # Open SPO relations (entity hubs from catalog) — capped
+    try:
+        from hermescube.relations import RelationStore
+
+        store = RelationStore(hermes_home, **pkw)
+        entities = []
+        # Prefer catalog entities from living state / catalog.json
+        cat_ents = cat.get("entities")
+        if isinstance(cat_ents, dict):
+            entities = [
+                k
+                for k, _ in sorted(
+                    cat_ents.items(), key=lambda kv: -int(kv[1] or 0)
+                )[:4]
+            ]
+        elif isinstance(cat_ents, list):
+            entities = []
+            for x in cat_ents[:4]:
+                if isinstance(x, dict) and x.get("name"):
+                    entities.append(str(x["name"]))
+                elif x:
+                    entities.append(str(x))
+        if not entities:
+            # fall back to topic hubs labels
+            for hub in (cat.get("topic_hubs") or [])[:3]:
+                if isinstance(hub, dict) and hub.get("topic"):
+                    entities.append(str(hub["topic"]))
+        hits = []
+        seen = set()
+        for ent in entities:
+            for r in store.query(str(ent), limit=2):
+                if r.relation_id in seen:
+                    continue
+                seen.add(r.relation_id)
+                hits.append(r)
+            if len(hits) >= 4:
+                break
+        if hits:
+            lines.append("- Relations:")
+            for r in hits[:4]:
+                lines.append(f"  · {r.subject} —{r.predicate}→ {r.object}")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 
-def load_state(hermes_home: str | Path | None = None) -> dict[str, Any] | None:
-    sp = state_path(hermes_home)
+def load_state(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> dict[str, Any] | None:
+    sp = state_path(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
     if not sp.is_file():
         return None
     try:

@@ -10,6 +10,7 @@ Hot path stays local — no LLM.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import defaultdict
 from typing import Any, Iterable
@@ -22,6 +23,17 @@ _RE_QUOTE = re.compile(r"[\"']([^\"']{2,40})[\"']")
 _RE_EQUALS_NAME = re.compile(
     r"\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,3})\s*="
 )
+# Machine-shaped identifiers — the vocabulary real agent memories are full of
+# (service names, hosts, config keys, file names).
+_RE_HYPHEN_ID = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b")   # auth-service, eu-west
+_RE_DOTTED_ID = re.compile(r"\b[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+\b")  # memory.cube
+_RE_SNAKE_ID = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")    # payment_pipeline
+_RE_CAMEL = re.compile(r"\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b")          # AuthService
+_RE_CAP_TOKEN = re.compile(r"\b[A-Z][a-zA-Z0-9]{2,}\b")             # Grafana, Alice
+# A capitalized word that opens a sentence is usually just a verb ("Deployed
+# the …"), so single caps in that position need the inflection filter below.
+_RE_SENT_START = re.compile(r"(?:^|(?<=[.!?])\s+|\n\s*)")
+_VERBISH_SUFFIX = ("ed", "ing", "es")
 
 # Never promote these as entities (noise that broke colony trails)
 _STOP_ENT = frozenset({
@@ -32,6 +44,14 @@ _STOP_ENT = frozenset({
     "pay", "verified", "offers", "dollars", "packages", "general", "memory",
     "system", "agent", "entry", "type", "file", "home", "open", "done",
     "fixed", "error", "failed", "using", "into", "over", "only", "also",
+    # Sentence-opening verbs / generics that would otherwise leak in as
+    # single capitalised "entities" now that bare caps are extracted.
+    "added", "removed", "created", "updated", "checked", "reviewed",
+    "documented", "tested", "profiled", "deployed", "migrated", "refactored",
+    "rolled", "working", "started", "stopped", "switched", "moved", "made",
+    "ran", "set", "got", "put", "let", "use", "used", "config", "note",
+    "todo", "task", "step", "next", "then", "now", "was", "were", "will",
+    "session", "turn", "reply", "answer", "question", "context", "prompt",
 })
 
 # Known multiword concepts (bee landmarks)
@@ -45,11 +65,21 @@ _CANON_PHRASES = (
 )
 
 
-def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
-    """High-precision entity tokens — multiword / $-vars preferred.
+def _sentence_start_offsets(text: str) -> set[int]:
+    """Character offsets where a sentence begins."""
+    return {m.end() for m in _RE_SENT_START.finditer(text)}
 
-    Drops bare single-word caps that polluted trails (Zero, Mission, Halsted-alone
-    only if multi already present is OK for real surnames when part of multi).
+
+def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
+    """Entity tokens from one memory description.
+
+    Covers the four shapes that actually carry linkage in agent memories:
+    multiword proper nouns ("Alice Nguyen"), machine identifiers
+    ("auth-service", "memory.cube", "AuthService"), shell vars
+    ("$HERMES_HOME"), and bare proper nouns ("Grafana").
+
+    Bare capitalised words are only taken when they are not sentence-opening
+    verbs, since "Deployed the service" must not yield "Deployed".
     """
     if not text:
         return []
@@ -63,13 +93,18 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
         key = s.lower()
         if key in _STOP_ENT or key in seen:
             return
-        # reject single-token stop-ish or too short generic
         parts = key.split()
         if len(parts) == 1:
-            if key in _STOP_ENT or len(key) < 4:
+            if len(key) < 4:
                 return
-            # single token only if looks like proper name or $ENV or known phrase id
-            if not (s[:1].isupper() or s.startswith("$") or "_" in s or "." in s):
+            # single token must look like a name or a machine identifier
+            if not (
+                s[:1].isupper()
+                or s.startswith("$")
+                or "_" in s
+                or "." in s
+                or "-" in s
+            ):
                 return
         seen.add(key)
         found.append(s)
@@ -88,12 +123,52 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
     for m in _RE_QUOTE.finditer(text):
         _add(m.group(1))
 
+    # Machine identifiers — dotted before hyphen/snake so "memory.cube" is
+    # captured whole rather than as two fragments.
+    for rx in (_RE_DOTTED_ID, _RE_HYPHEN_ID, _RE_SNAKE_ID, _RE_CAMEL):
+        for m in rx.finditer(text):
+            _add(m.group(0))
+
+    # Bare proper nouns, minus sentence-opening inflected verbs.
+    starts = _sentence_start_offsets(text)
+    for m in _RE_CAP_TOKEN.finditer(text):
+        tok = m.group(0)
+        if tok.lower() in seen:
+            continue
+        if m.start() in starts:
+            low_tok = tok.lower()
+            if low_tok.endswith(_VERBISH_SUFFIX) or low_tok in _STOP_ENT:
+                continue
+        _add(tok)
+
     # bio tokens
     for tok in bio_rank.tokenize(text):
         if tok in ("hermes_home", "memory_cube", "mission_zero", "founding_five"):
             _add(tok)
 
-    return found[:max_entities]
+    return _drop_fragments(found)[:max_entities]
+
+
+def _drop_fragments(found: list[str]) -> list[str]:
+    """Remove single words that are already part of an accepted phrase.
+
+    "Alice Nguyen" should be one node, not three ("Alice Nguyen", "Alice",
+    "Nguyen") — fragments would fan out the trail graph into noise.
+    """
+    phrases = [f for f in found if " " in f]
+    if not phrases:
+        return found
+    covered: set[str] = set()
+    for p in phrases:
+        for word in p.lower().split():
+            covered.add(word)
+    return [f for f in found if " " in f or f.lower() not in covered]
+
+
+def norm_key(entity: str) -> str:
+    """Canonical graph key: "auth-service", "auth_service" and "auth service"
+    are the same node."""
+    return " ".join(str(entity or "").lower().replace("-", " ").replace("_", " ").split())
 
 
 def jaccard(a: set[str], b: set[str]) -> float:
@@ -105,8 +180,75 @@ def jaccard(a: set[str], b: set[str]) -> float:
     return inter / len(a | b)
 
 
-def build_entity_index(entries: Iterable[Any]) -> dict[str, list[Any]]:
-    """entity_lower → list of entries mentioning it."""
+_RE_WORD = re.compile(r"[a-z][a-z0-9]{3,}")
+# A term seen in more than this share of the archive is background vocabulary
+# ("service", "the batch"), not a landmark worth linking on.
+_MINE_MAX_DF_RATIO = 0.25
+_MINE_MIN_DF_TERM = 3
+_MINE_MIN_DF_PHRASE = 2
+
+
+def mine_corpus_terms(
+    descriptions: list[str],
+) -> tuple[set[str], set[str]]:
+    """Find lowercase terms and phrases that recur across the archive.
+
+    Plain words like "redis" or "postgres" are real entities but are
+    indistinguishable from ordinary vocabulary in a single sentence. Across
+    the whole archive they separate cleanly: a landmark recurs in a handful
+    of memories, while filler recurs in nearly all of them. This is the same
+    logic as IDF, used here to decide what deserves a node in the graph.
+
+    Returns (terms, phrases) already filtered by document frequency.
+    """
+    n = len(descriptions)
+    if n < 2:
+        return set(), set()
+    term_df: dict[str, int] = defaultdict(int)
+    phrase_df: dict[str, int] = defaultdict(int)
+    for desc in descriptions:
+        words = _RE_WORD.findall((desc or "").lower())
+        keep = [w for w in words if w not in _STOP_ENT and w not in bio_rank._STOP]
+        for w in set(keep):
+            term_df[w] += 1
+        seen_ph: set[str] = set()
+        for a, b in zip(keep, keep[1:]):
+            seen_ph.add(f"{a} {b}")
+        for ph in seen_ph:
+            phrase_df[ph] += 1
+
+    max_df = max(_MINE_MIN_DF_TERM, int(n * _MINE_MAX_DF_RATIO))
+    terms = {
+        w for w, df in term_df.items()
+        if _MINE_MIN_DF_TERM <= df <= max_df
+    }
+    phrases = {
+        p for p, df in phrase_df.items()
+        if _MINE_MIN_DF_PHRASE <= df <= max_df
+    }
+    # A phrase supersedes its own words as a node.
+    for p in phrases:
+        for w in p.split():
+            terms.discard(w)
+    return terms, phrases
+
+
+def build_entity_index(
+    entries: Iterable[Any], *, mine: bool = True
+) -> dict[str, list[Any]]:
+    """entity_lower → list of entries mentioning it.
+
+    Combines per-description extraction with archive-level term mining so
+    that plain-word entities participate in the graph too.
+    """
+    entries = list(entries)
+    mined_terms: set[str] = set()
+    mined_phrases: set[str] = set()
+    if mine:
+        mined_terms, mined_phrases = mine_corpus_terms(
+            [getattr(e, "description", "") or "" for e in entries]
+        )
+
     idx: dict[str, list[Any]] = defaultdict(list)
     for e in entries:
         desc = getattr(e, "description", "") or ""
@@ -120,8 +262,29 @@ def build_entity_index(entries: Iterable[Any]) -> dict[str, list[Any]]:
                     for cleaned in extract_entities(str(x)):
                         if cleaned not in ents:
                             ents.append(cleaned)
+        if mined_terms or mined_phrases:
+            low = desc.lower()
+            for ph in mined_phrases:
+                if ph in low:
+                    ents.append(ph)
+            words = set(_RE_WORD.findall(low))
+            for w in words & mined_terms:
+                ents.append(w)
+
+        # Collapse variants ("auth-service" / "auth service") to one node and
+        # keep the first spelling seen as the display form.
+        deduped: list[str] = []
+        keys: set[str] = set()
         for ent in ents:
-            idx[ent.lower()].append(e)
+            k = norm_key(ent)
+            if not k or k in keys:
+                continue
+            keys.add(k)
+            deduped.append(ent)
+        ents = deduped
+
+        for ent in ents:
+            idx[norm_key(ent)].append(e)
         try:
             if isinstance(data, dict):
                 data = dict(data)
@@ -172,27 +335,56 @@ def mirror_expand(
         if len(picked) >= top_k:
             return picked[:top_k]
 
+    # Score every reachable neighbour, then take the best — picking in index
+    # order would return an arbitrary member of whichever node was hit first.
+    candidates: dict[str, tuple[Any, float]] = {}
+
+    def _offer(node: Any, score: float) -> None:
+        """Accumulate evidence: a neighbour linked through several shared
+        entities is a stronger match than one linked through a single entity,
+        so paths add (with diminishing returns) rather than taking the max."""
+        nid = entry_id(node)
+        if not nid or nid in seen:
+            return
+        prev = candidates.get(nid)
+        if prev is None:
+            candidates[nid] = (node, score)
+        else:
+            candidates[nid] = (prev[0], prev[1] + score * 0.5)
+
     for e, sc in list(seeds):
         ents = _ents(e)
         for ent in ents:
-            for neigh in entity_index.get(str(ent).lower(), []):
-                if entry_id(neigh) in seen:
-                    continue
-                echo = float(sc) * 0.72
+            key = norm_key(ent)
+            bucket = entity_index.get(key, [])
+            if not bucket:
+                continue
+            # A shared entity that only a few memories mention is far stronger
+            # evidence of a real link than one half the archive mentions.
+            specificity = 1.0 / math.log(2.0 + len(bucket))
+            for neigh in bucket:
+                echo = float(sc) * 0.72 * specificity
                 if colony is not None:
                     try:
                         echo *= float(colony.trail_boost(ents, _ents(neigh)))
                     except Exception:
                         pass
-                _take(neigh, echo)
-                if len(picked) >= top_k:
-                    return picked[:top_k]
+                _offer(neigh, echo)
         for pid in getattr(e, "causal_parents", None) or []:
             parent = by_id.get(str(pid))
             if parent is not None:
-                _take(parent, float(sc) * 0.8)
-                if len(picked) >= top_k:
-                    return picked[:top_k]
+                _offer(parent, float(sc) * 0.8)
+
+    # Ties break on content, not entry id: two archives holding the same
+    # memories should rank them the same way regardless of the ids assigned
+    # when they happened to be written.
+    for node, score in sorted(
+        candidates.values(),
+        key=lambda x: (-x[1], getattr(x[0], "description", "") or "", entry_id(x[0])),
+    ):
+        _take(node, score)
+        if len(picked) >= top_k:
+            break
 
     return picked[:top_k]
 

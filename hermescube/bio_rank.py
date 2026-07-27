@@ -39,17 +39,17 @@ LAYER_OF_TYPE: dict[str, str] = {
 # score *= exp(-delta_hours / half_life)
 HALF_LIFE_HOURS: dict[str, float] = {
     "trait": 720.0,  # ~30d — identity-stable
-    "relationship": 2160.0,  # ~90d — social recognition
-    "landmark": 1440.0,  # ~60d — spatial / route memory
+    "relationship": 720.0,  # ~30d — social recognition
+    "landmark": 168.0,  # ~7d — episodic waypoint
     "belief": 336.0,  # ~14d
     "resolve": 504.0,  # ~21d decisions
-    "evolution": 720.0,
+    "evolution": 336.0,
     "focus": 48.0,  # working / FOA
     "enter": 24.0,
     "leave": 24.0,
     "epoch_transition": 720.0,
 }
-DEFAULT_HALF_LIFE_HOURS = 48.0
+DEFAULT_HALF_LIFE_HOURS = 168.0
 
 # Layer mix targets for hierarchical prefetch (not pure similarity dump)
 LAYER_QUOTA: dict[str, int] = {
@@ -130,9 +130,15 @@ def tokenize(text: str) -> set[str]:
     return expanded
 
 
-def lexical_score(query: str, document: str) -> float:
-    """Jaccard-ish overlap after stem+synonym expand. Range ~[0,1]."""
-    q = tokenize(query)
+def lexical_score(
+    query: str, document: str, *, q_tokens: set[str] | None = None
+) -> float:
+    """Jaccard-ish overlap after stem+synonym expand. Range ~[0,1].
+
+    ``q_tokens`` lets a caller scoring many documents against one query
+    tokenise that query once.
+    """
+    q = tokenize(query) if q_tokens is None else q_tokens
     d = tokenize(document)
     if not q or not d:
         return 0.0
@@ -172,20 +178,13 @@ def cortical_layer(entry_type: str) -> str:
 
 
 def half_life_hours(entry_type: str) -> float:
-    """Type-aware half-life for recency decay (hours)."""
+    """Type-aware half-life for recency decay (hours).
+
+    Reads HALF_LIFE_HOURS so the exported table is the single source of
+    truth; it previously duplicated these values and had drifted from them.
+    """
     # Care-critical override handled in recency_weight via data flag
-    return {
-        "trait": 720.0,  # ~30d identity
-        "relationship": 720.0,
-        "belief": 336.0,  # ~14d
-        "landmark": 168.0,  # ~7d
-        "resolve": 504.0,  # ~21d decisions
-        "evolution": 336.0,
-        "focus": 48.0,  # working / FOA
-        "enter": 24.0,
-        "leave": 24.0,
-        "epoch_transition": 720.0,
-    }.get(entry_type or "", 168.0)
+    return HALF_LIFE_HOURS.get(entry_type or "", DEFAULT_HALF_LIFE_HOURS)
 
 
 def recency_weight(delta_hours: float, entry_type: str, *, data: dict | None = None) -> float:
@@ -419,25 +418,26 @@ def diversify_by_layer(
 
     present = {cortical_layer(str(entry_type_fn(e))) for e, _ in head}
     used = {id(e) for e, _ in head}
-    # Soft fill only if a strong-ish candidate exists outside head
+    # Soft fill only if a strong-ish candidate exists outside head.
+    # Never displace more than one slot, and never touch the top half.
+    floor = 0.60 * top_score
+    protected = max(1, (top_k + 1) // 2)
     for want in ("executive", "meta"):
-        if want in present or len(head) >= top_k:
+        if want in present or len(head) <= protected:
             continue
         for entry, score in scored[top_k: top_k + 40]:
             if id(entry) in used:
                 continue
             if cortical_layer(str(entry_type_fn(entry))) != want:
                 continue
-            if float(score) < 0.60 * top_score:
+            if float(score) < floor:
                 break
-            # replace weakest head item if weaker
-            head.sort(key=lambda x: -x[1])
-            if float(score) > float(head[-1][1]):
-                head[-1] = (entry, score)
-                used.add(id(entry))
-                present.add(want)
+            head.sort(key=lambda x: -float(x[1]))
+            head[-1] = (entry, score)
+            used.add(id(entry))
+            present.add(want)
             break
-    head.sort(key=lambda x: -x[1])
+    head.sort(key=lambda x: -float(x[1]))
     return head[:top_k]
 
 

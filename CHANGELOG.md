@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.30.0] - 2026-07-27
+## [0.38.0] - 2026-07-27
 
 ### Cube of Eden — the origin era
 - **Origin era renamed**: fresh cubes begin in **`eden`** (display: **Cube of Eden**) — the garden before lived memory — replacing the old `genesis` era label
@@ -10,14 +10,84 @@
 - Maturity ranking treats `eden` (and legacy `genesis`) as capability weight 0
 - Docs: [docs/GROWTH.md](docs/GROWTH.md) reframed around Eden
 
-## [0.29.0] - 2026-07-26
 
-### Digital soul age — cycles + lived time (not a 0–100 scorecard)
-- **Age redesigned for AI agents**: primary unit is **cycles** (Tron-style — one cycle = one lived growth epoch); secondary is **lived** wall-clock since genesis (`4d 6h`). The old habit of reading strength/100 as "age" is gone
-- **Capability** is explicitly *not* age — 0–100 archive coherence (crystals, skills, predictions). **Era** remains the life stage capability earns
-- Displays updated everywhere: `CUBE.md`, `growth status`, `info`, pilgrimage growth line, hive soul cards (`C2 · 3h`), system prompt strip (`age 12 cycles · lived 4d 6h · capability 54/100`)
-- `compute_age` / `format_lived` / `age_strip` helpers; older genealogies migrate `cycles ← epochs`
-- 357 tests pass
+## [0.37.0] - 2026-07-26
+
+### Compaction-safe extract (Hermes holographic algorithm)
+- Merge-delimiter harvest: keep pre-delimiter user text; never store compressor handoff prose
+- `on_pre_compress` uses the same harvest guard for user rows
+- Assessment refreshed for 0.37 grades
+
+## [0.36.0] - 2026-07-26
+
+### Session-boundary + gateway user isolation
+- `on_session_end` flushes the sync queue before return (Hermes MemoryManager end→switch FIFO)
+- `on_session_switch` refreshes `parent_session_id` and `user_id` / `user_id_alt`
+- Durable writes tag `data.user_id`; HAR soft-boosts matching users (unlabeled never hard-dropped)
+
+## [0.35.0] - 2026-07-26
+
+### Hermes-aligned compounding + trust IR
+- Consolidate nudge in `system_prompt_block` when `memory_nudge_interval` elapses (Hermes never calls Cube `should_review_memory`)
+- Prefetch one-liner after nudge emit; counter resets only when nudge is taken
+- Holo-style trust reweight + entity-overlap boost in HAR ranking (algorithms from holographic `FactRetriever`, Cube-native store)
+
+## [0.34.0] - 2026-07-26
+
+### Usefulness hardening
+- Numeric / count contradiction scan before session-end crystalize (`conflict.py`, AgentDrive witness idea — Cube-native soft markers)
+- Vault-aware `active_wisdom` + Living prompt strip (soft boost; unlabeled never hard-dropped)
+- `docs/DAY_TO_DAY.md` rewritten as triage → crystalize → merge → relations → feedback loop
+- Trimmed `hermescube_manage` action description sprawl
+
+## [0.33.0] - 2026-07-26
+
+### Night-job cost + hot-path polish
+- Session-end reads L1 once and threads `entries` into triage / crystalize / sleep_replay / living / growth_merge (intentional reread only after crystalize or digest appends)
+- Crystalize candidate set capped (~200) via triage consolidate∪recent durable
+- Engram `association_boosts` pattern bank uses (K,d) numpy matmul with pure-Python fallback
+- `assoc_recall_bench` cost gates: session-end at N=2k/5k, prefetch p50, growth-merge fire
+
+## [0.32.0] - 2026-07-26
+
+### Multi-project sidecar isolation
+- Sidecars (engram, yield, relations, triage, journey, living) nest under `memories/profiles/<identity>/<workspace>/` when both identity and workspace are set
+- Shared `.cube` warehouse stays at `memories/memory.cube` so unlabeled legacy memories still recall
+- Optional `data.vault` / `data.topic` tags on durable writes; HAR soft vault affinity (never hard-drops unlabeled)
+- One-shot legacy sidecar migrate (copy, no delete) into nested profile dirs
+
+## [0.31.0] - 2026-07-26
+
+### Compounding surfaces are agent-visible
+- Living `prompt_strip` shows triage focus/queue counts, growth-merge readiness, and open SPO relations
+- System prompt hints when to call `triage` / `merge` / `relations`
+- Prefetch appends relation lines for who/owns/related queries (even if HAR is empty)
+- `hermescube doctor` / `info` report triage plan, relations stats, last growth-merge id
+
+## [0.30.0] - 2026-07-26
+
+### AgentDrive-inspired compounding (Cube-native)
+
+Borrowed the *algorithms*, not the AgentDrive OS. HermesCube stays a
+Hermes MemoryProvider; these make offline consolidation and session growth
+structurally smarter.
+
+- **`growth_merge.py`**: when ≥2 of durable / procedure / association /
+  yield / wisdom fire in a session, append one `[GROWTH-MERGE]` evolution
+  crystal with evidence ids + engram coactivation (session-end +
+  `manage action=merge`)
+- **`triage.py`**: route L1 into working_set / reconsolidate / consolidate /
+  archive with rehearsal-sensitive retention; persist
+  `memories/triage_plan.json`; session-end skips crystalize when nothing
+  needs promotion; living pulse reports `next_focus`
+- **`relations.py`**: time-bounded SPO store at
+  `memories/relations.sqlite3` (`as_of` query, expire, ingest from
+  relationship/DOT entries and manage-add); tool
+  `manage action=relations`
+- Living pulse gains **triage** + **growth** chambers; connect_dots writes
+  relation edges when a Hermes home is present
+- Manage enum: `triage`, `merge`, `relations`
+- 389 tests
 
 ## [0.28.0] - 2026-07-26
 

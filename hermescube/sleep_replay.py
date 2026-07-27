@@ -55,6 +55,7 @@ def sleep_replay(
     max_patterns: int = 24,
     edge_decay: float = 0.97,
     min_bundle: int = 2,
+    entries: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Offline consolidation pass. Mutates engram; caller saves."""
     stats: dict[str, Any] = {
@@ -68,16 +69,19 @@ def sleep_replay(
         stats["skipped"] = True
         return stats
 
-    # Collect candidates
-    try:
-        entries = list(cube.read_l1()) if hasattr(cube, "read_l1") else []
-    except Exception:
-        entries = []
-    if not entries and hasattr(cube, "iter_entries"):
+    # Collect candidates (prefer caller-supplied L1 snapshot)
+    if entries is not None:
+        entries = list(entries)
+    else:
         try:
-            entries = list(cube.iter_entries())
+            entries = list(cube.read_l1()) if hasattr(cube, "read_l1") else []
         except Exception:
             entries = []
+        if not entries and hasattr(cube, "iter_entries"):
+            try:
+                entries = list(cube.iter_entries())
+            except Exception:
+                entries = []
 
     # Fallback: engine cache style
     if not entries:
@@ -157,17 +161,20 @@ def sleep_replay(
     # Edge decay (forgetting weak noise)
     decayed = 0
     try:
-        edges = getattr(engram, "_edges", None) or {}
-        for a, bucket in list(edges.items()):
-            for b, w in list(bucket.items()):
-                nw = float(w) * float(edge_decay)
-                if nw < 0.08:
-                    bucket.pop(b, None)
-                    decayed += 1
-                else:
-                    bucket[b] = nw
-        if decayed:
-            engram._dirty = True
+        if hasattr(engram, "decay_edges"):
+            decayed = int(engram.decay_edges(edge_decay))
+        else:  # duck-typed engram (tests/fakes) without the public method
+            edges = getattr(engram, "_edges", None) or {}
+            for _a, bucket in list(edges.items()):
+                for b, w in list(bucket.items()):
+                    nw = float(w) * float(edge_decay)
+                    if nw < 0.08:
+                        bucket.pop(b, None)
+                        decayed += 1
+                    else:
+                        bucket[b] = nw
+            if decayed:
+                engram._dirty = True
     except Exception:
         pass
     stats["edges_decayed"] = decayed

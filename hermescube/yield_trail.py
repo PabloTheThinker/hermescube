@@ -221,5 +221,18 @@ class YieldGradient:
         }
 
 
-def default_path(hermes_home: str | Path) -> Path:
-    return Path(hermes_home) / "memories" / "yield_gradient.json"
+def default_path(
+    hermes_home: str | Path,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    return resolve_cube_paths(
+        hermes_home,
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    ).yield_gradient

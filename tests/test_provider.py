@@ -343,12 +343,30 @@ class TestCubeMemoryProvider:
 
         provider.on_turn_start(5, "msg")
         assert provider.should_review_memory() is True
+        # peek does not reset; take does
+        assert provider._turns_since_memory >= 5
+        assert provider._take_memory_review_nudge() is True
         assert provider._turns_since_memory == 0
 
     def test_should_review_memory_disabled(self):
         provider = CubeMemoryProvider(memory_nudge_interval=0)
         provider.on_turn_start(0, "msg")
         assert provider.should_review_memory() is False
+
+    def test_system_prompt_emits_consolidate_nudge(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = CubeMemoryProvider(memory_nudge_interval=3)
+            provider.initialize(session_id="s1", hermes_home=tmpdir)
+            for i in range(3):
+                provider.on_turn_start(i + 1, "msg")
+            block = provider.system_prompt_block()
+            assert "Memory review due" in block
+            assert "triage" in block
+            assert "crystalize" in block
+            # second assembly should not immediately re-nudge
+            block2 = provider.system_prompt_block()
+            assert "Memory review due" not in block2
+            provider.shutdown()
 
     def test_evolve_consolidated(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1104,3 +1122,20 @@ class TestProviderEdgeCases:
             block = provider.system_prompt_block()
             assert "dark mode" in block or "pytest" in block or "Stored:" in block
             provider.shutdown()
+
+
+def test_relational_prefetch_assist_appends_spo(tmp_path, monkeypatch):
+    from hermescube.provider import CubeMemoryProvider
+    from hermescube.relations import RelationStore
+
+    hh = tmp_path / "home"
+    (hh / "memories").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(hh))
+    RelationStore(hh).record("alice", "owns", "AuthService")
+
+    p = CubeMemoryProvider()
+    p._hermes_home = str(hh)
+    assert p._query_looks_relational("who owns AuthService")
+    block = p._relational_prefetch_assist("who owns AuthService", [])
+    assert "### Relations" in block
+    assert "alice" in block and "AuthService" in block

@@ -157,3 +157,30 @@ class TestLearnedEmbedderPersistence:
                 f.write(b"garbage data")
             loaded = LearnedEmbedder.load(path)
             assert loaded.is_trained is False
+
+def test_projection_is_deterministic_across_processes():
+    """The projection seed must not depend on Python's per-process hash salt.
+
+    It previously used builtin hash(), so identical training data produced a
+    different projection matrix on every restart.
+    """
+    import os
+    import subprocess
+    import sys
+
+    script = (
+        "from hermescube.embed import LearnedEmbedder;"
+        "e=LearnedEmbedder(dim=32);"
+        "e.train(['auth uses redis','billing uses postgres','redis caches sessions']);"
+        "print(','.join(f'{x:.9f}' for x in list(e.embed('redis'))[:6]))"
+    )
+    runs = {
+        subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, check=True,
+            env={"PYTHONHASHSEED": str(seed), "PATH": os.environ.get("PATH", ""),
+                 "PYTHONPATH": os.getcwd()},
+        ).stdout.strip()
+        for seed in ("0", "1", "12345")
+    }
+    assert len(runs) == 1, f"projection varies with PYTHONHASHSEED: {runs}"

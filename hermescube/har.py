@@ -22,9 +22,22 @@ from hermescube import bio_rank
 from hermescube import mirror as mirror_mod
 
 
+# Entity-linked neighbours fill slots that direct retrieval left over: first
+# the ones it never filled at all, then at most ASSOC_RESERVE slots held by
+# hits scoring below ASSOC_TAIL_RATIO of the top hit.
+ASSOC_RESERVE = 2
+ASSOC_MIN_TOPK = 3
+ASSOC_TAIL_RATIO = 0.35
+
 # Below this entry count, linear scan beats HAR on current hardware
 # (numpy baseline 2026-07-22: HAR still <1× at N=1000).
 LINEAR_SCAN_MAX_N = 1200
+
+
+def _rank_key(pair: tuple[CubeEntry, float]) -> tuple[float, str, str]:
+    """Sort key: score first, then content, then id (stable across archives)."""
+    entry, score = pair
+    return (-score, entry.description or "", entry.id or "")
 
 
 class HARQueryEngine:
@@ -115,6 +128,11 @@ class HARQueryEngine:
         self._entries = entries
         self._by_id = {e.id: e for e in entries}
         self._cache_n = len(entries)
+        # Entity graph annotates entry.data["entities"] for lex + colony.
+        try:
+            self._entity_index = mirror_mod.build_entity_index(entries)
+        except Exception:
+            self._entity_index = None
         try:
             from hermescube.framework.lexindex import LexIndex
             self._lex = LexIndex()
@@ -257,6 +275,7 @@ class HARQueryEngine:
             except Exception:
                 pass
         now_ts = entries[-1].timestamp if entries else ""
+        q_toks = bio_rank.tokenize(text) if text else set()
 
         if hrr.has_numpy():
             import numpy as _np
@@ -283,7 +302,16 @@ class HARQueryEngine:
             scored: list[tuple[CubeEntry, float]] = []
             for i, entry in enumerate(entries):
                 scored.append(
-                    (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
+                    (
+                        entry,
+                        self._rank_entry(
+                            entry,
+                            float(sims[i]),
+                            now=now_ts,
+                            query=text,
+                            q_tokens=q_toks,
+                        ),
+                    )
                 )
             scored.sort(key=lambda x: -x[1])
             primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
@@ -293,7 +321,16 @@ class HARQueryEngine:
         for entry in entries:
             score = hrr.cosine_sim(q, entry.vector)
             scored.append(
-                (entry, self._rank_entry(entry, float(score), now=now_ts, query=text))
+                (
+                    entry,
+                    self._rank_entry(
+                        entry,
+                        float(score),
+                        now=now_ts,
+                        query=text,
+                        q_tokens=q_toks,
+                    ),
+                )
             )
         scored.sort(key=lambda x: -x[1])
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
@@ -346,11 +383,16 @@ class HARQueryEngine:
         now: str = "",
         query: str = "",
         yield_boost: float | None = None,
+        q_tokens: set[str] | None = None,
     ) -> float:
         trust = None
         if entry.data and isinstance(entry.data, dict):
             trust = entry.data.get("trust")
-        lex = bio_rank.lexical_score(query, entry.description or "") if query else 0.0
+        lex = (
+            bio_rank.lexical_score(query, entry.description or "", q_tokens=q_tokens)
+            if query
+            else 0.0
+        )
         data = entry.data if isinstance(entry.data, dict) else None
         yb = yield_boost
         if yb is None:
@@ -358,7 +400,7 @@ class HARQueryEngine:
             yb = float(self._yield_map.get(str(eid), 1.0)) if self._yield_map else 1.0
         # Living maturity (genealogy era/strength) — set by provider
         mat = getattr(self, "_maturity", None) or {}
-        return bio_rank.composite_score(
+        score = bio_rank.composite_score(
             semantic,
             entry_type=entry.entry_type or "",
             outcome=entry.outcome or "none",
@@ -371,6 +413,50 @@ class HARQueryEngine:
             maturity_era=str(mat.get("era") or "eden"),
             maturity_strength=float(mat.get("strength") or 0),
         )
+        # Soft vault affinity — never hard-drop unlabeled legacy entries
+        active_vault = getattr(self, "_active_vault", "") or ""
+        if active_vault and isinstance(data, dict):
+            ev = str(data.get("vault") or "")
+            if ev and ev == active_vault:
+                score *= 1.08
+            elif ev and ev != active_vault:
+                score *= 0.92
+        # Soft gateway user affinity (Hermes user_id / user_id_alt)
+        active_user = getattr(self, "_active_user_id", "") or ""
+        if active_user and isinstance(data, dict):
+            eu = str(data.get("user_id") or "")
+            alt = getattr(self, "_active_user_id_alt", "") or ""
+            if eu and (eu == active_user or (alt and eu == alt)):
+                score *= 1.08
+            elif eu and eu != active_user:
+                score *= 0.92
+        # Holo-style trust reweight: relevance * trust (harder than soft tm alone)
+        if isinstance(trust, (int, float)):
+            t = max(0.0, min(1.0, float(trust)))
+            score *= max(0.25, min(1.15, 0.40 + 0.75 * t))
+        # Entity overlap boost (holographic multi-entity / reason idea, thin)
+        if query and isinstance(data, dict):
+            try:
+                from hermescube.mirror import extract_entities
+
+                q_ents = {e.lower() for e in extract_entities(query, max_entities=6)}
+                e_ents = {
+                    str(x).lower()
+                    for x in (data.get("entities") or [])
+                    if x
+                }
+                if not e_ents and (entry.description or ""):
+                    e_ents = {
+                        e.lower()
+                        for e in extract_entities(entry.description or "", max_entities=6)
+                    }
+                if q_ents and e_ents:
+                    inter = len(q_ents & e_ents)
+                    if inter:
+                        score *= 1.0 + 0.12 * min(3, inter)
+            except Exception:
+                pass
+        return score
 
     def _hyper_query(
         self,
@@ -399,10 +485,8 @@ class HARQueryEngine:
             if not cands:
                 cands = list(self._entries)
         now_ts = self._entries[-1].timestamp if self._entries else ""
-        if self._embedder and self._embedder.is_trained:
-            q = self._embedder.embed_query(text)
-        else:
-            q = hrr.embed_text(text)
+        q = self._query_vector(text)
+        q_toks = bio_rank.tokenize(text) if text else set()
         scored: list[tuple[CubeEntry, float]] = []
         if hrr.has_numpy():
             import numpy as _np
@@ -418,17 +502,26 @@ class HARQueryEngine:
                 sims = _np.nan_to_num((mat @ qv) / (norms * qn), nan=0.0)
                 for i, entry in enumerate(cands):
                     scored.append(
-                        (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
+                        (
+                            entry,
+                            self._rank_entry(
+                                entry,
+                                float(sims[i]),
+                                now=now_ts,
+                                query=text,
+                                q_tokens=q_toks,
+                            ),
+                        )
                     )
         if not scored:
             for entry in cands:
                 s = hrr.cosine_sim(q, entry.vector)
                 scored.append(
-                    (entry, self._rank_entry(entry, float(s), now=now_ts, query=text))
+                    (entry, self._rank_entry(entry, float(s), now=now_ts, query=text, q_tokens=q_toks))
                 )
         if min_score > 0:
             scored = [(e, s) for e, s in scored if s >= min_score]
-        scored.sort(key=lambda x: -x[1])
+        scored.sort(key=_rank_key)
         # Engram Net re-rank: association completion + co-activation (neural field)
         scored = self._apply_engram(
             scored,
@@ -437,18 +530,7 @@ class HARQueryEngine:
         # Lex floor: strong query coverage must not lose to engram/prestige hubs
         scored = self._lex_identity_guard(scored, text)
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
-        # light expand only — entity index cached; skip if tiny result already full
-        idx = self._entity_index
-        if idx is None:
-            out = primary[:top_k]
-        else:
-            out = mirror_mod.mirror_expand(
-                primary,
-                self._entries,
-                top_k=top_k,
-                entity_index=idx,
-                colony=getattr(self, "_colony", None),
-            )
+        out = self._associative_finish(primary, top_k)
         # weak Hebbian co-activation on retrieved set (shadow learn) — skip empty net cold path already handled inside
         try:
             net = getattr(self, "_engram_net", None)
@@ -469,6 +551,62 @@ class HARQueryEngine:
             pass
         return out
 
+
+    def _query_vector(self, text: str) -> hrr.Array:
+        """Embed a query into the same space stored entry vectors live in.
+
+        Entry vectors are written by ``hrr.embed_text`` at append time.
+        The learned TF-IDF embedder projects into an unrelated space, so
+        using it for query→entry cosine silently replaced the semantic
+        channel with noise after the first evolve.
+        """
+        return hrr.embed_text(text)
+
+    def _associative_finish(
+        self,
+        primary: list[tuple[CubeEntry, float]],
+        top_k: int,
+    ) -> list[tuple[CubeEntry, float]]:
+        """Let entity-linked neighbours claim slots the lexical tail wastes."""
+        idx = self._entity_index
+        if not primary:
+            return []
+        if idx is None or top_k <= ASSOC_MIN_TOPK:
+            return primary[:top_k]
+
+        head = primary[:top_k]
+        free = top_k - len(head)
+        cutoff = (head[0][1] if head else 0.0) * ASSOC_TAIL_RATIO
+        weak = min(
+            ASSOC_RESERVE,
+            sum(1 for _, sc in head if sc < cutoff),
+            max(0, len(head) - ASSOC_MIN_TOPK),
+        )
+        if free <= 0 and weak <= 0:
+            return head
+
+        direct = primary[: len(head) - weak]
+        try:
+            expanded = mirror_mod.mirror_expand(
+                direct,
+                self._entries,
+                top_k=top_k,
+                entity_index=idx,
+                colony=getattr(self, "_colony", None),
+            )
+        except Exception:
+            return primary[:top_k]
+
+        seen = {e.id for e, _ in expanded}
+        out = list(expanded)
+        for e, sc in primary:
+            if len(out) >= top_k:
+                break
+            if e.id not in seen:
+                seen.add(e.id)
+                out.append((e, sc))
+        return out[:top_k]
+
     def _lex_identity_guard(
         self,
         scored: list[tuple[CubeEntry, float]],
@@ -478,9 +616,10 @@ class HARQueryEngine:
         if not scored or not query:
             return scored
         try:
+            q_toks = bio_rank.tokenize(query)
             enriched: list[tuple[CubeEntry, float, float]] = []
             for e, s in scored:
-                lx = bio_rank.lexical_score(query, e.description or "")
+                lx = bio_rank.lexical_score(query, e.description or "", q_tokens=q_toks)
                 # if very strong lex, floor score above weaker-lex heads
                 ss = float(s)
                 if lx >= 0.78:
@@ -498,9 +637,9 @@ class HARQueryEngine:
                     if lx >= 0.82 and s < floor:
                         s = floor + 0.15 * lx
                     fixed.append((e, s))
-                fixed.sort(key=lambda x: -x[1])
+                fixed.sort(key=_rank_key)
                 return fixed
-            enriched.sort(key=lambda x: -x[1])
+            enriched.sort(key=lambda x: (-x[1], x[0].description or "", x[0].id or ""))
             return [(e, s) for e, s, _ in enriched]
         except Exception:
             return scored
@@ -530,7 +669,7 @@ class HARQueryEngine:
                 (e, float(s) * float(boosts.get(str(getattr(e, "id", "") or ""), 1.0)))
                 for e, s in scored
             ]
-            rescored.sort(key=lambda x: -x[1])
+            rescored.sort(key=_rank_key)
             return rescored
         except Exception:
             return scored

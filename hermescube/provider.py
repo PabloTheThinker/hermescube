@@ -134,6 +134,48 @@ class _FrozenSnapshot:
 
 # ── Background sync ──────────────────────────────────────────────────
 
+# Hermes context_compressor merge-into-tail markers (algorithm port; no import required)
+_MERGED_PRIOR_CONTEXT_HEADER = "[PRIOR CONTEXT — for reference only; not a new message]"
+_MERGED_SUMMARY_DELIMITER = "[END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW]"
+
+
+def _user_content_for_extract(msg: dict[str, Any]) -> str | None:
+    """Return harvestable user text, or None if the row is compressor prose.
+
+    Merge-into-tail messages wrap real prior content BEFORE the delimiter and
+    the generated handoff summary AFTER it. Drop only the summary suffix;
+    skip pure compaction summary messages entirely (holographic #57690).
+    """
+    content = msg.get("content", "")
+    if not isinstance(content, str):
+        return None
+    if _MERGED_SUMMARY_DELIMITER in content:
+        pre = content.split(_MERGED_SUMMARY_DELIMITER, 1)[0]
+        if pre.startswith(_MERGED_PRIOR_CONTEXT_HEADER):
+            pre = pre[len(_MERGED_PRIOR_CONTEXT_HEADER) :]
+        pre = pre.strip()
+        return pre or None
+    try:
+        from agent.context_compressor import is_compaction_summary_message
+
+        if is_compaction_summary_message(msg):
+            return None
+    except Exception:
+        pass
+    stripped = content.lstrip()
+    if stripped.startswith(
+        (
+            "[Context compression",
+            "[Compressed",
+            "Summary of conversation",
+            "Summary:",
+            "[COMPACTION",
+        )
+    ):
+        return None
+    return content
+
+
 class _SyncQueue:
     """Background sync worker — single-threaded, never blocks the turn."""
 
@@ -258,6 +300,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         # Turn tracking
         self._turn_count: int = 0
         self._turns_since_memory: int = 0
+        self._nudge_prefetch_line: bool = False
+        self._user_id: str = ""
+        self._user_id_alt: str = ""
         self._entries_since_evolve: int = 0
 
         # Circuit breaker for evolve
@@ -295,6 +340,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             agent_identity (str):    Profile name (e.g. "coder")
             agent_workspace (str):   Shared workspace name (e.g. "hermes")
             skip_memory (bool):      True for subagents that shouldn't write
+            user_id (str):           Gateway platform user id
+            user_id_alt (str):       Alternate stable platform user id
+            parent_session_id (str): Parent session for subagents
         """
         self._hermes_home = kwargs.get("hermes_home", "")
         self._session_id = session_id
@@ -304,6 +352,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._agent_workspace = kwargs.get("agent_workspace", "")
         self._skip_memory = kwargs.get("skip_memory", False)
         self._parent_session_id = str(kwargs.get("parent_session_id") or "")
+        self._user_id = str(kwargs.get("user_id") or "").strip()
+        self._user_id_alt = str(kwargs.get("user_id_alt") or "").strip()
         # Hermes already passes a profile-scoped hermes_home. Keep one
         # cube per home; subagent traces use branch_id metadata instead.
         self._branch_id = "main"
@@ -365,16 +415,32 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._hive_on_session_end = False
 
         # Framework path housing
-        from hermescube.framework.paths import resolve_cube_paths
+        from hermescube.framework.paths import (
+            migrate_legacy_sidecars,
+            resolve_cube_paths,
+            should_nest_profiles,
+        )
         from hermescube.framework.void import CubeVoid
         from hermescube.colony import ColonyGraph
 
-        # hermes_home is already the storage root (profile-scoped by Hermes).
+        # Nest sidecars when both identity and workspace are set so two
+        # workspaces under one HERMES_HOME do not share engram/relations.
+        self._nest_profiles = should_nest_profiles(
+            self._agent_identity, self._agent_workspace
+        )
         self._paths = resolve_cube_paths(
             self._hermes_home or None,
-            nest_profiles=False,
+            agent_identity=self._agent_identity or "",
+            agent_workspace=self._agent_workspace or "",
+            nest_profiles=self._nest_profiles,
         )
         self._paths.ensure()
+        if self._nest_profiles:
+            try:
+                migrate_legacy_sidecars(self._paths)
+            except Exception as e:
+                logger.debug("sidecar migrate: %s", e)
+        self._vault = (self._agent_workspace or self._agent_identity or "").strip()
         cube_dir = self._paths.memories_dir
         self._cube_path = str(self._paths.cube)
 
@@ -389,6 +455,26 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
 
         self._engine = HARQueryEngine(self._cube)
+        if getattr(self, "_vault", ""):
+            setattr(self._engine, "_active_vault", self._vault)
+        if getattr(self, "_user_id", ""):
+            setattr(self._engine, "_active_user_id", self._user_id)
+            if getattr(self, "_user_id_alt", ""):
+                setattr(self._engine, "_active_user_id_alt", self._user_id_alt)
+
+        # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
+        try:
+            from hermescube.genealogy import ensure_genesis
+            from hermescube import __version__ as _pkg_v
+
+            ensure_genesis(
+                self._hermes_home or None,
+                agent_id=self._agent_identity or "hermes",
+                package_version=_pkg_v,
+            )
+            self._refresh_maturity()
+        except Exception as e:
+            logger.debug("genealogy genesis skipped: %s", e)
 
         # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
         try:
@@ -430,7 +516,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.yield_trail import YieldGradient, default_path
 
-            self._yield = YieldGradient(default_path(self._hermes_home or Path.home() / ".hermes"))
+            self._yield = YieldGradient(self._paths.yield_gradient)
             setattr(self._engine, "_yield_gradient", self._yield)
         except Exception as e:
             logger.debug("yield gradient skipped: %s", e)
@@ -440,7 +526,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         try:
             from hermescube.engram_net import EngramNet, default_path as engram_path
 
-            self._engram = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+            self._engram = EngramNet(self._paths.engram)
             setattr(self._engine, "_engram_net", self._engram)
         except Exception as e:
             logger.debug("engram net skipped: %s", e)
@@ -789,14 +875,18 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "interview",
                                 "growth",
                                 "curate",
+                                "triage",
+                                "merge",
+                                "relations",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
                                 "+ witness (log real friction) + harness (self-evolution) "
                                 "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
                                 "+ interview (peer dialogue / mint skill drafts) "
-                                "+ growth (living cube version / strength / CUBE.md) "
-                                "+ curate (refine skills from lessons / era forge+garden)"
+                                "+ growth (living cube version / CUBE.md) "
+                                "+ curate (refine skills from lessons / era forge+garden) "
+                                "+ triage / merge / relations (compounding)"
                             ),
                         },
                         "interview_action": {
@@ -1004,7 +1094,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "Tools:",
             "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
             "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts / forge / promote(+optional skill install) / growth",
+            "- hermescube_manage — durable facts / forge / promote / growth / "
+            "curate / triage / merge / relations",
             "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
             "",
             "Guidance:",
@@ -1014,6 +1105,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- DO NOT store temp todos / session fluff",
             "- Real friction (user corrections, failures) → manage action=witness; "
             "evolution stays grounded to witnessed friction",
+            "- Offline queues: manage action=triage (what to promote); action=merge when "
+            "Living strip says merge ready; action=relations for who/owns/related facts",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -1055,7 +1148,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     f"dup_pressure={stats.get('dup_pressure')} "
                     f"healthy={stats.get('healthy')}"
                 )
-                wisdom = active_wisdom(ents, limit=5)
+                wisdom = active_wisdom(
+                    ents, limit=5, vault=getattr(self, "_vault", "") or ""
+                )
                 if wisdom:
                     lines.append("Active wisdom:")
                     for w in wisdom:
@@ -1084,7 +1179,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 try:
                     from hermescube.living import prompt_strip as living_strip
 
-                    ls = living_strip(self._hermes_home, high_load=False)
+                    ls = living_strip(
+                        self._hermes_home,
+                        high_load=False,
+                        vault=getattr(self, "_vault", "") or "",
+                        **self._path_kw(),
+                    )
                     if ls:
                         lines.append("")
                         lines.append(ls)
@@ -1092,6 +1192,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     pass
         except Exception:
             pass
+
+        # Hermes never calls should_review_memory() (builtin-only path).
+        # Surface consolidate nudge here so agents see triage/crystalize/relations.
+        if self._take_memory_review_nudge():
+            lines.append("")
+            lines.append(
+                "### Memory review due (HermesCube consolidate)\n"
+                "- Call `hermescube_manage action=triage` for consolidation queues.\n"
+                "- Then `action=crystalize` if consolidate queue is non-empty.\n"
+                "- Use `action=relations` for who/owns/related facts; "
+                "`action=merge` when Living strip says merge ready."
+            )
+            self._nudge_prefetch_line = True
 
         return "\n".join(lines)
 
@@ -1133,29 +1246,98 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 del self._prefetch_cache[oldest_key]
             self._prefetch_cache[cache_key] = results
 
-        if not results:
+        if results:
+            try:
+                self._last_prefetch_ids = [
+                    str(getattr(e, "id", "") or "")
+                    for e, _ in results
+                    if getattr(e, "id", None)
+                ]
+            except Exception:
+                self._last_prefetch_ids = []
+            # periodic engram flush
+            try:
+                net = getattr(self, "_engram", None)
+                if net is not None and self._turn_count % 5 == 0:
+                    net.save()
+            except Exception:
+                pass
+            if self._void is not None:
+                body = self._void.format_prefetch(results)
+            else:
+                lines = ["[Relevant memories from past sessions:]"]
+                for entry, _score in results[:5]:
+                    ts = entry.timestamp[:10] if entry.timestamp else "unknown"
+                    lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
+                body = "\n".join(lines)
+        else:
+            self._last_prefetch_ids = []
+            body = ""
+        rel_block = self._relational_prefetch_assist(retrieval_query, results or [])
+        parts: list[str] = []
+        if body:
+            parts.append(body)
+        if rel_block:
+            parts.append(rel_block)
+        if getattr(self, "_nudge_prefetch_line", False):
+            parts.append(
+                "[Memory review due: hermescube_manage triage → crystalize / relations]"
+            )
+            self._nudge_prefetch_line = False
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _query_looks_relational(query: str) -> bool:
+        q = (query or "").lower()
+        cues = (
+            "who ",
+            "who's",
+            "whose ",
+            "owns ",
+            "owned ",
+            "related",
+            "relation",
+            "belongs",
+            "responsible",
+            "depends on",
+            "linked to",
+        )
+        return any(c in q for c in cues)
+
+    def _relational_prefetch_assist(
+        self,
+        query: str,
+        results: list,
+    ) -> str:
+        """Append SPO relations when the query looks relational."""
+        if not self._hermes_home or not self._query_looks_relational(query):
             return ""
         try:
-            self._last_prefetch_ids = [
-                str(getattr(e, "id", "") or "") for e, _ in results if getattr(e, "id", None)
-            ]
+            from hermescube.mirror import extract_entities
+            from hermescube.relations import RelationStore, format_for_prompt
+
+            store = self._relation_store()
+            entities = extract_entities(query, max_entities=4)
+            for entry, _ in (results or [])[:4]:
+                data = getattr(entry, "data", None) or {}
+                for ent in data.get("entities") or []:
+                    if str(ent) not in entities:
+                        entities.append(str(ent))
+                if len(entities) >= 6:
+                    break
+            hits = []
+            seen: set[str] = set()
+            for ent in entities:
+                for r in store.query(str(ent), limit=3):
+                    if r.relation_id in seen:
+                        continue
+                    seen.add(r.relation_id)
+                    hits.append(r)
+                if len(hits) >= 6:
+                    break
+            return format_for_prompt(hits, limit=6)
         except Exception:
-            self._last_prefetch_ids = []
-        # periodic engram flush
-        try:
-            net = getattr(self, "_engram", None)
-            if net is not None and self._turn_count % 5 == 0:
-                net.save()
-        except Exception:
-            pass
-        if self._void is not None:
-            return self._void.format_prefetch(results)
-        # minimal fallback
-        lines = ["[Relevant memories from past sessions:]"]
-        for entry, _score in results[:5]:
-            ts = entry.timestamp[:10] if entry.timestamp else "unknown"
-            lines.append(f"- [{ts}] [{entry.entry_type}] {entry.description}")
-        return "\n".join(lines)
+            return ""
 
     def queue_prefetch(self, query: str, *, session_id: str = "") -> None:
         """Background prefetch for next turn (non-blocking)."""
@@ -1236,6 +1418,17 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             extra["trust"] = 0.45
         else:
             extra["trust"] = 0.55
+        vault = getattr(self, "_vault", "") or ""
+        if vault:
+            extra["vault"] = vault
+            if self._agent_workspace:
+                extra["topic"] = str(self._agent_workspace)[:80]
+        uid = getattr(self, "_user_id", "") or ""
+        if uid:
+            extra["user_id"] = uid
+            alt = getattr(self, "_user_id_alt", "") or ""
+            if alt:
+                extra["user_id_alt"] = alt
 
         outcome = "none"
         if assistant_clean:
@@ -1366,22 +1559,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._turns_since_memory += 1
 
     def should_review_memory(self) -> bool:
-        """Check if agent should be nudged to review/consolidate memory."""
+        """True when consolidate nudge is due (peek — does not reset counter)."""
         if self._memory_nudge_interval <= 0:
             return False
-        if self._turns_since_memory >= self._memory_nudge_interval:
-            self._turns_since_memory = 0
-            return True
-        return False
+        return self._turns_since_memory >= self._memory_nudge_interval
+
+    def _take_memory_review_nudge(self) -> bool:
+        """Emit consolidate nudge once; reset turn counter only when taken."""
+        if not self.should_review_memory():
+            return False
+        self._turns_since_memory = 0
+        return True
 
     def on_session_end(self, messages: list[dict[str, Any]]) -> None:
-        """Session complete — consolidation runs on background thread.
+        """Session complete — consolidation runs on the sync queue.
 
-        Heavy operations (wisdom, sleep replay, trajectory observe,
-        session digest, peer card, living pulse) are dispatched to the
-        background sync queue so the session end hook returns immediately.
-        The sync queue is flushed synchronously at the end, so the
-        caller is guaranteed all work landed.
+        Heavy operations run on the sync queue; the queue is flushed
+        before return so Hermes ``commit_session_boundary_async`` can
+        safely run ``on_session_switch`` next without misattribution.
         """
         if not self._engine or not self._cube:
             return
@@ -1407,6 +1602,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         hive_root = getattr(self, "_hive_path", "") or os.environ.get(
             "HERMESCUBE_HIVE", ""
         )
+        path_kw = {
+            "agent_identity": self._agent_identity or "",
+            "agent_workspace": self._agent_workspace or "",
+            "nest_profiles": bool(getattr(self, "_nest_profiles", False)),
+        }
+        vault = getattr(self, "_vault", "") or ""
 
         def _session_end_work() -> None:
             start_count = int(getattr(cube, "entry_count", 0) or 0)
@@ -1420,19 +1621,82 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 finally:
                     self._session_id = prev
 
-            # Wisdom crystalize
-            if not skip and cube.entry_count >= 4:
+            # Single L1 deserialize for the closure (plus intentional reread
+            # after crystalize/digest appends if those fire).
+            try:
+                entries = list(cube.read_l1() or [])
+            except Exception:
+                entries = []
+            l1_reads = 1
+
+            # Triage — decide what offline work is worth doing this cycle
+            triage_plan: dict = {}
+            if not skip and len(entries) >= 4 and hermes_home:
+                try:
+                    from hermescube.triage import run_triage
+
+                    triage_plan = run_triage(
+                        cube,
+                        hermes_home=hermes_home,
+                        per_route_limit=8,
+                        entries=entries,
+                        **path_kw,
+                    )
+                except Exception:
+                    triage_plan = {}
+
+            # Numeric / count contradiction pass before crystalize
+            if not skip and len(entries) >= 6:
+                try:
+                    from hermescube.conflict import (
+                        annotate_numeric_pairs,
+                        scan_numeric_conflict_pairs,
+                    )
+
+                    pairs = scan_numeric_conflict_pairs(entries, limit=6)
+                    if pairs:
+                        annotate_numeric_pairs(cube, pairs)
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
+                except Exception:
+                    pass
+
+            # Wisdom crystalize (skip when triage says nothing to consolidate)
+            should_crystal = bool(
+                triage_plan.get("should_crystalize", True)
+                if triage_plan
+                else True
+            )
+            crystalized = False
+            if not skip and len(entries) >= 4 and should_crystal:
                 try:
                     from hermescube.wisdom import crystalize
-                    crystalize(cube, min_cluster=2, max_crystals=8)
+
+                    st = crystalize(
+                        cube,
+                        min_cluster=2,
+                        max_crystals=8,
+                        entries=entries,
+                        triage_plan=triage_plan or None,
+                        max_candidates=200,
+                    )
+                    crystalized = bool(
+                        (st or {}).get("crystals_made") or (st or {}).get("crystals")
+                    )
+                    if crystalized:
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
                 except Exception:
                     pass
 
             # Sleep replay
-            if replay_enabled and not skip and cube.entry_count >= 6 and engram:
+            if replay_enabled and not skip and len(entries) >= 6 and engram:
                 try:
                     from hermescube.sleep_replay import sleep_replay
-                    rstats = sleep_replay(cube, engram, max_patterns=16)
+
+                    rstats = sleep_replay(
+                        cube, engram, max_patterns=16, entries=entries
+                    )
                     engram.save()
                     if rstats.get("patterns_added"):
                         logger.info("sleep_replay: %s", rstats)
@@ -1456,7 +1720,6 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             # Session digest + peer card
             if not skip:
                 try:
-                    ents = list(cube.read_l1() or [])
                     if digest_enabled and messages_snap:
                         from hermescube.session_digest import digest_messages, digest_entry_description
                         dig = digest_messages(messages_snap, open_intents=[])
@@ -1469,12 +1732,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "trust": 0.65,
                                 "durable": True,
                                 "verification": "observed",
+                                **({"vault": vault} if vault else {}),
                             },
                             outcome="success",
                         )
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
                     from hermescube.peer_card import refresh_card
                     refresh_card(
-                        ents,
+                        entries,
                         hermes_home=hermes_home,
                         peer_name=agent_identity or "user",
                         min_interval_s=peer_cadence,
@@ -1483,7 +1749,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     pass
 
             # Living pulse
-            if pulse_enabled and not skip and cube.entry_count >= 4:
+            if pulse_enabled and not skip and len(entries) >= 4:
                 try:
                     from hermescube.living import chamber_pulse
                     chamber_pulse(
@@ -1493,9 +1759,36 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         max_connect=3,
                         do_crystalize=False,
                         do_peer=False,
+                        entries=entries,
+                        **path_kw,
                     )
                 except Exception:
                     pass
+
+            # Growth merge — compound when ≥2 Cube axes fired this session
+            if not skip and len(entries) >= 4 and hermes_home:
+                try:
+                    from hermescube.growth_merge import merge_session_growth
+
+                    end_count = int(getattr(cube, "entry_count", 0) or 0)
+                    merge_session_growth(
+                        cube,
+                        hermes_home=hermes_home,
+                        engram=engram,
+                        session_stats={
+                            "durable_writes": max(0, end_count - int(start_count or 0)),
+                            "crystalized": crystalized,
+                        },
+                        entries=entries,
+                        **path_kw,
+                    )
+                except Exception as e:
+                    logger.debug("growth_merge skipped: %s", e)
+
+            try:
+                setattr(self, "_last_session_end_l1_reads", l1_reads)
+            except Exception:
+                pass
 
             # Evolve (grounded: witness-anchored, no silent cycles)
             if cube.entry_count > 0 and not breaker_open:
@@ -1586,8 +1879,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 self._prefetch_cache.clear()
 
         self._sync_queue.submit(_session_end_work)
-        # Non-blocking: work runs in background. The MemoryManager
-        # drains pending work via shutdown_all() later.
+        # Hermes MemoryManager serializes session_end → session_switch;
+        # flush so closure finishes before switch can rebind identity.
+        try:
+            self._sync_queue.flush(timeout=30.0)
+        except Exception as e:
+            logger.debug("session_end flush: %s", e)
 
     def on_session_switch(
         self,
@@ -1606,15 +1903,31 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         - rewound=True: transcript truncated, invalidate document caches
         """
         self._session_id = new_session_id
+        if parent_session_id:
+            self._parent_session_id = str(parent_session_id)
+        if kwargs.get("user_id") is not None:
+            self._user_id = str(kwargs.get("user_id") or "").strip()
+            if self._engine is not None:
+                setattr(self._engine, "_active_user_id", self._user_id)
+        if kwargs.get("user_id_alt") is not None:
+            self._user_id_alt = str(kwargs.get("user_id_alt") or "").strip()
+            if self._engine is not None:
+                setattr(self._engine, "_active_user_id_alt", self._user_id_alt)
 
         if reset:
             self._turn_count = 0
             self._turns_since_memory = 0
+            self._nudge_prefetch_line = False
             self._prefetch_cache.clear()
 
         if rewound:
             self._prefetch_cache.clear()
-            self._entries_cache = None
+            # Invalidate the cube + engine caches — assigning
+            # self._entries_cache creates a dead attribute on the provider.
+            if self._cube is not None:
+                self._cube._entries_cache = None
+            if self._engine is not None:
+                self._engine.invalidate_cache()
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
         """Extract structured insights before context compression."""
@@ -1629,7 +1942,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         for msg in messages[-20:]:
             role = msg.get("role", "")
-            content = msg.get("content", "")
+            if role == "user":
+                content = _user_content_for_extract(msg)
+            else:
+                content = msg.get("content", "")
             if not isinstance(content, str) or len(content) < 10:
                 continue
 
@@ -2043,6 +2359,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         Mirrors the Holographic provider's approach: match known
         patterns for user preferences, project decisions, and tool quirks.
+        Compaction-safe: harvest pre-delimiter user text; never store
+        compressor handoff prose (Hermes holographic #57690 algorithm).
         """
         if not self._cube:
             return
@@ -2051,18 +2369,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         for msg in messages:
             if msg.get("role") != "user":
                 continue
-            # Hermes 0.19 holo fix class: skip compaction handoff "user" summaries
-            try:
-                from agent.context_compressor import is_compaction_summary_message
-                if is_compaction_summary_message(msg):
-                    continue
-            except Exception:
-                content0 = msg.get("content", "")
-                if isinstance(content0, str) and content0.lstrip().startswith(
-                    ("[Context compression", "[Compressed", "Summary of conversation")
-                ):
-                    continue
-            content = msg.get("content", "")
+            content = _user_content_for_extract(msg)
             if not isinstance(content, str) or len(content) < 10:
                 continue
 
@@ -2079,6 +2386,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "category": category,
                                 "source": "auto_extract",
                                 "session_id": self._session_id,
+                                **(
+                                    {"user_id": self._user_id}
+                                    if getattr(self, "_user_id", "")
+                                    else {}
+                                ),
+                                **(
+                                    {"vault": self._vault}
+                                    if getattr(self, "_vault", "")
+                                    else {}
+                                ),
                             },
                         )
                         extracted += 1
@@ -2236,6 +2553,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_growth(args)
         elif action == "curate":
             return self._handle_manage_curate(args)
+        elif action == "triage":
+            return self._handle_manage_triage(args)
+        elif action == "merge":
+            return self._handle_manage_merge(args)
+        elif action == "relations":
+            return self._handle_manage_relations(args)
         return json.dumps({"error": f"Unknown action: {action}"})
 
     def _handle_manage_curate(self, args: dict[str, Any]) -> str:
@@ -2262,6 +2585,117 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
             self._refresh_maturity()
             return json.dumps({"status": "curate", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+
+    def _path_kw(self) -> dict[str, Any]:
+        return {
+            "agent_identity": self._agent_identity or "",
+            "agent_workspace": self._agent_workspace or "",
+            "nest_profiles": bool(getattr(self, "_nest_profiles", False)),
+        }
+
+    def _relation_store(self):
+        from hermescube.relations import RelationStore
+
+        if getattr(self, "_paths", None) is not None:
+            return RelationStore(path=self._paths.relations)
+        return RelationStore(self._hermes_home, **self._path_kw())
+
+    def _handle_manage_triage(self, args: dict[str, Any]) -> str:
+        """Build / return consolidation triage plan."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.triage import run_triage, load_plan
+
+            pkw = self._path_kw()
+            if str(args.get("mode") or args.get("content") or "").lower() == "load":
+                plan = load_plan(self._hermes_home, **pkw) or {}
+                return json.dumps({"status": "triage", "loaded": True, **plan}, default=str)
+            plan = run_triage(
+                self._cube,
+                hermes_home=self._hermes_home,
+                per_route_limit=int(args.get("top_k") or 8),
+                **pkw,
+            )
+            return json.dumps({"status": "triage", **plan}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_merge(self, args: dict[str, Any]) -> str:
+        """Multi-axis growth merge (AgentDrive-inspired, Cube-native)."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.growth_merge import merge_session_growth
+
+            dry = str(args.get("mode") or "").lower() == "dry"
+            result = merge_session_growth(
+                self._cube,
+                hermes_home=self._hermes_home,
+                engram=getattr(self, "_engram", None),
+                session_stats={"durable_writes": 1},
+                dry_run=dry,
+                **self._path_kw(),
+            )
+            if result.merged and not dry and self._engine:
+                self._engine.invalidate_cache()
+                self._refresh_maturity()
+            return json.dumps({"status": "merge", **result.to_dict()}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_relations(self, args: dict[str, Any]) -> str:
+        """SPO relations: query / record / stats / expire."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube.relations import RelationStore
+
+            store = self._relation_store()
+            content = str(args.get("content") or args.get("query") or "").strip()
+            mode = str(args.get("mode") or "").lower()
+            if not mode:
+                if content.startswith("record:") or "|" in content and content.count("|") >= 2:
+                    mode = "record"
+                elif content in ("", "stats"):
+                    mode = "stats"
+                else:
+                    mode = "query"
+            if mode == "stats":
+                return json.dumps({"status": "relations", **store.stats()}, default=str)
+            if mode == "record":
+                raw = content[7:] if content.lower().startswith("record:") else content
+                parts = [p.strip() for p in raw.split("|")]
+                if len(parts) < 3:
+                    return json.dumps({
+                        "error": "record needs subject|predicate|object",
+                    })
+                rel = store.record(parts[0], parts[1], parts[2])
+                return json.dumps({"status": "recorded", **rel.to_dict()}, default=str)
+            if mode == "expire":
+                raw = content[7:] if content.lower().startswith("expire:") else content
+                parts = [p.strip() for p in raw.split("|")]
+                if len(parts) < 3:
+                    return json.dumps({"error": "expire needs subject|predicate|object"})
+                n = store.expire(parts[0], parts[1], parts[2])
+                return json.dumps({"status": "expired", "count": n})
+            # query
+            entity = content
+            if content.lower().startswith("query:"):
+                entity = content[6:].strip()
+            hits = store.query(entity, limit=int(args.get("top_k") or 20))
+            return json.dumps(
+                {
+                    "status": "relations",
+                    "entity": entity,
+                    "count": len(hits),
+                    "relations": [h.to_dict() for h in hits],
+                },
+                default=str,
+            )
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -2657,6 +3091,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 max_connect=int(args.get("max_connect") or 4),
                 do_crystalize=bool(args.get("crystalize", True)),
                 do_peer=bool(args.get("peer", True)),
+                **self._path_kw(),
             )
             if report.get("ok"):
                 self._prefetch_cache.clear()
@@ -3067,7 +3502,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             if net is None:
                 from hermescube.engram_net import EngramNet, default_path as engram_path
 
-                net = EngramNet(engram_path(self._hermes_home or Path.home() / ".hermes"))
+                net = EngramNet(self._paths.engram)
                 self._engram = net
                 if self._engine is not None:
                     setattr(self._engine, "_engram_net", net)
@@ -3127,9 +3562,32 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "session_id": self._session_id,
                 "platform": self._platform,
                 "trust": 0.72 if entry_type in ("focus", "resolve") else 0.5,
+                **(
+                    {"vault": self._vault, "topic": (self._agent_workspace or "")[:80]}
+                    if getattr(self, "_vault", "")
+                    else {}
+                ),
+                **(
+                    {
+                        "user_id": self._user_id,
+                        **(
+                            {"user_id_alt": self._user_id_alt}
+                            if getattr(self, "_user_id_alt", "")
+                            else {}
+                        ),
+                    }
+                    if getattr(self, "_user_id", "")
+                    else {}
+                ),
             },
             outcome=outcome,
         )
+        try:
+            from hermescube.relations import ingest_entry
+
+            ingest_entry(entry, self._relation_store())
+        except Exception:
+            pass
         closed_info = None
         try:
             from hermescube.journey import log_event

@@ -23,10 +23,17 @@ def test_paths_default_uses_hermes_home_root():
 
 def test_paths_optional_nest_profiles():
     p = resolve_cube_paths(
-        "/tmp/hh", agent_identity="coder", nest_profiles=True
+        "/tmp/hh",
+        agent_identity="coder",
+        agent_workspace="proj-a",
+        nest_profiles=True,
     )
-    assert "profiles" in str(p.memories_dir)
-    assert "coder" in str(p.memories_dir)
+    # Shared cube warehouse; sidecars nest per identity/workspace
+    assert str(p.cube) == "/tmp/hh/memories/memory.cube"
+    assert "profiles" in str(p.sidecar_dir)
+    assert "coder" in str(p.engram)
+    assert "proj-a" in str(p.relations)
+    assert p.memories_dir != p.sidecar_dir
 
 
 def test_config_helpers():
