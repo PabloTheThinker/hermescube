@@ -265,7 +265,7 @@ Choose the right type for each memory.
 | **[Self-Evolution](docs/SELF_EVOLUTION.md)** | Grounded harness: witness ledger, predictions, critic, gardener |
 | **[Fleet HQ](docs/HQ.md)** | Charters, routing, handoffs, claims, fleet verification, baselines |
 | **[Peer Interviews](docs/INTERVIEW.md)** | interview-me at the Hive: dialogue, briefs, skill drafts |
-| **[Living Growth](docs/GROWTH.md)** | Cube genealogy from 0.0.0; maturity ranking; curator refines skills from draws |
+| **[Living Growth](docs/GROWTH.md)** | Cube of Eden → elder; cycles age; maturity ranking; curator |
 | **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
 
 ---
