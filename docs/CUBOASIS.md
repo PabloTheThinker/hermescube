@@ -58,3 +58,23 @@ Clear with `mode=chamber_clear`.
 Durable MEMORY.md mirrors create Claims with optional SPO fields. Cuboasis
 bridges them into `RelationStore` so who/owns/related facts compound into the
 connection graph automatically.
+
+
+## Governance (0.41+)
+
+Review-first memory oasis — inspired by oh-my-hermes discipline, Cube-native:
+
+| Mode | Job |
+|------|-----|
+| `cuboasis mode=capture` | Queue a candidate (`candidates.jsonl`) |
+| `cuboasis mode=review` | List pending / blocked candidates |
+| `cuboasis mode=approve:<id>` | Promote to durable L1 (`evidence_state=verified`) |
+| `cuboasis mode=reject:<id>` | Negative memory (never current instruction) |
+| `cuboasis mode=rejected` | Recall rejected decisions |
+| `cuboasis mode=sync` | Curation report (duplicates / risky / low-trust) — proposals only |
+| `cuboasis mode=doctor` | Readiness card (not execution evidence) |
+
+Config: `memory_policy` = `review-first` | `auto-safe` | `off` (gates auto-extract).
+
+Safety gate blocks credentials / raw logs / full transcripts; flags temp PR/commit noise.
+Evidence states on entries: `prepared_not_observed` · `observed` · `verified` · `superseded` · `refuted` · `rejected`.

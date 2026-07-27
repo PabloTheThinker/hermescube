@@ -246,6 +246,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._evolve_interval = evolve_interval
         self._memory_nudge_interval = memory_nudge_interval
         self._auto_extract = auto_extract
+        self._memory_policy = "auto-safe"  # review-first | auto-safe | off
         self._query_rewrite = False
         # Cadence knobs (Nous-style cost control — local)
         self._peer_card_cadence_s = 3600.0  # rebuild peer card at most hourly
@@ -372,6 +373,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._auto_extract = _coerce_bool(
                 plugin_config.get("auto_extract"), self._auto_extract
             )
+            try:
+                from hermescube.memory_gate import normalize_policy
+
+                self._memory_policy = normalize_policy(
+                    str(plugin_config.get("memory_policy") or self._memory_policy)
+                )
+            except Exception:
+                self._memory_policy = "auto-safe"
             self._query_rewrite = _query_rewrite_enabled(plugin_config)
             self._evolve_interval = int(
                 plugin_config.get("evolve_interval", self._evolve_interval)
@@ -699,6 +708,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "required": False,
                 "default": "false",
                 "choices": ["true", "false"],
+            },
+            {
+                "key": "memory_policy",
+                "description": (
+                    "Cuboasis write policy for auto-extract: "
+                    "review-first (candidates), auto-safe (safe→durable), off"
+                ),
+                "required": False,
+                "default": "auto-safe",
+                "choices": ["review-first", "auto-safe", "off"],
             },
             {
                 "key": "dim",
@@ -1146,7 +1165,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "triage mode=apply to forge/annotate; action=merge when "
             "Living strip says merge ready; action=relations for who/owns/related facts",
             "- Cuboasis: action=space (vaults/chambers), action=connect (unified neighbors), "
-            "action=progress (ledger), action=cuboasis (single pane; Cubewave neural field)",
+            "action=progress (ledger), action=cuboasis (pane / capture / review / "
+            "approve / reject / sync / doctor; Cubewave neural field)",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -2454,11 +2474,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         patterns for user preferences, project decisions, and tool quirks.
         Compaction-safe: harvest pre-delimiter user text; never store
         compressor handoff prose (Hermes holographic #57690 algorithm).
+
+        Cuboasis memory_policy gates durable writes:
+          review-first → candidates; auto-safe → durable when safe;
+          blocked/needs_review → candidate queue.
         """
         if not self._cube:
             return
 
+        from hermescube.memory_gate import (
+            capture_candidate,
+            decide_write_path,
+            enrich_entry_data,
+            memory_safety,
+        )
+
+        policy = getattr(self, "_memory_policy", "auto-safe")
         extracted = 0
+        queued = 0
         for msg in messages:
             if msg.get("role") != "user":
                 continue
@@ -2470,35 +2503,67 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 m = pattern.search(content)
                 if m:
                     try:
+                        text = sanitize_for_storage(content[:400], self._char_limit)
+                        threats = scan_text(text)
+                        if any(t.severity == "block" for t in threats):
+                            break
+                        safety = memory_safety(text, text, tags=[category])
+                        path = decide_write_path(safety, policy=policy, explicit=False)
+                        if path == "skip":
+                            break
+                        if path in ("candidate", "block"):
+                            capture_candidate(
+                                self._hermes_home,
+                                text,
+                                record_type="fact" if category != "user_pref" else "preference",
+                                source="auto_extract",
+                                evidence_state="prepared_not_observed",
+                                tags=[category],
+                                session_id=self._session_id,
+                                entry_type="belief" if category != "user_pref" else "trait",
+                                **self._path_kw(),
+                            )
+                            queued += 1
+                            break
+                        # durable
                         self._cube.append(
                             entry_type="belief" if category != "user_pref" else "trait",
-                            description=sanitize_for_storage(
-                                content[:400], self._char_limit
+                            description=text,
+                            data=enrich_entry_data(
+                                {
+                                    "category": category,
+                                    "source": "auto_extract",
+                                    "session_id": self._session_id,
+                                    "durable": True,
+                                    "verification": "observed",
+                                    **(
+                                        {"user_id": self._user_id}
+                                        if getattr(self, "_user_id", "")
+                                        else {}
+                                    ),
+                                    **(
+                                        {"vault": self._vault}
+                                        if getattr(self, "_vault", "")
+                                        else {}
+                                    ),
+                                },
+                                evidence_state="observed",
+                                safety=safety,
                             ),
-                            data={
-                                "category": category,
-                                "source": "auto_extract",
-                                "session_id": self._session_id,
-                                **(
-                                    {"user_id": self._user_id}
-                                    if getattr(self, "_user_id", "")
-                                    else {}
-                                ),
-                                **(
-                                    {"vault": self._vault}
-                                    if getattr(self, "_vault", "")
-                                    else {}
-                                ),
-                            },
                         )
                         extracted += 1
                     except Exception as e:
                         logger.debug("auto_extract append failed: %s", e)
                     break
 
-        if extracted:
-            logger.info("Auto-extracted %d facts from session %s",
-                        extracted, self._session_id)
+        if extracted or queued:
+            logger.info(
+                "Auto-extract session %s: durable=%d candidates=%d policy=%s",
+                self._session_id,
+                extracted,
+                queued,
+                policy,
+            )
 
     # ── Internal helpers ──────────────────────────────────────────
 
@@ -2909,12 +2974,137 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return json.dumps({"error": str(e)})
 
     def _handle_manage_cuboasis(self, args: dict[str, Any]) -> str:
-        """Single pane: space + Cubewave + connections + progress."""
-        if not self._cube or not self._hermes_home:
-            return json.dumps({"error": "Memory not initialized"})
-        try:
-            from hermescube.cuboasis import cuboasis_status
+        """Cuboasis pane + governance: capture/review/approve/reject/sync/doctor."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        mode = str(args.get("mode") or args.get("content") or "status").strip().lower()
+        # Allow content to carry capture text when mode is set separately
+        content = str(args.get("content") or args.get("query") or "").strip()
+        if mode in ("status", "", "show") and content and not content.startswith(("approve:", "reject:")):
+            # bare content with default mode → treat as capture
+            if content not in ("status", "show", "sync", "doctor", "review", "rejected"):
+                mode = "capture"
 
+        pkw = self._path_kw()
+        try:
+            from hermescube import memory_gate as gate
+            from hermescube.cuboasis import cuboasis_status, record_progress
+
+            if mode in ("capture", "candidate"):
+                text = content
+                if text.lower().startswith("capture:"):
+                    text = text[8:].strip()
+                if not text:
+                    return json.dumps({"error": "capture requires content"})
+                rec = gate.capture_candidate(
+                    self._hermes_home,
+                    text,
+                    source="cuboasis_capture",
+                    session_id=self._session_id,
+                    entry_type=str(args.get("entry_type") or "belief"),
+                    **pkw,
+                )
+                record_progress(
+                    self._hermes_home,
+                    "candidate_capture",
+                    detail=rec.get("candidate_id", ""),
+                    metrics={"pending": 1},
+                    **pkw,
+                )
+                return json.dumps({**rec, "status": "capture"}, default=str)
+
+            if mode in ("review", "queue", "pending"):
+                report = gate.list_candidates(
+                    self._hermes_home,
+                    status="pending",
+                    limit=int(args.get("top_k") or 40),
+                    **pkw,
+                )
+                return json.dumps({"status": "review", **report}, default=str)
+
+            if mode.startswith("approve:") or mode == "approve":
+                cid = mode.split(":", 1)[1].strip() if ":" in mode else content
+                if cid.lower().startswith("approve:"):
+                    cid = cid[8:].strip()
+                if not cid:
+                    return json.dumps({"error": "approve needs candidate_id"})
+                if not self._cube:
+                    return json.dumps({"error": "Memory not initialized"})
+                report = gate.approve_candidate(
+                    self._hermes_home,
+                    cid,
+                    cube=self._cube,
+                    **pkw,
+                )
+                if report.get("ok") and self._engine:
+                    self._engine.invalidate_cache()
+                record_progress(
+                    self._hermes_home,
+                    "candidate_approve",
+                    detail=cid,
+                    metrics={"approved": 1 if report.get("ok") else 0},
+                    **pkw,
+                )
+                return json.dumps({"status": "approve", **report}, default=str)
+
+            if mode.startswith("reject:") or mode == "reject":
+                cid = mode.split(":", 1)[1].strip() if ":" in mode else content
+                reason = ""
+                if "|" in cid:
+                    cid, reason = [x.strip() for x in cid.split("|", 1)]
+                if cid.lower().startswith("reject:"):
+                    cid = cid[7:].strip()
+                if not cid:
+                    return json.dumps({"error": "reject needs candidate_id"})
+                report = gate.reject_candidate(
+                    self._hermes_home,
+                    cid,
+                    reason=reason or "rejected",
+                    **pkw,
+                )
+                record_progress(
+                    self._hermes_home,
+                    "candidate_reject",
+                    detail=cid,
+                    metrics={"rejected": 1 if report.get("ok") else 0},
+                    **pkw,
+                )
+                return json.dumps({"status": "reject", **report}, default=str)
+
+            if mode in ("rejected", "negative"):
+                report = gate.recall_rejected(
+                    self._hermes_home,
+                    content if content not in ("rejected", "negative") else "",
+                    limit=int(args.get("top_k") or 12),
+                    **pkw,
+                )
+                return json.dumps({"status": "rejected", **report}, default=str)
+
+            if mode in ("sync", "curate", "curation"):
+                if not self._cube:
+                    return json.dumps({"error": "Memory not initialized"})
+                report = gate.curation_sync_report(
+                    self._cube,
+                    self._hermes_home,
+                    limit=int(args.get("top_k") or 24),
+                    **pkw,
+                )
+                return json.dumps({"status": "sync", **report}, default=str)
+
+            if mode == "doctor":
+                report = gate.oasis_doctor_card(
+                    self._cube,
+                    self._hermes_home,
+                    engram=getattr(self, "_engram", None),
+                    cubewave=getattr(self, "_cubewave", None),
+                    relation_store=self._relation_store() if self._hermes_home else None,
+                    **pkw,
+                )
+                return json.dumps({"status": "doctor", **report}, default=str)
+
+            # default status pane
+            if not self._cube:
+                return json.dumps({"error": "Memory not initialized"})
             report = cuboasis_status(
                 self._cube,
                 self._hermes_home,
@@ -2924,7 +3114,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 engram=getattr(self, "_engram", None),
                 cubewave=getattr(self, "_cubewave", None),
                 relation_store=self._relation_store(),
-                **self._path_kw(),
+                **pkw,
             )
             return json.dumps({"status": "cuboasis", **report}, default=str)
         except Exception as e:
@@ -3789,32 +3979,86 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if not self._cube:
             return json.dumps({"error": "Memory not initialized"})
 
+        from hermescube.memory_gate import (
+            capture_candidate,
+            decide_write_path,
+            enrich_entry_data,
+            memory_safety,
+        )
+
+        safety = memory_safety(content, content)
+        path = decide_write_path(safety, policy=getattr(self, "_memory_policy", "auto-safe"), explicit=True)
+        if path == "block":
+            # Still queue as blocked candidate for audit
+            queued = capture_candidate(
+                self._hermes_home,
+                sanitize_for_storage(content, self._char_limit),
+                record_type="fact",
+                source="hermescube_manage",
+                evidence_state="prepared_not_observed",
+                session_id=self._session_id,
+                entry_type=entry_type,
+                **self._path_kw(),
+            )
+            return json.dumps(
+                {
+                    "error": "Content blocked by memory safety gate",
+                    "safety": safety,
+                    "candidate": queued,
+                },
+                default=str,
+            )
+
+        as_candidate = str(args.get("mode") or "").lower() in (
+            "candidate",
+            "capture",
+            "review-first",
+        )
+        if as_candidate or path == "candidate":
+            queued = capture_candidate(
+                self._hermes_home,
+                sanitize_for_storage(content, self._char_limit),
+                record_type="fact",
+                source="hermescube_manage",
+                evidence_state="prepared_not_observed",
+                session_id=self._session_id,
+                entry_type=entry_type,
+                **self._path_kw(),
+            )
+            return json.dumps({"status": "candidate", **queued}, default=str)
+
         entry = self._cube.append(
             entry_type=entry_type,
             description=sanitize_for_storage(content, self._char_limit),
-            data={
-                "source": "hermescube_manage",
-                "session_id": self._session_id,
-                "platform": self._platform,
-                "trust": 0.72 if entry_type in ("focus", "resolve") else 0.5,
-                **(
-                    {"vault": self._vault, "topic": (self._agent_workspace or "")[:80]}
-                    if getattr(self, "_vault", "")
-                    else {}
-                ),
-                **(
-                    {
-                        "user_id": self._user_id,
-                        **(
-                            {"user_id_alt": self._user_id_alt}
-                            if getattr(self, "_user_id_alt", "")
-                            else {}
-                        ),
-                    }
-                    if getattr(self, "_user_id", "")
-                    else {}
-                ),
-            },
+            data=enrich_entry_data(
+                {
+                    "source": "hermescube_manage",
+                    "session_id": self._session_id,
+                    "platform": self._platform,
+                    "trust": 0.72 if entry_type in ("focus", "resolve") else 0.5,
+                    "durable": True,
+                    "verification": "user_authored",
+                    **(
+                        {"vault": self._vault, "topic": (self._agent_workspace or "")[:80]}
+                        if getattr(self, "_vault", "")
+                        else {}
+                    ),
+                    **(
+                        {
+                            "user_id": self._user_id,
+                            **(
+                                {"user_id_alt": self._user_id_alt}
+                                if getattr(self, "_user_id_alt", "")
+                                else {}
+                            ),
+                        }
+                        if getattr(self, "_user_id", "")
+                        else {}
+                    ),
+                },
+                evidence_state="verified",
+                safety=safety,
+            ),
             outcome=outcome,
         )
         try:

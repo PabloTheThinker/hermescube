@@ -1,6 +1,16 @@
 # Changelog
 
-## [0.40.0] - 2026-07-27
+## [0.41.0] - 2026-07-27
+
+### Cuboasis governance — review-first memory oasis
+- New `hermescube/memory_gate.py`: safety gate, evidence states, candidate capture/review/approve/reject, rejected-decision recall, curation sync report, doctor card
+- Manage: `cuboasis mode=capture|review|approve|reject|rejected|sync|doctor`
+- Config: `memory_policy` (`review-first` / `auto-safe` / `off`) gates auto-extract durable writes
+- Sidecar: `candidates.jsonl`; evidence packets show `evidence_state`
+- CLI doctor surfaces candidate backlog + Cuboasis readiness
+- Docs: CUBOASIS governance + IDEAS_FROM_OMH ship order started
+
+[0.40.0] - 2026-07-27
 
 ### Cuboasis — pocket-dimension memory oasis (+ Cubewave)
 - **Rename**: functional infra framework is now **Cuboasis** (was Nexus) — Cube-native name for the internal pocket dimension

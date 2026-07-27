@@ -124,11 +124,21 @@ that MEMORY.md or Hive assimilated it unless that write was *observed*.
 
 ## Suggested ship order
 
-1. Safety gate + `evidence_state` on durable writes  
-2. Candidate chamber + approve/reject manage actions  
-3. Rejected-decision recall + curation sync report  
-4. Why-surfaced strip + Cuboasis doctor card  
+1. ~~Safety gate + `evidence_state` on durable writes~~ **shipped 0.41**  
+2. ~~Candidate chamber + approve/reject manage actions~~ **shipped 0.41**  
+3. ~~Rejected-decision recall + curation sync report~~ **shipped 0.41**  
+4. Cuboasis doctor card **shipped 0.41**; why-surfaced strip still open  
 5. Rules-distill from repeated witnesses → procedure candidates  
+
+### Hermes Agent research notes (2026-07-27)
+
+Latest Hermes `main` (~v2026.7.20+): MemoryProvider ABC still one external
+provider; Cube already implements core + optional hooks including
+`on_session_switch`. Plugin ecosystem peers: holographic, honcho, mem0,
+hindsight, retaindb, supermemory, byterover, openviking. Cube differentiator
+remains local `.cube` + Cuboasis governance rather than SaaS memory APIs.
+Watch: memory tool card UX, mode-aware provider deps, compression/history
+durability fixes on Hermes main — none require Cube API breaks.
 
 ## Inspiration sources (paths in OMH clone)
 

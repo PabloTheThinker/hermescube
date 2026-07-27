@@ -719,6 +719,27 @@ def cuboasis_status(
         },
     }
 
+    # Governance strip — candidate backlog + doctor health (read-only)
+    try:
+        from hermescube.memory_gate import list_candidates, oasis_doctor_card
+
+        pending = list_candidates(hermes_home, status="pending", limit=5, **pkw)
+        status["governance"] = {
+            "pending_candidates": pending.get("count", 0),
+            "claim_boundary": pending.get("claim_boundary"),
+        }
+        if cubewave is not None or engram is not None or cube is not None:
+            status["doctor"] = oasis_doctor_card(
+                cube,
+                hermes_home,
+                engram=engram,
+                cubewave=cubewave,
+                relation_store=relation_store,
+                **pkw,
+            )
+    except Exception as e:
+        logger.debug("governance strip skip: %s", e)
+
     if hermes_home:
         try:
             sp = cuboasis_state_path(hermes_home, **pkw)
@@ -774,11 +795,14 @@ def prompt_strip(
     n_ch = sum(int(c.get("entries") or 0) for c in (space.get("chambers") or []))
     vault = active_vault or "(shared)"
     chamber = active_chamber or "all"
+    gov = st.get("governance") or {}
+    pending = gov.get("pending_candidates", 0)
     return (
         f"Cuboasis · vault={vault} · chamber={chamber} · rooms={n_ch} entries · "
         f"SPO={conn.get('relations', 0)} colony={conn.get('colony_edges', 0)} "
         f"engram={conn.get('engram_nodes', 0)} "
         f"cubewave={wave.get('readouts', 0)}/{wave.get('edges', 0)} · "
+        f"candidates pending={pending} · "
         f"progress events={prog.get('events', 0)} · "
         f"living v{g.get('version') or '?'} {g.get('era_label') or ''}"
     ).strip()

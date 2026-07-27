@@ -175,6 +175,15 @@ def claim_to_entry_data(claim: Claim, **extra: Any) -> dict[str, Any]:
     data.setdefault("durable", True)
     data.setdefault("branch_id", claim.branch_id)
     data.setdefault("verification", claim.verification)
+    try:
+        from hermescube.memory_gate import normalize_evidence_state
+
+        data.setdefault(
+            "evidence_state",
+            normalize_evidence_state(claim.verification, default="observed"),
+        )
+    except Exception:
+        pass
     if claim.subject:
         data.setdefault("subject", claim.subject)
     if claim.predicate:
@@ -183,4 +192,5 @@ def claim_to_entry_data(claim: Claim, **extra: Any) -> dict[str, Any]:
         data.setdefault("object", claim.object)
     if claim.status == "superseded":
         data["superseded"] = True
+        data["evidence_state"] = "superseded"
     return data
