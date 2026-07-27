@@ -159,7 +159,7 @@ def main() -> int:
             "pass": (usage or {}).get("pass"),
             "gates": (usage or {}).get("gates"),
             "lifecycle": {
-                k: ((usage or {}).get("lifecycle") or {}).get(k)
+                k: (((usage or {}).get("scenarios") or {}).get("lifecycle") or {}).get(k)
                 for k in (
                     "init_ms",
                     "prefetch_p50_ms",
@@ -173,6 +173,8 @@ def main() -> int:
             }
             if usage
             else None,
+            "cross_session": ((usage or {}).get("scenarios") or {}).get("cross_session"),
+            "hive": ((usage or {}).get("scenarios") or {}).get("hive_pilgrimage"),
         },
         "cross_exam": {
             "pass": (cross or {}).get("pass"),
