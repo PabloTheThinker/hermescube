@@ -45,6 +45,8 @@ class CubePaths:
     journey_md: Path
     living_state: Path
     catalog: Path
+    progress_ledger: Path
+    nexus_state: Path
 
     def ensure(self) -> None:
         self.memories_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +111,8 @@ def resolve_cube_paths(
         journey_md=side / "journey.md",
         living_state=side / "living_state.json",
         catalog=side / "catalog.json",
+        progress_ledger=side / "progress.jsonl",
+        nexus_state=side / "nexus_state.json",
     )
 
 
@@ -131,6 +135,8 @@ _LEGACY_SIDE_CARS = (
     ("journey.md", "journey_md"),
     ("living_state.json", "living_state"),
     ("catalog.json", "catalog"),
+    ("progress.jsonl", "progress_ledger"),
+    ("nexus_state.json", "nexus_state"),
 )
 
 

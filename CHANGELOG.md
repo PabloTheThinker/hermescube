@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.39.0] - 2026-07-27
+
+### Nexus — functional memory infrastructure
+- New `hermescube/nexus.py` spine: **space** (vaults + chambers), **connections** (unified SPO ∪ colony ∪ engram ∪ HAR), **progress** ledger
+- Manage actions: `space`, `connect`, `progress`, `nexus`; triage `mode=apply` forges consolidate + annotates conflicts
+- Sidecars: `progress.jsonl`, `nexus_state.json` (path registry + legacy migrate)
+- Session-end + feedback write the progress ledger; system prompt shows a Nexus infra strip
+- Docs: [docs/NEXUS.md](docs/NEXUS.md); PURPOSE updated
+
 ## [0.38.0] - 2026-07-27
 
 ### Cube of Eden — the origin era

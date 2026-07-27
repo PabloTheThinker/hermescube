@@ -88,6 +88,13 @@ garden before lived memory — `era: eden`, display **Cube of Eden** —
 then leaves through Awakening → Formed → Seasoned → Elder as capability
 rises. Legacy `genesis` migrates automatically.
 
+**Nexus infrastructure (0.39+):** the cube gains a true internal
+infrastructure layer — **space** (vaults + chambers), **connections**
+(unified SPO ∪ colony ∪ engram ∪ HAR neighbors), and **progress**
+(append-only ledger + usefulness rollup). Agents navigate with
+`manage action=space|connect|progress|nexus`; triage can `mode=apply`
+to forge and annotate instead of only planning. See [docs/NEXUS.md](docs/NEXUS.md).
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

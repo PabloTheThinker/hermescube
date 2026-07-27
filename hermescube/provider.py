@@ -878,6 +878,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "triage",
                                 "merge",
                                 "relations",
+                                "space",
+                                "connect",
+                                "progress",
+                                "nexus",
                             ],
                             "description": (
                                 "warehouse ops + living pulse + consent + peer + hive "
@@ -886,10 +890,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "+ interview (peer dialogue / mint skill drafts) "
                                 "+ growth (living cube version / CUBE.md) "
                                 "+ curate (refine skills from lessons / era forge+garden) "
-                                "+ triage / merge / relations (compounding)"
+                                "+ triage / merge / relations (compounding) "
+                                "+ space / connect / progress / nexus (functional infra)"
                             ),
-                        },
-                        "interview_action": {
+                        },                        "interview_action": {
                             "type": "string",
                             "enum": ["dialogue", "list", "mint"],
                             "description": (
@@ -1085,6 +1089,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
+        # Nexus infrastructure — space / connections / progress at a glance
+        try:
+            from hermescube.nexus import prompt_strip as nexus_strip
+
+            nstrip = nexus_strip(
+                self._hermes_home or None,
+                cube=self._cube,
+                active_vault=getattr(self, "_vault", "") or "",
+                **self._path_kw(),
+            )
+            if nstrip:
+                lines.append(nstrip)
+        except Exception:
+            pass
+
         lines.extend([
             "Day-to-day: idempotent turn ingestion + MEMORY.md mirrors; evolve on session_end.",
             "Hemispheres: awake=prefetch/query · sleep=branched evolve/consolidate",
@@ -1105,8 +1124,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- DO NOT store temp todos / session fluff",
             "- Real friction (user corrections, failures) → manage action=witness; "
             "evolution stays grounded to witnessed friction",
-            "- Offline queues: manage action=triage (what to promote); action=merge when "
+            "- Offline queues: manage action=triage (what to promote); "
+            "triage mode=apply to forge/annotate; action=merge when "
             "Living strip says merge ready; action=relations for who/owns/related facts",
+            "- Infrastructure: action=space (vaults/chambers), action=connect (unified neighbors), "
+            "action=progress (ledger), action=nexus (single pane)",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -1784,6 +1806,37 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     )
                 except Exception as e:
                     logger.debug("growth_merge skipped: %s", e)
+
+            # Progress ledger — prove the session moved the infrastructure
+            if hermes_home and not skip:
+                try:
+                    from hermescube.nexus import record_progress, nexus_status
+
+                    end_count = int(getattr(cube, "entry_count", 0) or 0)
+                    record_progress(
+                        hermes_home,
+                        "session_end",
+                        detail=f"entries {start_count}→{end_count}",
+                        metrics={
+                            "durable_delta": max(0, end_count - int(start_count or 0)),
+                            "crystalized": 1 if crystalized else 0,
+                            "triage_consolidate": int(
+                                (triage_plan.get("counts") or {}).get("consolidate") or 0
+                            ),
+                        },
+                        **path_kw,
+                    )
+                    # Refresh nexus snapshot for agents / doctor
+                    nexus_status(
+                        cube,
+                        hermes_home,
+                        active_vault=vault,
+                        colony=getattr(self, "_colony", None),
+                        engram=engram,
+                        **path_kw,
+                    )
+                except Exception as e:
+                    logger.debug("progress ledger skipped: %s", e)
 
             try:
                 setattr(self, "_last_session_end_l1_reads", l1_reads)
@@ -2559,6 +2612,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_merge(args)
         elif action == "relations":
             return self._handle_manage_relations(args)
+        elif action == "space":
+            return self._handle_manage_space(args)
+        elif action == "connect":
+            return self._handle_manage_connect(args)
+        elif action == "progress":
+            return self._handle_manage_progress(args)
+        elif action == "nexus":
+            return self._handle_manage_nexus(args)
         return json.dumps({"error": f"Unknown action: {action}"})
 
     def _handle_manage_curate(self, args: dict[str, Any]) -> str:
@@ -2604,16 +2665,29 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         return RelationStore(self._hermes_home, **self._path_kw())
 
     def _handle_manage_triage(self, args: dict[str, Any]) -> str:
-        """Build / return consolidation triage plan."""
+        """Build / return / apply consolidation triage plan."""
         if not self._cube:
             return json.dumps({"error": "Memory not initialized"})
         try:
             from hermescube.triage import run_triage, load_plan
 
             pkw = self._path_kw()
-            if str(args.get("mode") or args.get("content") or "").lower() == "load":
+            mode = str(args.get("mode") or args.get("content") or "").lower()
+            if mode == "load":
                 plan = load_plan(self._hermes_home, **pkw) or {}
                 return json.dumps({"status": "triage", "loaded": True, **plan}, default=str)
+            if mode in ("apply", "run", "execute"):
+                from hermescube.nexus import apply_triage
+
+                report = apply_triage(
+                    self._cube,
+                    self._hermes_home,
+                    forge_limit=int(args.get("top_k") or 2),
+                    **pkw,
+                )
+                if self._engine:
+                    self._engine.invalidate_cache()
+                return json.dumps({"status": "triage_apply", **report}, default=str)
             plan = run_triage(
                 self._cube,
                 hermes_home=self._hermes_home,
@@ -2696,6 +2770,106 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 },
                 default=str,
             )
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_space(self, args: dict[str, Any]) -> str:
+        """Space map — vaults + chambers (organization without a second store)."""
+        if not self._cube:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.nexus import space_map, chamber_filter_ids
+
+            mode = str(args.get("mode") or args.get("content") or "status").strip().lower()
+            pkw = self._path_kw()
+            if mode.startswith("chamber:"):
+                ch = mode.split(":", 1)[1].strip()
+                ids = chamber_filter_ids(self._cube, ch, limit=int(args.get("top_k") or 40))
+                return json.dumps(
+                    {"status": "space", "chamber": ch, "ids": ids, "count": len(ids)},
+                    default=str,
+                )
+            if mode == "set" and args.get("query"):
+                # Soft-set active vault for this session (affinity tag)
+                self._vault = str(args.get("query") or "").strip()[:80]
+            report = space_map(
+                self._cube,
+                hermes_home=self._hermes_home,
+                active_vault=getattr(self, "_vault", "") or "",
+                **pkw,
+            )
+            return json.dumps({"status": "space", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_connect(self, args: dict[str, Any]) -> str:
+        """Unified neighbors — SPO + colony + engram + HAR related."""
+        entity = str(args.get("content") or args.get("query") or "").strip()
+        if not entity:
+            return json.dumps({"error": "entity required in content/query"})
+        try:
+            from hermescube.nexus import connect_entity
+
+            report = connect_entity(
+                entity,
+                cube=self._cube,
+                hermes_home=self._hermes_home,
+                relation_store=self._relation_store() if self._hermes_home else None,
+                colony=getattr(self, "_colony", None),
+                engram=getattr(self, "_engram", None),
+                engine=self._engine,
+                limit=int(args.get("top_k") or 12),
+                **self._path_kw(),
+            )
+            return json.dumps({"status": "connect", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_progress(self, args: dict[str, Any]) -> str:
+        """Progress ledger — proof the compounding loop moved."""
+        if not self._hermes_home:
+            return json.dumps({"error": "hermes_home not set"})
+        try:
+            from hermescube.nexus import progress_status, record_progress
+
+            mode = str(args.get("mode") or "").strip().lower()
+            content = str(args.get("content") or "").strip()
+            if mode == "record" or content.startswith("record:"):
+                detail = content[7:].strip() if content.lower().startswith("record:") else content
+                rec = record_progress(
+                    self._hermes_home,
+                    "manual",
+                    detail=detail or "operator note",
+                    **self._path_kw(),
+                )
+                return json.dumps({"status": "progress", **rec}, default=str)
+            report = progress_status(
+                self._hermes_home,
+                cube=self._cube,
+                limit=int(args.get("top_k") or 20),
+                **self._path_kw(),
+            )
+            return json.dumps({"status": "progress", **report}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _handle_manage_nexus(self, args: dict[str, Any]) -> str:
+        """Single pane: space + connections + progress."""
+        if not self._cube or not self._hermes_home:
+            return json.dumps({"error": "Memory not initialized"})
+        try:
+            from hermescube.nexus import nexus_status
+
+            report = nexus_status(
+                self._cube,
+                self._hermes_home,
+                active_vault=getattr(self, "_vault", "") or "",
+                colony=getattr(self, "_colony", None),
+                engram=getattr(self, "_engram", None),
+                relation_store=self._relation_store(),
+                **self._path_kw(),
+            )
+            return json.dumps({"status": "nexus", **report}, default=str)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -3784,6 +3958,25 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 net.save()
         except Exception:
             pass
+
+        # Progress ledger — usefulness signal
+        if self._hermes_home:
+            try:
+                from hermescube.nexus import record_progress
+
+                record_progress(
+                    self._hermes_home,
+                    "feedback",
+                    detail=f"{action} {entry_id[:12]}",
+                    metrics={
+                        "helpful": 1 if action == "helpful" else 0,
+                        "unhelpful": 1 if action == "unhelpful" else 0,
+                        "trust": new_trust,
+                    },
+                    **self._path_kw(),
+                )
+            except Exception:
+                pass
 
         try:
             from hermescube.journey import log_event
