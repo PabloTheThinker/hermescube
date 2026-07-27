@@ -36,6 +36,21 @@ if git grep -nE 'sk-[a-zA-Z0-9]{10,}|api_key\s*=\s*['\''\"][^'\''\"]{8,}' -- \
   fail=1
 fi
 
+# Plugin manifest drift. install_hermes.sh ships the ROOT plugin.yaml.
+if ! diff -q plugin.yaml plugin/plugin.yaml >/dev/null 2>&1; then
+  echo "FAIL: plugin.yaml and plugin/plugin.yaml differ (installer ships the root one)"
+  diff plugin.yaml plugin/plugin.yaml | head -20
+  fail=1
+fi
+
+manifest_v=$(sed -n 's/^version:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' plugin.yaml | head -1)
+package_v=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' hermescube/__init__.py | head -1)
+pyproject_v=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' pyproject.toml | head -1)
+if [[ "$manifest_v" != "$package_v" || "$package_v" != "$pyproject_v" ]]; then
+  echo "FAIL: version drift — plugin.yaml=$manifest_v hermescube/__init__.py=$package_v pyproject.toml=$pyproject_v"
+  fail=1
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "check_isolation: FAILED"
   exit 1

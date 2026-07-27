@@ -18,6 +18,7 @@ Hot path: O(K·d + E_edges) with K small (≤256), d=256.
 from __future__ import annotations
 
 import json
+import os
 import math
 import threading
 import time
@@ -80,40 +81,81 @@ class EngramNet:
         self._patterns: list[dict[str, Any]] = []  # {v: list[float], ids: [str], ts}
         self._edges: dict[str, dict[str, float]] = {}  # id -> {id: weight}
         self._dirty = False
+        # Per-instance so separate profiles/nets don't serialise against
+        # each other. Reentrant because save() snapshots under the lock.
+        self._lock = threading.RLock()
         self.load()
 
     def load(self) -> None:
-        if not self.path.is_file():
-            self._patterns = []
-            self._edges = {}
-            return
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            self._patterns = list(raw.get("patterns") or [])[-_MAX_PATTERNS:]
-            edges = raw.get("edges") or {}
-            self._edges = {
-                str(k): {str(kk): float(vv) for kk, vv in (v or {}).items()}
-                for k, v in edges.items()
-                if isinstance(v, dict)
-            }
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            self._patterns = []
-            self._edges = {}
+        patterns: list[dict[str, Any]] = []
+        edges_out: dict[str, dict[str, float]] = {}
+        if self.path.is_file():
+            try:
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+                patterns = list(raw.get("patterns") or [])[-_MAX_PATTERNS:]
+                edges_out = {
+                    str(k): {str(kk): float(vv) for kk, vv in (v or {}).items()}
+                    for k, v in (raw.get("edges") or {}).items()
+                    if isinstance(v, dict)
+                }
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                patterns = []
+                edges_out = {}
+        with self._lock:
+            self._patterns = patterns
+            self._edges = edges_out
 
     def save(self) -> None:
-        if not self._dirty:
-            return
+        # Serialise the payload under the lock: a concurrent
+        # learn_coactivation() mutating _edges mid-encode used to raise
+        # "dictionary changed size during iteration", and every call site
+        # swallows exceptions, so the write was silently dropped.
+        with self._lock:
+            if not self._dirty:
+                return
+            blob = json.dumps(
+                {
+                    "v": 1,
+                    "patterns": self._patterns[-_MAX_PATTERNS:],
+                    "edges": self._edges,
+                    "ts": time.time(),
+                },
+                separators=(",", ":"),
+            )
+            self._dirty = False
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "v": 1,
-            "patterns": self._patterns[-_MAX_PATTERNS:],
-            "edges": self._edges,
-            "ts": time.time(),
-        }
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-        tmp.replace(self.path)
-        self._dirty = False
+        # Unique temp name: two concurrent savers sharing one temp path
+        # raced, and the loser's replace() failed with FileNotFoundError.
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(blob, encoding="utf-8")
+            tmp.replace(self.path)
+        except BaseException:
+            with self._lock:
+                self._dirty = True
+            tmp.unlink(missing_ok=True)
+            raise
+
+    def decay_edges(self, factor: float, *, floor: float = 0.08) -> int:
+        """Scale every edge by ``factor``, dropping those below ``floor``.
+
+        Offline consolidation (sleep_replay) previously mutated ``_edges``
+        directly, which bypassed the lock that guards concurrent learning.
+        Returns the number of edges pruned.
+        """
+        pruned = 0
+        with self._lock:
+            for _src, bucket in list(self._edges.items()):
+                for dst, w in list(bucket.items()):
+                    nw = float(w) * float(factor)
+                    if nw < floor:
+                        bucket.pop(dst, None)
+                        pruned += 1
+                    else:
+                        bucket[dst] = nw
+            if pruned:
+                self._dirty = True
+        return pruned
 
     # ── learning ──────────────────────────────────────────────────
 

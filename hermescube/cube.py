@@ -907,13 +907,10 @@ class CubeFile:
         # This ensures all entries are in the .cube after evolve, and
         # L2 centroids point to entries that exist in the .cube L1.
         if self._cubelog_count > 0:
-            all_entries = self.read_l1()  # merges .cube + cubelog
-            # Rebuild L1 with all entries (existing .cube entries + cubelog)
+            # Entries already in .cube L1 stay where they are; only the WAL
+            # tail needs to be folded in behind them.
+            self.read_l1()  # populates _cubelog_entries if not already loaded
             new_l1_bytes = bytearray()
-            for entry in all_entries[:self.entry_count - self._cubelog_count]:
-                # These are already in .cube L1 — keep as-is via existing data
-                pass
-            # Append cubelog entries to .cube L1
             if self._cubelog_entries:
                 for entry in self._cubelog_entries:
                     desc_bytes = entry.description.encode("utf-8")

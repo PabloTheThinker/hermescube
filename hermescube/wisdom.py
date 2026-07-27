@@ -135,6 +135,9 @@ def crystalize(
     """
     entries = list(cube.read_l1() or [])
     candidates: list[Any] = []
+    # Tokenise each candidate once. Clustering below is O(n²) comparisons;
+    # tokenising inside that loop made it O(n²) regex passes instead.
+    tok_by_id: dict[str, frozenset[str]] = {}
     for e in entries:
         et = (e.entry_type or "").lower()
         if et not in WISDOM_TYPES:
@@ -153,6 +156,7 @@ def crystalize(
         if len(tok) < 2:
             continue
         candidates.append(e)
+        tok_by_id[e.id] = tok
 
     # Greedy clustering
     used: set[str] = set()
@@ -162,13 +166,13 @@ def crystalize(
     for e in candidates:
         if e.id in used:
             continue
-        etoks = tokens(e.description or "")
+        etoks = tok_by_id[e.id]
         cluster = [e]
         used.add(e.id)
         for o in candidates:
             if o.id in used:
                 continue
-            ot = tokens(o.description or "")
+            ot = tok_by_id[o.id]
             if jaccard(etoks, ot) >= jaccard_threshold:
                 cluster.append(o)
                 used.add(o.id)

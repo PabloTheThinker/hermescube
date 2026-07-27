@@ -247,6 +247,8 @@ def chamber_pulse(
         report["chambers"]["catalog"] = {
             "n": n,
             "types": cat.get("by_type"),
+            # prompt_strip renders the chamber breakdown from this key
+            "by_chamber": cat.get("by_chamber"),
             "topic_hubs": len(cat.get("topic_hubs") or []),
             "entities": len(cat.get("entities") or []),
             "path": str(cp),
@@ -403,7 +405,8 @@ def prompt_strip(hermes_home: str | Path | None = None, *, high_load: bool = Fal
     cat = ch.get("catalog") or {}
     if cat.get("by_chamber"):
         bc = cat["by_chamber"]
-        parts = [f"{k}:{v}" for k, v in list(bc.items())[:6]]
+        ranked = sorted(bc.items(), key=lambda kv: (-int(kv[1]), str(kv[0])))
+        parts = [f"{k}:{v}" for k, v in ranked[:6]]
         lines.append("- Chambers: " + " · ".join(parts))
     assoc = ch.get("associate") or {}
     if assoc.get("dot_links"):

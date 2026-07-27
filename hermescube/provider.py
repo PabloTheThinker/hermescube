@@ -1614,7 +1614,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         if rewound:
             self._prefetch_cache.clear()
-            self._entries_cache = None
+            # Invalidate the cube + engine caches — assigning
+            # self._entries_cache creates a dead attribute on the provider.
+            if self._cube is not None:
+                self._cube._entries_cache = None
+            if self._engine is not None:
+                self._engine.invalidate_cache()
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
         """Extract structured insights before context compression."""

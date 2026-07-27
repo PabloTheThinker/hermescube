@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from hermescube import CubeFile
+from hermescube import living
 from hermescube.living import (
     build_catalog,
     chamber_pulse,
@@ -83,3 +84,35 @@ def test_provider_pulse(tmp_path: Path):
     block = p.system_prompt_block()
     assert "Living archive" in block or (r["report"].get("summary"))
     p.shutdown()
+
+def test_prompt_strip_renders_chamber_breakdown(tmp_path):
+    """The catalog chamber report stored the histogram under "types" while
+    prompt_strip read "by_chamber", so the breakdown line never rendered."""
+    hh = tmp_path / "home"
+    (hh / "memories").mkdir(parents=True)
+    cube = CubeFile.create(str(tmp_path / "m.cube"))
+    for et, desc in [
+        ("trait", "operator prefers concise technical answers"),
+        ("relationship", "pablo owns the memory subsystem roadmap"),
+        ("belief", "redis cache reduces auth-service latency"),
+        ("resolve", "standardise on structured logging"),
+        ("landmark", "shipped the postgres migration"),
+        ("focus", "investigating the queue retry storm"),
+    ]:
+        cube.append(entry_type=et, description=desc, outcome="success")
+
+    report = living.chamber_pulse(cube, hermes_home=str(hh))
+    by_chamber = report["chambers"]["catalog"].get("by_chamber")
+    assert by_chamber, "catalog chamber must expose by_chamber for prompt_strip"
+
+    strip = living.prompt_strip(str(hh))
+    assert "- Chambers:" in strip
+    # ordered by descending count, so the breakdown is stable across pulses
+    counts = [
+        int(part.split(":")[1])
+        for part in strip.split("- Chambers: ")[1].split("\n")[0].split(" · ")
+    ]
+    assert counts == sorted(counts, reverse=True)
+
+    # high_load keeps the strip minimal
+    assert "- Chambers:" not in living.prompt_strip(str(hh), high_load=True)

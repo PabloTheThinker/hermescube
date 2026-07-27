@@ -448,3 +448,114 @@ class TestHAREdgeCases:
             assert any("Compact me" in e.description for e in entries)
         finally:
             os.unlink(path)
+
+class TestAssociativeRecall:
+    """The entity graph must actually reach the result set.
+
+    It previously did not: ``_entity_index`` was only ever assigned None, so
+    ``mirror_expand`` never ran on the query path and entity-linked memories
+    were unreachable no matter how well the graph was built.
+    """
+
+    @staticmethod
+    def _cube(path, rows):
+        cube = CubeFile.create(path)
+        for etype, desc in rows:
+            cube.append(etype, desc)
+        return cube
+
+    def test_refresh_cache_builds_entity_index(self):
+        with tempfile.NamedTemporaryFile(suffix=".cube", delete=False) as f:
+            path = f.name
+        try:
+            cube = self._cube(path, [
+                ("belief", "auth-service depends on redis for sessions"),
+                ("resolve", "Fixed the redis connection pool leak"),
+            ])
+            engine = HARQueryEngine(cube)
+            engine.refresh_cache()
+            assert engine._entity_index, "entity index must be populated"
+            assert "auth service" in engine._entity_index
+            cube.close()
+        finally:
+            for p in (path, path + ".cubelog"):
+                if os.path.isfile(p):
+                    os.unlink(p)
+
+    def test_entity_neighbour_fills_unused_slot(self):
+        """A query matching few entries lexically should have its spare slots
+        filled by entity-linked memories rather than left empty."""
+        with tempfile.NamedTemporaryFile(suffix=".cube", delete=False) as f:
+            path = f.name
+        try:
+            cube = self._cube(path, [
+                ("relationship", "Dana Whitfield owns the ledger-sync pipeline"),
+                ("belief", "the ledger-sync pipeline writes to coldstore each night"),
+                ("belief", "unrelated note about kitchen inventory"),
+                ("belief", "another unrelated note about bicycle parts"),
+            ])
+            engine = HARQueryEngine(cube)
+            hits = engine.query("Dana Whitfield", top_k=5)
+            descs = " ".join(e.description for e, _ in hits)
+            # only one entry mentions Dana; the linked one must still surface
+            assert "Dana Whitfield" in descs
+            assert "coldstore" in descs, f"no associative hop; got: {descs}"
+            cube.close()
+        finally:
+            for p in (path, path + ".cubelog"):
+                if os.path.isfile(p):
+                    os.unlink(p)
+
+    def test_association_does_not_evict_strong_direct_hits(self):
+        """When every slot holds a strong direct match, expansion takes none."""
+        with tempfile.NamedTemporaryFile(suffix=".cube", delete=False) as f:
+            path = f.name
+        try:
+            rows = [("belief", f"deployment pipeline note number {i}") for i in range(8)]
+            rows += [("belief", "unrelated kitchen inventory record")]
+            cube = self._cube(path, rows)
+            engine = HARQueryEngine(cube)
+            hits = engine.query("deployment pipeline note", top_k=5)
+            assert len(hits) == 5
+            assert all("deployment pipeline" in e.description for e, _ in hits)
+            cube.close()
+        finally:
+            for p in (path, path + ".cubelog"):
+                if os.path.isfile(p):
+                    os.unlink(p)
+
+
+def test_query_vector_shares_space_with_stored_entries():
+    """Query and entry vectors must live in the same space.
+
+    Entry vectors are written by hrr.embed_text at append time. The engine
+    used the learned TF-IDF embedder for queries once trained, which projects
+    into an unrelated space — the cosine channel became noise (a matching and
+    a non-matching entry both scored ~0.07) the moment the first evolve ran.
+    """
+    from hermescube import hrr
+
+    with tempfile.NamedTemporaryFile(suffix=".cube", delete=False) as f:
+        path = f.name
+    try:
+        cube = CubeFile.create(path)
+        for d in ("auth service uses redis for sessions",
+                  "billing uses postgres database",
+                  "redis caches user sessions"):
+            cube.append("belief", d)
+        engine = HARQueryEngine(cube)
+        engine.evolve()  # trains the learned embedder
+        assert engine._embedder is not None and engine._embedder.is_trained
+
+        q = engine._query_vector("redis sessions")
+        entries = {e.description: e for e in cube.read_l1()}
+        rel = hrr.cosine_sim(q, entries["redis caches user sessions"].vector)
+        irr = hrr.cosine_sim(q, entries["billing uses postgres database"].vector)
+        # a real semantic channel separates these clearly
+        assert rel > 0.3, f"relevant cosine collapsed to {rel:.4f}"
+        assert rel - irr > 0.25, f"no separation: rel={rel:.4f} irr={irr:.4f}"
+        cube.close()
+    finally:
+        for p in (path, path + ".cubelog"):
+            if os.path.isfile(p):
+                os.unlink(p)
