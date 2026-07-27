@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.37.0] - 2026-07-26
+
+### Compaction-safe extract (Hermes holographic algorithm)
+- Merge-delimiter harvest: keep pre-delimiter user text; never store compressor handoff prose
+- `on_pre_compress` uses the same harvest guard for user rows
+- Assessment refreshed for 0.37 grades
+
+## [0.36.0] - 2026-07-26
+
+### Session-boundary + gateway user isolation
+- `on_session_end` flushes the sync queue before return (Hermes MemoryManager end→switch FIFO)
+- `on_session_switch` refreshes `parent_session_id` and `user_id` / `user_id_alt`
+- Durable writes tag `data.user_id`; HAR soft-boosts matching users (unlabeled never hard-dropped)
+
+## [0.35.0] - 2026-07-26
+
+### Hermes-aligned compounding + trust IR
+- Consolidate nudge in `system_prompt_block` when `memory_nudge_interval` elapses (Hermes never calls Cube `should_review_memory`)
+- Prefetch one-liner after nudge emit; counter resets only when nudge is taken
+- Holo-style trust reweight + entity-overlap boost in HAR ranking (algorithms from holographic `FactRetriever`, Cube-native store)
+
 ## [0.34.0] - 2026-07-26
 
 ### Usefulness hardening

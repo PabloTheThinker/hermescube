@@ -402,6 +402,41 @@ class HARQueryEngine:
                 score *= 1.08
             elif ev and ev != active_vault:
                 score *= 0.92
+        # Soft gateway user affinity (Hermes user_id / user_id_alt)
+        active_user = getattr(self, "_active_user_id", "") or ""
+        if active_user and isinstance(data, dict):
+            eu = str(data.get("user_id") or "")
+            alt = getattr(self, "_active_user_id_alt", "") or ""
+            if eu and (eu == active_user or (alt and eu == alt)):
+                score *= 1.08
+            elif eu and eu != active_user:
+                score *= 0.92
+        # Holo-style trust reweight: relevance * trust (harder than soft tm alone)
+        if isinstance(trust, (int, float)):
+            t = max(0.0, min(1.0, float(trust)))
+            score *= max(0.25, min(1.15, 0.40 + 0.75 * t))
+        # Entity overlap boost (holographic multi-entity / reason idea, thin)
+        if query and isinstance(data, dict):
+            try:
+                from hermescube.mirror import extract_entities
+
+                q_ents = {e.lower() for e in extract_entities(query, max_entities=6)}
+                e_ents = {
+                    str(x).lower()
+                    for x in (data.get("entities") or [])
+                    if x
+                }
+                if not e_ents and (entry.description or ""):
+                    e_ents = {
+                        e.lower()
+                        for e in extract_entities(entry.description or "", max_entities=6)
+                    }
+                if q_ents and e_ents:
+                    inter = len(q_ents & e_ents)
+                    if inter:
+                        score *= 1.0 + 0.12 * min(3, inter)
+            except Exception:
+                pass
         return score
 
     def _hyper_query(
@@ -448,7 +483,16 @@ class HARQueryEngine:
                 sims = _np.nan_to_num((mat @ qv) / (norms * qn), nan=0.0)
                 for i, entry in enumerate(cands):
                     scored.append(
-                        (entry, self._rank_entry(entry, float(sims[i]), now=now_ts, query=text))
+                        (
+                            entry,
+                            self._rank_entry(
+                                entry,
+                                float(sims[i]),
+                                now=now_ts,
+                                query=text,
+                                q_tokens=q_toks,
+                            ),
+                        )
                     )
         if not scored:
             for entry in cands:

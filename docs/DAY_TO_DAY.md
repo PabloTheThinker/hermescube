@@ -21,6 +21,13 @@ Agent turn
 Session end → triage → numeric conflict scan → crystalize → living pulse → growth merge
 ```
 
+## Hermes-aligned consolidate nudge
+
+Hermes Agent only auto-nudges builtin MEMORY.md review. HermesCube therefore
+surfaces its own consolidate directive in `system_prompt_block` when
+`memory_nudge_interval` turns elapse: triage → crystalize → relations/merge.
+A one-line reminder may also appear in prefetch after that prompt assembly.
+
 ## Compounding loop (use this)
 
 1. **Triage** — session-end (and Living strip) shows `next_focus` + queue counts.

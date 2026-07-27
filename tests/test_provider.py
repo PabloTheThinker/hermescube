@@ -343,12 +343,30 @@ class TestCubeMemoryProvider:
 
         provider.on_turn_start(5, "msg")
         assert provider.should_review_memory() is True
+        # peek does not reset; take does
+        assert provider._turns_since_memory >= 5
+        assert provider._take_memory_review_nudge() is True
         assert provider._turns_since_memory == 0
 
     def test_should_review_memory_disabled(self):
         provider = CubeMemoryProvider(memory_nudge_interval=0)
         provider.on_turn_start(0, "msg")
         assert provider.should_review_memory() is False
+
+    def test_system_prompt_emits_consolidate_nudge(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = CubeMemoryProvider(memory_nudge_interval=3)
+            provider.initialize(session_id="s1", hermes_home=tmpdir)
+            for i in range(3):
+                provider.on_turn_start(i + 1, "msg")
+            block = provider.system_prompt_block()
+            assert "Memory review due" in block
+            assert "triage" in block
+            assert "crystalize" in block
+            # second assembly should not immediately re-nudge
+            block2 = provider.system_prompt_block()
+            assert "Memory review due" not in block2
+            provider.shutdown()
 
     def test_evolve_consolidated(self):
         with tempfile.TemporaryDirectory() as tmpdir:

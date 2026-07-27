@@ -134,6 +134,48 @@ class _FrozenSnapshot:
 
 # ── Background sync ──────────────────────────────────────────────────
 
+# Hermes context_compressor merge-into-tail markers (algorithm port; no import required)
+_MERGED_PRIOR_CONTEXT_HEADER = "[PRIOR CONTEXT — for reference only; not a new message]"
+_MERGED_SUMMARY_DELIMITER = "[END OF PRIOR CONTEXT — COMPACTION SUMMARY BELOW]"
+
+
+def _user_content_for_extract(msg: dict[str, Any]) -> str | None:
+    """Return harvestable user text, or None if the row is compressor prose.
+
+    Merge-into-tail messages wrap real prior content BEFORE the delimiter and
+    the generated handoff summary AFTER it. Drop only the summary suffix;
+    skip pure compaction summary messages entirely (holographic #57690).
+    """
+    content = msg.get("content", "")
+    if not isinstance(content, str):
+        return None
+    if _MERGED_SUMMARY_DELIMITER in content:
+        pre = content.split(_MERGED_SUMMARY_DELIMITER, 1)[0]
+        if pre.startswith(_MERGED_PRIOR_CONTEXT_HEADER):
+            pre = pre[len(_MERGED_PRIOR_CONTEXT_HEADER) :]
+        pre = pre.strip()
+        return pre or None
+    try:
+        from agent.context_compressor import is_compaction_summary_message
+
+        if is_compaction_summary_message(msg):
+            return None
+    except Exception:
+        pass
+    stripped = content.lstrip()
+    if stripped.startswith(
+        (
+            "[Context compression",
+            "[Compressed",
+            "Summary of conversation",
+            "Summary:",
+            "[COMPACTION",
+        )
+    ):
+        return None
+    return content
+
+
 class _SyncQueue:
     """Background sync worker — single-threaded, never blocks the turn."""
 
@@ -258,6 +300,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         # Turn tracking
         self._turn_count: int = 0
         self._turns_since_memory: int = 0
+        self._nudge_prefetch_line: bool = False
+        self._user_id: str = ""
+        self._user_id_alt: str = ""
         self._entries_since_evolve: int = 0
 
         # Circuit breaker for evolve
@@ -295,6 +340,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             agent_identity (str):    Profile name (e.g. "coder")
             agent_workspace (str):   Shared workspace name (e.g. "hermes")
             skip_memory (bool):      True for subagents that shouldn't write
+            user_id (str):           Gateway platform user id
+            user_id_alt (str):       Alternate stable platform user id
+            parent_session_id (str): Parent session for subagents
         """
         self._hermes_home = kwargs.get("hermes_home", "")
         self._session_id = session_id
@@ -304,6 +352,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._agent_workspace = kwargs.get("agent_workspace", "")
         self._skip_memory = kwargs.get("skip_memory", False)
         self._parent_session_id = str(kwargs.get("parent_session_id") or "")
+        self._user_id = str(kwargs.get("user_id") or "").strip()
+        self._user_id_alt = str(kwargs.get("user_id_alt") or "").strip()
         # Hermes already passes a profile-scoped hermes_home. Keep one
         # cube per home; subagent traces use branch_id metadata instead.
         self._branch_id = "main"
@@ -407,6 +457,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._engine = HARQueryEngine(self._cube)
         if getattr(self, "_vault", ""):
             setattr(self._engine, "_active_vault", self._vault)
+        if getattr(self, "_user_id", ""):
+            setattr(self._engine, "_active_user_id", self._user_id)
+            if getattr(self, "_user_id_alt", ""):
+                setattr(self._engine, "_active_user_id_alt", self._user_id_alt)
 
         # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
         try:
@@ -1121,6 +1175,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
+        # Hermes never calls should_review_memory() (builtin-only path).
+        # Surface consolidate nudge here so agents see triage/crystalize/relations.
+        if self._take_memory_review_nudge():
+            lines.append("")
+            lines.append(
+                "### Memory review due (HermesCube consolidate)\n"
+                "- Call `hermescube_manage action=triage` for consolidation queues.\n"
+                "- Then `action=crystalize` if consolidate queue is non-empty.\n"
+                "- Use `action=relations` for who/owns/related facts; "
+                "`action=merge` when Living strip says merge ready."
+            )
+            self._nudge_prefetch_line = True
+
         return "\n".join(lines)
 
     # ── MemoryProvider ABC: prefetch ──────────────────────────────
@@ -1189,9 +1256,17 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._last_prefetch_ids = []
             body = ""
         rel_block = self._relational_prefetch_assist(retrieval_query, results or [])
+        parts: list[str] = []
+        if body:
+            parts.append(body)
         if rel_block:
-            return body + "\n\n" + rel_block if body else rel_block
-        return body
+            parts.append(rel_block)
+        if getattr(self, "_nudge_prefetch_line", False):
+            parts.append(
+                "[Memory review due: hermescube_manage triage → crystalize / relations]"
+            )
+            self._nudge_prefetch_line = False
+        return "\n\n".join(parts)
 
     @staticmethod
     def _query_looks_relational(query: str) -> bool:
@@ -1330,6 +1405,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             extra["vault"] = vault
             if self._agent_workspace:
                 extra["topic"] = str(self._agent_workspace)[:80]
+        uid = getattr(self, "_user_id", "") or ""
+        if uid:
+            extra["user_id"] = uid
+            alt = getattr(self, "_user_id_alt", "") or ""
+            if alt:
+                extra["user_id_alt"] = alt
 
         outcome = "none"
         if assistant_clean:
@@ -1460,22 +1541,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._turns_since_memory += 1
 
     def should_review_memory(self) -> bool:
-        """Check if agent should be nudged to review/consolidate memory."""
+        """True when consolidate nudge is due (peek — does not reset counter)."""
         if self._memory_nudge_interval <= 0:
             return False
-        if self._turns_since_memory >= self._memory_nudge_interval:
-            self._turns_since_memory = 0
-            return True
-        return False
+        return self._turns_since_memory >= self._memory_nudge_interval
+
+    def _take_memory_review_nudge(self) -> bool:
+        """Emit consolidate nudge once; reset turn counter only when taken."""
+        if not self.should_review_memory():
+            return False
+        self._turns_since_memory = 0
+        return True
 
     def on_session_end(self, messages: list[dict[str, Any]]) -> None:
-        """Session complete — consolidation runs on background thread.
+        """Session complete — consolidation runs on the sync queue.
 
-        Heavy operations (wisdom, sleep replay, trajectory observe,
-        session digest, peer card, living pulse) are dispatched to the
-        background sync queue so the session end hook returns immediately.
-        The sync queue is flushed synchronously at the end, so the
-        caller is guaranteed all work landed.
+        Heavy operations run on the sync queue; the queue is flushed
+        before return so Hermes ``commit_session_boundary_async`` can
+        safely run ``on_session_switch`` next without misattribution.
         """
         if not self._engine or not self._cube:
             return
@@ -1778,8 +1861,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 self._prefetch_cache.clear()
 
         self._sync_queue.submit(_session_end_work)
-        # Non-blocking: work runs in background. The MemoryManager
-        # drains pending work via shutdown_all() later.
+        # Hermes MemoryManager serializes session_end → session_switch;
+        # flush so closure finishes before switch can rebind identity.
+        try:
+            self._sync_queue.flush(timeout=30.0)
+        except Exception as e:
+            logger.debug("session_end flush: %s", e)
 
     def on_session_switch(
         self,
@@ -1798,10 +1885,21 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         - rewound=True: transcript truncated, invalidate document caches
         """
         self._session_id = new_session_id
+        if parent_session_id:
+            self._parent_session_id = str(parent_session_id)
+        if kwargs.get("user_id") is not None:
+            self._user_id = str(kwargs.get("user_id") or "").strip()
+            if self._engine is not None:
+                setattr(self._engine, "_active_user_id", self._user_id)
+        if kwargs.get("user_id_alt") is not None:
+            self._user_id_alt = str(kwargs.get("user_id_alt") or "").strip()
+            if self._engine is not None:
+                setattr(self._engine, "_active_user_id_alt", self._user_id_alt)
 
         if reset:
             self._turn_count = 0
             self._turns_since_memory = 0
+            self._nudge_prefetch_line = False
             self._prefetch_cache.clear()
 
         if rewound:
@@ -1826,7 +1924,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         for msg in messages[-20:]:
             role = msg.get("role", "")
-            content = msg.get("content", "")
+            if role == "user":
+                content = _user_content_for_extract(msg)
+            else:
+                content = msg.get("content", "")
             if not isinstance(content, str) or len(content) < 10:
                 continue
 
@@ -2240,6 +2341,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
         Mirrors the Holographic provider's approach: match known
         patterns for user preferences, project decisions, and tool quirks.
+        Compaction-safe: harvest pre-delimiter user text; never store
+        compressor handoff prose (Hermes holographic #57690 algorithm).
         """
         if not self._cube:
             return
@@ -2248,18 +2351,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         for msg in messages:
             if msg.get("role") != "user":
                 continue
-            # Hermes 0.19 holo fix class: skip compaction handoff "user" summaries
-            try:
-                from agent.context_compressor import is_compaction_summary_message
-                if is_compaction_summary_message(msg):
-                    continue
-            except Exception:
-                content0 = msg.get("content", "")
-                if isinstance(content0, str) and content0.lstrip().startswith(
-                    ("[Context compression", "[Compressed", "Summary of conversation")
-                ):
-                    continue
-            content = msg.get("content", "")
+            content = _user_content_for_extract(msg)
             if not isinstance(content, str) or len(content) < 10:
                 continue
 
@@ -2276,6 +2368,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "category": category,
                                 "source": "auto_extract",
                                 "session_id": self._session_id,
+                                **(
+                                    {"user_id": self._user_id}
+                                    if getattr(self, "_user_id", "")
+                                    else {}
+                                ),
+                                **(
+                                    {"vault": self._vault}
+                                    if getattr(self, "_vault", "")
+                                    else {}
+                                ),
                             },
                         )
                         extracted += 1
@@ -3445,6 +3547,18 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 **(
                     {"vault": self._vault, "topic": (self._agent_workspace or "")[:80]}
                     if getattr(self, "_vault", "")
+                    else {}
+                ),
+                **(
+                    {
+                        "user_id": self._user_id,
+                        **(
+                            {"user_id_alt": self._user_id_alt}
+                            if getattr(self, "_user_id_alt", "")
+                            else {}
+                        ),
+                    }
+                    if getattr(self, "_user_id", "")
                     else {}
                 ),
             },
