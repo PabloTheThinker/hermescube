@@ -1,6 +1,6 @@
 name: hermescube
 manifest_version: 1
-version: "0.33.0"
+version: "0.34.0"
 description: >-
   Living Cube memory for Hermes Agent — provenance-preserving events and
   temporal claims, HAR retrieval, subagent branches, evidence-packet prefetch,

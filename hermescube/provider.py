@@ -812,14 +812,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "relations",
                             ],
                             "description": (
-                                "warehouse ops + living pulse + consent + peer + hive "
-                                "+ witness (log real friction) + harness (self-evolution) "
-                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
-                                "+ interview (peer dialogue / mint skill drafts) "
-                                "+ growth (living cube version / strength / CUBE.md) "
-                                "+ curate (refine skills from lessons / era forge+garden) "
-                                "+ triage (consolidation queues) + merge (multi-axis growth) "
-                                "+ relations (SPO query/record)"
+                                "Warehouse ops. Common: add, crystalize, pulse, triage, "
+                                "merge, relations, growth, peer, hive, hq, interview. "
+                                "See system prompt hints for when to use triage/merge/relations."
                             ),
                         },
                         "interview_action": {
@@ -1081,7 +1076,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     f"dup_pressure={stats.get('dup_pressure')} "
                     f"healthy={stats.get('healthy')}"
                 )
-                wisdom = active_wisdom(ents, limit=5)
+                wisdom = active_wisdom(
+                    ents, limit=5, vault=getattr(self, "_vault", "") or ""
+                )
                 if wisdom:
                     lines.append("Active wisdom:")
                     for w in wisdom:
@@ -1110,7 +1107,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 try:
                     from hermescube.living import prompt_strip as living_strip
 
-                    ls = living_strip(self._hermes_home, high_load=False, **self._path_kw())
+                    ls = living_strip(
+                        self._hermes_home,
+                        high_load=False,
+                        vault=getattr(self, "_vault", "") or "",
+                        **self._path_kw(),
+                    )
                     if ls:
                         lines.append("")
                         lines.append(ls)
@@ -1541,6 +1543,22 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     )
                 except Exception:
                     triage_plan = {}
+
+            # Numeric / count contradiction pass before crystalize
+            if not skip and len(entries) >= 6:
+                try:
+                    from hermescube.conflict import (
+                        annotate_numeric_pairs,
+                        scan_numeric_conflict_pairs,
+                    )
+
+                    pairs = scan_numeric_conflict_pairs(entries, limit=6)
+                    if pairs:
+                        annotate_numeric_pairs(cube, pairs)
+                        entries = list(cube.read_l1() or [])
+                        l1_reads += 1
+                except Exception:
+                    pass
 
             # Wisdom crystalize (skip when triage says nothing to consolidate)
             should_crystal = bool(

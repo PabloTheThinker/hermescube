@@ -509,6 +509,7 @@ def prompt_strip(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    vault: str = "",
 ) -> str:
     """Compact living-archive face for system prompt."""
     pkw = _path_kw(agent_identity, agent_workspace, nest_profiles)
@@ -523,6 +524,9 @@ def prompt_strip(
         return ""
     lines = ["### Living archive (chambers)"]
     lines.append(f"- {st.get('summary') or 'pulse ok'}")
+    vault = (vault or "").strip()
+    if vault:
+        lines.append(f"- Active vault: {vault} (unlabeled memories still recall)")
     if high_load:
         return "\n".join(lines)
     ch = st.get("chambers") or {}

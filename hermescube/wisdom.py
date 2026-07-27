@@ -327,8 +327,14 @@ def active_wisdom(
     entries: list[Any],
     *,
     limit: int = 8,
+    vault: str = "",
 ) -> list[Any]:
-    """Select active wisdom entries for prompt/prefetch (crystals first)."""
+    """Select active wisdom entries for prompt/prefetch (crystals first).
+
+    When ``vault`` is set, matching ``data.vault`` gets a soft boost and
+    other labeled vaults a soft penalty — unlabeled legacy entries are
+    never hard-dropped.
+    """
     # local import avoids circulars; hygiene filter optional
     try:
         from hermescube.journey import is_noise_text
@@ -336,6 +342,7 @@ def active_wisdom(
         def is_noise_text(text: str) -> bool:  # fallback when journey unavailable
             return (text or "").startswith("[CRYSTALIZED]") or (text or "").startswith("[SUPERSEDED]")
 
+    vault = (vault or "").strip()
     scored: list[tuple[float, Any]] = []
     for e in entries:
         if (e.outcome or "") == "superseded":
@@ -354,6 +361,12 @@ def active_wisdom(
             score += 0.08
         if et == "trait":
             score += 0.05
+        if vault:
+            ev = str(d.get("vault") or "")
+            if ev and ev == vault:
+                score *= 1.08
+            elif ev and ev != vault:
+                score *= 0.92
         scored.append((score, e))
     scored.sort(key=lambda x: -x[0])
     return [e for _, e in scored[:limit]]

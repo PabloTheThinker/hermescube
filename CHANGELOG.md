@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.34.0] - 2026-07-26
+
+### Usefulness hardening
+- Numeric / count contradiction scan before session-end crystalize (`conflict.py`, AgentDrive witness idea — Cube-native soft markers)
+- Vault-aware `active_wisdom` + Living prompt strip (soft boost; unlabeled never hard-dropped)
+- `docs/DAY_TO_DAY.md` rewritten as triage → crystalize → merge → relations → feedback loop
+- Trimmed `hermescube_manage` action description sprawl
+
 ## [0.33.0] - 2026-07-26
 
 ### Night-job cost + hot-path polish
