@@ -293,6 +293,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._void = None
         self._yield = None
         self._engram = None
+        self._cubewave = None
+        self._chamber = ""  # session soft chamber affinity for scoped prefetch
         self._last_prefetch_query = ""
         self._last_prefetch_ids: list[str] = []
         self._paths = None
@@ -532,6 +534,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             logger.debug("engram net skipped: %s", e)
             self._engram = None
 
+        # Cubewave — ELM/LMS brainwave field inside Cuboasis (pocket-dimension neural)
+        try:
+            from hermescube.cubewave import Cubewave
+
+            self._cubewave = Cubewave(self._paths.cubewave)
+            setattr(self._engine, "_cubewave", self._cubewave)
+        except Exception as e:
+            logger.debug("cubewave skipped: %s", e)
+            self._cubewave = None
+
         # Load trained embedder from disk if available
         embedder_path = str(self._paths.embedder)
         if os.path.isfile(embedder_path):
@@ -652,11 +664,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             net = getattr(self, "_engram", None)
             if net is not None:
                 net.save()
+            wave = getattr(self, "_cubewave", None)
+            if wave is not None:
+                wave.save()
             yg = getattr(self, "_yield", None)
             if yg is not None and hasattr(yg, "save"):
                 yg.save()
         except Exception as e:
-            logger.debug("shutdown engram/yield save failed: %s", e)
+            logger.debug("shutdown engram/cubewave/yield save failed: %s", e)
 
         # Close cube (idempotent — close() is safe on None)
         if self._cube:
@@ -881,6 +896,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "space",
                                 "connect",
                                 "progress",
+                                "cuboasis",
                                 "nexus",
                             ],
                             "description": (
@@ -891,7 +907,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "+ growth (living cube version / CUBE.md) "
                                 "+ curate (refine skills from lessons / era forge+garden) "
                                 "+ triage / merge / relations (compounding) "
-                                "+ space / connect / progress / nexus (functional infra)"
+                                "+ space / connect / progress / cuboasis (pocket-dimension infra)"
                             ),
                         },                        "interview_action": {
                             "type": "string",
@@ -1089,14 +1105,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
-        # Nexus infrastructure — space / connections / progress at a glance
+        # Cuboasis infrastructure — space / wave / connections / progress at a glance
         try:
-            from hermescube.nexus import prompt_strip as nexus_strip
+            from hermescube.cuboasis import prompt_strip as cuboasis_strip
 
-            nstrip = nexus_strip(
+            nstrip = cuboasis_strip(
                 self._hermes_home or None,
                 cube=self._cube,
                 active_vault=getattr(self, "_vault", "") or "",
+                active_chamber=getattr(self, "_chamber", "") or "",
+                cubewave=getattr(self, "_cubewave", None),
                 **self._path_kw(),
             )
             if nstrip:
@@ -1127,8 +1145,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- Offline queues: manage action=triage (what to promote); "
             "triage mode=apply to forge/annotate; action=merge when "
             "Living strip says merge ready; action=relations for who/owns/related facts",
-            "- Infrastructure: action=space (vaults/chambers), action=connect (unified neighbors), "
-            "action=progress (ledger), action=nexus (single pane)",
+            "- Cuboasis: action=space (vaults/chambers), action=connect (unified neighbors), "
+            "action=progress (ledger), action=cuboasis (single pane; Cubewave neural field)",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -1245,7 +1263,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._last_prefetch_query = retrieval_query
         self._last_prefetch_ids = []
 
-        cache_key = hashlib.md5(retrieval_query.encode()).hexdigest()
+        # Apply session chamber soft-filter to HAR for this recall
+        chamber = str(getattr(self, "_chamber", "") or "").strip()
+        if self._engine is not None:
+            setattr(self._engine, "_chamber_filter", chamber)
+
+        cache_key = hashlib.md5(
+            f"{retrieval_query}|ch:{chamber}".encode()
+        ).hexdigest()
         if cache_key in self._prefetch_cache:
             results = self._prefetch_cache[cache_key]
         else:
@@ -1277,11 +1302,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 ]
             except Exception:
                 self._last_prefetch_ids = []
-            # periodic engram flush
+            # periodic engram / cubewave flush
             try:
-                net = getattr(self, "_engram", None)
-                if net is not None and self._turn_count % 5 == 0:
-                    net.save()
+                if self._turn_count % 5 == 0:
+                    net = getattr(self, "_engram", None)
+                    if net is not None:
+                        net.save()
+                    wave = getattr(self, "_cubewave", None)
+                    if wave is not None:
+                        wave.save()
             except Exception:
                 pass
             if self._void is not None:
@@ -1810,7 +1839,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             # Progress ledger — prove the session moved the infrastructure
             if hermes_home and not skip:
                 try:
-                    from hermescube.nexus import record_progress, nexus_status
+                    from hermescube.cuboasis import record_progress, cuboasis_status
 
                     end_count = int(getattr(cube, "entry_count", 0) or 0)
                     record_progress(
@@ -1826,13 +1855,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         },
                         **path_kw,
                     )
-                    # Refresh nexus snapshot for agents / doctor
-                    nexus_status(
+                    # Refresh Cuboasis snapshot for agents / doctor
+                    cuboasis_status(
                         cube,
                         hermes_home,
                         active_vault=vault,
+                        active_chamber=getattr(self, "_chamber", "") or "",
                         colony=getattr(self, "_colony", None),
                         engram=engram,
+                        cubewave=getattr(self, "_cubewave", None),
                         **path_kw,
                     )
                 except Exception as e:
@@ -2181,6 +2212,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         ),
                     ),
                 )
+                # Cuboasis: durable claim → SPO relation store
+                try:
+                    from hermescube.cuboasis import bridge_claim_to_relation
+
+                    store = self._relation_store() if self._hermes_home else None
+                    if store is not None:
+                        bridge_claim_to_relation(claim, store)
+                except Exception as bridge_err:
+                    logger.debug("claim→SPO bridge skip: %s", bridge_err)
                 if self._engine:
                     self._engine.invalidate_cache()
                 with self._state_lock:
@@ -2618,8 +2658,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_manage_connect(args)
         elif action == "progress":
             return self._handle_manage_progress(args)
-        elif action == "nexus":
-            return self._handle_manage_nexus(args)
+        elif action in ("cuboasis", "nexus"):
+            return self._handle_manage_cuboasis(args)
         return json.dumps({"error": f"Unknown action: {action}"})
 
     def _handle_manage_curate(self, args: dict[str, Any]) -> str:
@@ -2677,7 +2717,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 plan = load_plan(self._hermes_home, **pkw) or {}
                 return json.dumps({"status": "triage", "loaded": True, **plan}, default=str)
             if mode in ("apply", "run", "execute"):
-                from hermescube.nexus import apply_triage
+                from hermescube.cuboasis import apply_triage
 
                 report = apply_triage(
                     self._cube,
@@ -2778,17 +2818,30 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if not self._cube:
             return json.dumps({"error": "Memory not initialized"})
         try:
-            from hermescube.nexus import space_map, chamber_filter_ids
+            from hermescube.cuboasis import space_map, chamber_filter_ids
 
             mode = str(args.get("mode") or args.get("content") or "status").strip().lower()
             pkw = self._path_kw()
             if mode.startswith("chamber:"):
-                ch = mode.split(":", 1)[1].strip()
+                ch = mode.split(":", 1)[1].strip().lower()
+                self._chamber = ch
+                if self._engine is not None:
+                    setattr(self._engine, "_chamber_filter", ch)
                 ids = chamber_filter_ids(self._cube, ch, limit=int(args.get("top_k") or 40))
                 return json.dumps(
-                    {"status": "space", "chamber": ch, "ids": ids, "count": len(ids)},
+                    {
+                        "status": "space",
+                        "chamber": ch,
+                        "active": True,
+                        "ids": ids,
+                        "count": len(ids),
+                    },
                     default=str,
                 )
+            if mode in ("chamber_clear", "clear_chamber", "all"):
+                self._chamber = ""
+                if self._engine is not None:
+                    setattr(self._engine, "_chamber_filter", "")
             if mode == "set" and args.get("query"):
                 # Soft-set active vault for this session (affinity tag)
                 self._vault = str(args.get("query") or "").strip()[:80]
@@ -2798,6 +2851,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 active_vault=getattr(self, "_vault", "") or "",
                 **pkw,
             )
+            report["active_chamber"] = getattr(self, "_chamber", "") or ""
             return json.dumps({"status": "space", **report}, default=str)
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -2808,7 +2862,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if not entity:
             return json.dumps({"error": "entity required in content/query"})
         try:
-            from hermescube.nexus import connect_entity
+            from hermescube.cuboasis import connect_entity
 
             report = connect_entity(
                 entity,
@@ -2817,6 +2871,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 relation_store=self._relation_store() if self._hermes_home else None,
                 colony=getattr(self, "_colony", None),
                 engram=getattr(self, "_engram", None),
+                cubewave=getattr(self, "_cubewave", None),
                 engine=self._engine,
                 limit=int(args.get("top_k") or 12),
                 **self._path_kw(),
@@ -2830,7 +2885,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if not self._hermes_home:
             return json.dumps({"error": "hermes_home not set"})
         try:
-            from hermescube.nexus import progress_status, record_progress
+            from hermescube.cuboasis import progress_status, record_progress
 
             mode = str(args.get("mode") or "").strip().lower()
             content = str(args.get("content") or "").strip()
@@ -2853,25 +2908,31 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-    def _handle_manage_nexus(self, args: dict[str, Any]) -> str:
-        """Single pane: space + connections + progress."""
+    def _handle_manage_cuboasis(self, args: dict[str, Any]) -> str:
+        """Single pane: space + Cubewave + connections + progress."""
         if not self._cube or not self._hermes_home:
             return json.dumps({"error": "Memory not initialized"})
         try:
-            from hermescube.nexus import nexus_status
+            from hermescube.cuboasis import cuboasis_status
 
-            report = nexus_status(
+            report = cuboasis_status(
                 self._cube,
                 self._hermes_home,
                 active_vault=getattr(self, "_vault", "") or "",
+                active_chamber=getattr(self, "_chamber", "") or "",
                 colony=getattr(self, "_colony", None),
                 engram=getattr(self, "_engram", None),
+                cubewave=getattr(self, "_cubewave", None),
                 relation_store=self._relation_store(),
                 **self._path_kw(),
             )
-            return json.dumps({"status": "nexus", **report}, default=str)
+            return json.dumps({"status": "cuboasis", **report}, default=str)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    def _handle_manage_nexus(self, args: dict[str, Any]) -> str:
+        """Deprecated alias for cuboasis."""
+        return self._handle_manage_cuboasis(args)
 
     def _handle_manage_growth(self, args: dict[str, Any]) -> str:
         """Living cube genealogy — version, strength, eras, skill lineage."""
@@ -3959,10 +4020,34 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
+        # Cubewave: LMS + edge update from usefulness (pocket-dimension learning)
+        try:
+            wave = getattr(self, "_cubewave", None)
+            if wave is not None:
+                cohort = args.get("cohort_ids") or args.get("entry_ids")
+                ids = [entry_id]
+                if isinstance(cohort, list):
+                    ids.extend(str(x) for x in cohort if x)
+                elif getattr(self, "_last_prefetch_ids", None):
+                    ids.extend(str(x) for x in self._last_prefetch_ids[:12])
+                q = (
+                    args.get("query")
+                    or getattr(self, "_last_prefetch_query", None)
+                    or (entry.description or "")[:120]
+                )
+                wave.learn_feedback(
+                    ids,
+                    helpful=(action == "helpful"),
+                    query_text=str(q or ""),
+                )
+                wave.save()
+        except Exception:
+            pass
+
         # Progress ledger — usefulness signal
         if self._hermes_home:
             try:
-                from hermescube.nexus import record_progress
+                from hermescube.cuboasis import record_progress
 
                 record_progress(
                     self._hermes_home,

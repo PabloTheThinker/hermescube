@@ -527,6 +527,21 @@ class HARQueryEngine:
             scored,
             q if isinstance(q, list) else (list(q) if q is not None else None),
         )
+        # Cubewave re-rank: pocket-dimension brainwave field (ELM + LMS)
+        scored = self._apply_cubewave(
+            scored,
+            q if isinstance(q, list) else (list(q) if q is not None else None),
+            query_text=text,
+        )
+        # Soft chamber affinity (session-scoped pocket room)
+        chamber = str(getattr(self, "_chamber_filter", "") or "").strip()
+        if chamber:
+            try:
+                from hermescube.cuboasis import filter_by_chamber
+
+                scored = filter_by_chamber(scored, chamber, soft=True)
+            except Exception:
+                pass
         # Lex floor: strong query coverage must not lose to engram/prestige hubs
         scored = self._lex_identity_guard(scored, text)
         primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
@@ -547,6 +562,20 @@ class HARQueryEngine:
                             except Exception:
                                 pass
                     net.learn_coactivation(ids, vecs if len(vecs) >= 2 else None, strength=0.35)
+        except Exception:
+            pass
+        try:
+            wave = getattr(self, "_cubewave", None)
+            if wave is not None and out and len(out) >= 2:
+                ids = [str(getattr(e, "id", "") or "") for e, _ in out if getattr(e, "id", None)]
+                if len(ids) >= 2:
+                    qv = q if isinstance(q, list) else (list(q) if q is not None else None)
+                    wave.learn_coactivation(
+                        ids,
+                        query_text=text,
+                        query_vec=qv,
+                        strength=0.35,
+                    )
         except Exception:
             pass
         return out
@@ -663,6 +692,37 @@ class HARQueryEngine:
                 except Exception:
                     qv = None
             boosts = net.association_boosts(qv, ids)
+            if not boosts:
+                return scored
+            rescored = [
+                (e, float(s) * float(boosts.get(str(getattr(e, "id", "") or ""), 1.0)))
+                for e, s in scored
+            ]
+            rescored.sort(key=_rank_key)
+            return rescored
+        except Exception:
+            return scored
+
+    def _apply_cubewave(
+        self,
+        scored: list[tuple[CubeEntry, float]],
+        query_vec: list[float] | None,
+        *,
+        query_text: str = "",
+    ) -> list[tuple[CubeEntry, float]]:
+        wave = getattr(self, "_cubewave", None)
+        if wave is None or not scored:
+            return scored
+        try:
+            pool = scored[: min(48, len(scored))]
+            ids = [str(getattr(e, "id", "") or "") for e, _ in pool]
+            qv = None
+            if query_vec is not None:
+                try:
+                    qv = [float(x) for x in list(query_vec)[:512]]
+                except Exception:
+                    qv = None
+            boosts = wave.association_boosts(qv, ids, query_text=query_text)
             if not boosts:
                 return scored
             rescored = [

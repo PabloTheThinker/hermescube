@@ -88,12 +88,14 @@ garden before lived memory — `era: eden`, display **Cube of Eden** —
 then leaves through Awakening → Formed → Seasoned → Elder as capability
 rises. Legacy `genesis` migrates automatically.
 
-**Nexus infrastructure (0.39+):** the cube gains a true internal
-infrastructure layer — **space** (vaults + chambers), **connections**
-(unified SPO ∪ colony ∪ engram ∪ HAR neighbors), and **progress**
-(append-only ledger + usefulness rollup). Agents navigate with
-`manage action=space|connect|progress|nexus`; triage can `mode=apply`
-to forge and annotate instead of only planning. See [docs/NEXUS.md](docs/NEXUS.md).
+**Cuboasis (0.40+):** the cube’s pocket-dimension infrastructure —
+**space** (vaults + chambers), **wave** (Cubewave neural field),
+**connections** (unified SPO ∪ colony ∪ engram ∪ Cubewave ∪ HAR), and
+**progress** (append-only ledger + usefulness rollup folded into capability).
+Agents navigate with `manage action=space|connect|progress|cuboasis`;
+triage can `mode=apply` to forge and annotate. See [docs/CUBOASIS.md](docs/CUBOASIS.md).
+
+**Nexus (0.39):** renamed to Cuboasis in 0.40; `action=nexus` remains an alias.
 
 | Layer | Job | Cube relation |
 |-------|-----|----------------|

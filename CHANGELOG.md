@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.40.0] - 2026-07-27
+
+### Cuboasis — pocket-dimension memory oasis (+ Cubewave)
+- **Rename**: functional infra framework is now **Cuboasis** (was Nexus) — Cube-native name for the internal pocket dimension
+- New `hermescube/cuboasis.py` spine: **space** · **wave** · **connections** · **progress**
+- **Cubewave** (`hermescube/cubewave.py`): ELM/LMS neural-like association field wired into HAR beside EngramNet — brainwave mimic without torch
+- Manage actions: `space`, `connect`, `progress`, `cuboasis` (`nexus` kept as alias); triage `mode=apply`
+- Chamber-scoped prefetch: `space mode=chamber:<name>` soft-filters recall into a pocket room
+- Claim → SPO: durable MEMORY.md mirrors bridge inferred subject/predicate/object into RelationStore
+- Stronger entity extract (relation pairs, backticks, path basenames, Cuboasis/Cubewave/Eden phrases)
+- Outcome-weighted capability: progress ledger usefulness folds into `genealogy.measure_strength`
+- Sidecars: `cuboasis_state.json`, `cubewave.json` (+ legacy `nexus_state.json`)
+- Docs: [docs/CUBOASIS.md](docs/CUBOASIS.md); PURPOSE updated
+
 ## [0.39.0] - 2026-07-27
 
 ### Nexus — functional memory infrastructure

@@ -54,7 +54,7 @@ _STOP_ENT = frozenset({
     "session", "turn", "reply", "answer", "question", "context", "prompt",
 })
 
-# Known multiword concepts (bee landmarks)
+# Known multiword concepts (bee landmarks + Cuboasis pocket dimension)
 _CANON_PHRASES = (
     ("mission zero", "Mission Zero"),
     ("founding five", "Founding Five"),
@@ -62,7 +62,22 @@ _CANON_PHRASES = (
     ("memory cube", "memory.cube"),
     ("ship gate", "ship gate"),
     ("query rewrite", "query rewrite"),
+    ("cube of eden", "Cube of Eden"),
+    ("hermes cube", "HermesCube"),
+    ("hermescube", "HermesCube"),
+    ("cuboasis", "Cuboasis"),
+    ("cubewave", "Cubewave"),
 )
+
+# Ownership / relation patterns for stronger entity+edge harvest
+_RE_REL_PAIR = re.compile(
+    r"\b([A-Z][A-Za-z0-9_.\-]+(?:\s+[A-Z][A-Za-z0-9_.\-]+){0,2})\s+"
+    r"(?:owns|uses|runs|manages|prefers|built|wrote|maintains)\s+"
+    r"([A-Za-z0-9_.\-/$][A-Za-z0-9_.\-/$]{1,40})",
+    re.I,
+)
+_RE_BACKTICK = re.compile(r"`([A-Za-z0-9_./\-]{2,48})`")
+_RE_PATHISH = re.compile(r"(?:^|[\s\"'(])(/[\w./\-]{3,60}|~/[\w./\-]{2,60})")
 
 
 def _sentence_start_offsets(text: str) -> set[int]:
@@ -86,7 +101,7 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
 
-    def _add(raw: str) -> None:
+    def _add(raw: str, *, allow_lower: bool = False) -> None:
         s = " ".join(raw.strip().split())
         if len(s) < 2:
             return
@@ -99,7 +114,8 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
                 return
             # single token must look like a name or a machine identifier
             if not (
-                s[:1].isupper()
+                allow_lower
+                or s[:1].isupper()
                 or s.startswith("$")
                 or "_" in s
                 or "." in s
@@ -122,6 +138,19 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
         _add(m.group(0).split("/")[0])  # $HERMES_HOME from longer path
     for m in _RE_QUOTE.finditer(text):
         _add(m.group(1))
+    for m in _RE_BACKTICK.finditer(text):
+        _add(m.group(1))
+    for m in _RE_REL_PAIR.finditer(text):
+        _add(m.group(1))
+        _add(m.group(2), allow_lower=True)
+    for m in _RE_PATHISH.finditer(text):
+        # Keep basename-ish path tokens without flooding with full trees
+        p = m.group(1).rstrip(".,;:)")
+        base = p.rsplit("/", 1)[-1]
+        if base and len(base) >= 3:
+            _add(base)
+        if len(p) <= 40:
+            _add(p)
 
     # Machine identifiers — dotted before hyphen/snake so "memory.cube" is
     # captured whole rather than as two fragments.

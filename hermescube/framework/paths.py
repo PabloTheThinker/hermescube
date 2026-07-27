@@ -46,6 +46,9 @@ class CubePaths:
     living_state: Path
     catalog: Path
     progress_ledger: Path
+    cuboasis_state: Path
+    cubewave: Path
+    # Legacy alias kept for callers that still read nexus_state
     nexus_state: Path
 
     def ensure(self) -> None:
@@ -112,6 +115,8 @@ def resolve_cube_paths(
         living_state=side / "living_state.json",
         catalog=side / "catalog.json",
         progress_ledger=side / "progress.jsonl",
+        cuboasis_state=side / "cuboasis_state.json",
+        cubewave=side / "cubewave.json",
         nexus_state=side / "nexus_state.json",
     )
 
@@ -136,6 +141,8 @@ _LEGACY_SIDE_CARS = (
     ("living_state.json", "living_state"),
     ("catalog.json", "catalog"),
     ("progress.jsonl", "progress_ledger"),
+    ("cuboasis_state.json", "cuboasis_state"),
+    ("cubewave.json", "cubewave"),
     ("nexus_state.json", "nexus_state"),
 )
 

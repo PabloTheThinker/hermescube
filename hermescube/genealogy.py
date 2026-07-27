@@ -256,7 +256,31 @@ def measure_strength(
     score += min(8.0, counts["interviews"] * 2.0)
     score += min(10.0, counts["predictions_confirmed"] * 5.0)
     score += min(7.0, counts["mean_trust"] * 7.0)
-    score = round(min(100.0, score), 1)
+
+    # Outcome-weighted usefulness from Cuboasis progress ledger
+    # (helpful feedback compounds capability; unhelpful dampens slightly)
+    usefulness_rate = None
+    helpful_n = 0
+    unhelpful_n = 0
+    try:
+        from hermescube.cuboasis import progress_usefulness
+
+        u = progress_usefulness(home)
+        helpful_n = int(u.get("helpful") or 0)
+        unhelpful_n = int(u.get("unhelpful") or 0)
+        usefulness_rate = u.get("usefulness")
+        if usefulness_rate is not None:
+            # up to +8 for consistently helpful; mild penalty if mostly unhelpful
+            score += min(8.0, max(-3.0, (float(usefulness_rate) - 0.5) * 16.0))
+            # volume of judged outcomes also counts (capped)
+            score += min(4.0, (helpful_n + unhelpful_n) * 0.25)
+    except Exception:
+        pass
+    counts["helpful_feedback"] = helpful_n
+    counts["unhelpful_feedback"] = unhelpful_n
+    counts["usefulness"] = usefulness_rate
+
+    score = round(min(100.0, max(0.0, score)), 1)
 
     era = ERA_EDEN
     for thr in _ERA_THRESHOLDS:
@@ -268,6 +292,7 @@ def measure_strength(
         "era": era,
         "era_label": era_label(era),
         "counts": counts,
+        "usefulness": usefulness_rate,
     }
 
 
