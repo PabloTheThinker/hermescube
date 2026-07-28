@@ -64,6 +64,12 @@ _INFRA_ALLOWLIST = frozenset({
     "celery", "fastapi", "django", "flask", "pytorch", "cuda", "ollama",
     "supabase", "cloudflare", "vercel", "github", "gitlab", "s3", "gcs",
     "openai", "anthropic", "hermes", "cuboasis", "cubewave", "engram",
+    "neo4j", "clickhouse", "cassandra", "memcached", "traefik", "istio",
+    "helm", "pulumi", "nomad", "consul", "vault", "keycloak", "okta",
+    "stripe", "twilio", "sendgrid", "datadog", "sentry", "loki", "jaeger",
+    "temporal", "airflow", "spark", "flink", "triton", "vllm", "langchain",
+    "qdrant", "milvus", "weaviate", "pinecone", "chromadb", "faiss",
+    "typescript", "javascript", "python", "golang", "rust", "kotlin",
 })
 
 _RE_HASHTAG = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_-]{2,32})\b")
@@ -275,7 +281,12 @@ def mine_corpus_terms(
         for ph in seen_ph:
             phrase_df[ph] += 1
 
-    max_df = max(_MINE_MIN_DF_TERM, int(n * _MINE_MAX_DF_RATIO))
+    # Small corpora of near-duplicate seeds would otherwise treat every
+    # recurring landmark as "background" (df ≈ n). Allow full df there.
+    if n < 20:
+        max_df = n
+    else:
+        max_df = max(_MINE_MIN_DF_TERM, int(n * _MINE_MAX_DF_RATIO))
     terms = {
         w for w, df in term_df.items()
         if _MINE_MIN_DF_TERM <= df <= max_df
@@ -457,3 +468,87 @@ def annotate_entities_on_append(description: str, data: dict | None) -> dict:
         # re-clean legacy
         d["entities"] = extract_entities(" ".join(str(x) for x in d.get("entities") or []))
     return d
+
+
+def enrich_entries_with_mined_entities(
+    cube: Any,
+    entries: list[Any] | None = None,
+    *,
+    max_touch: int = 12,
+) -> dict[str, Any]:
+    """Persist corpus-mined lowercase landmarks as ``[ENTITY]`` rows.
+
+    Append-only: one landmark row per mined term (idempotent). HAR entity
+    overlap then sees stable nodes without rewriting history. Skips terms
+    already present on any entry's ``data.entities`` *and* already mined.
+    """
+    if cube is None:
+        return {"ok": False, "enriched": 0}
+    try:
+        ents = list(entries) if entries is not None else list(cube.read_l1() or [])
+    except Exception:
+        return {"ok": False, "enriched": 0, "error": "read_l1 failed"}
+    if len(ents) < 4:
+        return {"ok": True, "enriched": 0, "skipped": "too_few"}
+
+    # Do not mine from prior [ENTITY] rows — that creates an endless feedback loop
+    descs = [
+        getattr(e, "description", "") or ""
+        for e in ents
+        if not (getattr(e, "description", "") or "").startswith("[ENTITY]")
+    ]
+    terms, phrases = mine_corpus_terms(descs)
+    landmarks = set(terms) | set(phrases)
+    if not landmarks:
+        return {"ok": True, "enriched": 0, "skipped": "no_mined"}
+
+    existing_entity_rows = {
+        (e.description or "").lower()
+        for e in ents
+        if (e.description or "").startswith("[ENTITY]")
+    }
+    already_on_entries: set[str] = set()
+    for e in ents:
+        data = e.data if isinstance(getattr(e, "data", None), dict) else {}
+        for x in data.get("entities") or []:
+            already_on_entries.add(str(x).lower())
+
+    touched = 0
+    samples: list[str] = []
+    # Prefer terms that actually appear in recent descriptions
+    for term in sorted(landmarks, key=len, reverse=True):
+        if touched >= max_touch:
+            break
+        label = f"[ENTITY] {term}"
+        if label.lower() in existing_entity_rows:
+            continue
+        # Need at least one supporting description
+        if not any(term in (d or "").lower() for d in descs):
+            continue
+        try:
+            cube.append(
+                entry_type="landmark",
+                description=label,
+                data={
+                    "source": "entity_mine",
+                    "durable": True,
+                    "trust": 0.55,
+                    "entities": [term],
+                    "mined": True,
+                },
+                outcome="none",
+            )
+            existing_entity_rows.add(label.lower())
+            touched += 1
+            if len(samples) < 5:
+                samples.append(term)
+        except Exception:
+            continue
+    return {
+        "ok": True,
+        "enriched": touched,
+        "mined_terms": len(terms),
+        "mined_phrases": len(phrases),
+        "already_labeled": len(already_on_entries),
+        "samples": samples,
+    }

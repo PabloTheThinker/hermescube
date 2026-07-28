@@ -1,9 +1,9 @@
 # HermesCube project assessment & audit
 
 **Date:** 2026-07-27  
-**Version:** 0.43.0  
+**Version:** 0.44.0  
 **Repo:** https://github.com/PabloTheThinker/hermescube  
-**Basis:** Instant agent onboarding (bootstrap import + operate skills) + A− lift pass + Hermes MemoryProvider contract
+**Basis:** Sub-A lift (provider modularization, CLI doctor/dense, entity mine-on-pulse) + onboarding + Hermes contract
 
 ---
 
@@ -11,21 +11,23 @@
 
 | Dimension | Grade | Note |
 |-----------|:-----:|------|
-| Ship readiness (public) | **A** | Clean `main`, isolation check, 446+ tests, no open PRs |
+| Ship readiness (public) | **A** | Clean `main`, isolation check, 451 tests, no open PRs |
 | Agent onboarding | **A** | Instant prompt manual + auto-bootstrap MEMORY.md + bundled skills |
 | Hermes Agent integration | **A** | Native MemoryProvider; profile/workspace/`user_id`; session-end flush |
 | Day-to-day no-loss | **A** | WAL sync_turn; MEMORY.md mirror; compaction-safe extract |
-| Recall quality + speed | **A** | IR/assoc gates; trust×rank + entity overlap; infra allowlist; warm prefetch |
+| Recall quality + speed | **A** | IR/assoc + mine-on-pulse entity landmarks + expanded infra allowlist |
 | Compounding usefulness | **A** | Triage→crystalize→merge→relations agent-visible |
 | Cuboasis / governance | **A** | Review-first wired into sync extract; prompt queue + redact blocked candidates |
 | Multi-project / gateway isolation | **A** | Nested sidecars + vault/`user_id`/`user_id_alt`; prefetch cache keyed; peer_card nests |
-| Night-job / session-end cost | **A** | Single L1 + reuse entries; stage timers; observe capped; idle skip evolve; flush bool |
-| Fleet / hive / growth stack | **A−** | On main; hive assimilate/draw now run memory_safety |
-| Install / update UX | **A** | Dual-manifest guard; doctor version skew + nest args; install seeds `memory_policy` |
+| Night-job / session-end cost | **A** | Pipeline in `session_end.py`; timers; observe capped; idle skip evolve |
+| Fleet / hive / growth stack | **A** | Solo-path first in manual; hive gated; assimilate/draw safety |
+| Install / update UX | **A** | Doctor density+bootstrap; `hermescube dense`; install seeds skills |
 | Security baseline | **A** | JWT/Slack/ghp gates; doctrine-override threats; blocked candidate redaction |
-| Code health | **B** | Powerful surface; `provider.py` still large |
+| Docs honesty | **A** | ASSESSMENT aligned to 0.44 |
+| Code health | **A−** | Prompt + session-end extracted; manage handlers still concentrated |
+| CLI coverage | **A−** | Doctor/dense/bootstrap covered; hive/hq CLI still lighter |
 
-**Verdict: Ship and run.** Suitable as the deep memory layer for Hermes-based company agents. Remaining polish is provider modularization and CLI coverage — not blockers.
+**Verdict: Ship and run.** Suitable as the deep memory layer for Hermes-based company agents. Next polish: keep peeling manage handlers from `provider.py`.
 
 ---
 
@@ -46,37 +48,30 @@ Borrowed from official Hermes holographic / MemoryManager: trust-weighted IR, co
 
 | Check | Result |
 |-------|--------|
-| Tests | **440 passed** (incl. A− lift suite + Hermes alignment) |
-| Coverage | ~76% package lines; CLI still lighter |
+| Tests | **451 passed** |
 | Versions aligned | `plugin.yaml` / `pyproject` / `__init__` via `check_isolation.sh` |
 | Tracked `.cube` / user data in git | **none** |
 | Public remote | PabloTheThinker/hermescube · `main` only |
 
-### Strengths (0.42)
-- Agent-visible Cuboasis policy + pending candidate summaries (`mode=review`)
-- Sync-turn fact extracts honor `memory_policy` + vault/`user_id` tags
-- System-prompt Cuboasis strip is **light** (no full L1 remap)
-- Session-end records `session_end_ms` / stage timers / flush OK flag
-- Blocked candidate bodies redacted to hash + reasons
-- Hive assimilate/draw pass `memory_safety`
-- Doctor: `--identity`/`--workspace`, version skew, effective plugin config
-- Entity extract: infra allowlist (`redis`/`postgres`/…) + hashtag/handle; semver filtered
+### Strengths (0.44)
+- `agent_manual.py` + `session_end.py` peeled from the provider hub
+- Entity mine-on-pulse persists `[ENTITY]` landmarks for assoc recall
+- `hermescube dense` portable text companion; doctor surfaces density + bootstrap
+- Instant onboarding (0.43) + A− closure (0.42) still hold
 
 ### Remaining gaps
-- `provider.py` still the hub (modularization deferred)
-- Live file density still vector-dominated (f16 migrator deferred)
-- CLI line coverage still the weakest package slice
-- Solo users can ignore hive/HQ — PURPOSE should keep “solo path” first (docs)
+- Manage handlers still live mostly in `provider.py`
+- In-place f16 vector rewrite remains a future format bump (dense export covers ship/backup)
+- Hive/HQ CLI paths still lighter on tests
 
 ---
 
 ## 4. How it works for a company agent
 
-1. Agent starts → Hermes loads SOUL + MEMORY.md + Cube system block (+ Cuboasis policy / Living strips)  
-2. Each user turn → Cube **prefetch** injects top related memories (+ relational SPO assist)  
-3. After reply → Cube **sync_turn** WAL-writes the exchange (vault/`user_id` tags; extracts gated by policy)  
-4. Session end → triage → numeric conflict scan → capped crystalize → living pulse → growth merge (timed + flushed)  
-5. After N turns → consolidate nudge in system prompt (includes Cuboasis review when review-first)
+1. Agent starts → Hermes loads SOUL + MEMORY.md + Cube operating manual (+ Cuboasis / Living strips)  
+2. Empty warehouse → auto-bootstrap imports hot markdown + installs operate/import skills  
+3. Each turn → prefetch + sync_turn (policy-gated extracts)  
+4. Session end → triage → conflicts → crystalize → pulse/entity-mine → growth merge (timed + flushed)  
 
 See [DAY_TO_DAY.md](DAY_TO_DAY.md) and [CUBOASIS.md](CUBOASIS.md).
 

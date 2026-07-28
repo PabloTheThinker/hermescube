@@ -440,7 +440,23 @@ class CubeFile:
             "data_bytes": data_b,
             "vec_bytes_estimate": vec_b,
             "text_plus_data_share": ((text_b + data_b) / total) if total else 0,
-            "note": "v1 float64 vectors dominate; dense f16 migration tracked for 0.7",
+            "text_plus_data_share_pct": round(
+                100.0 * ((text_b + data_b) / total), 2
+            )
+            if total
+            else 0.0,
+            "vector_share_pct": round(100.0 * (vec_b / total), 2) if total else 0.0,
+            "recommendation": (
+                "vectors dominate disk — keep live .cube for recall; "
+                "run `hermescube dense` for portable text backup / ship"
+                if total and vec_b > (text_b + data_b) * 2
+                else "density healthy for live recall"
+            ),
+            "note": (
+                "v1 stores float64 vectors in-file (fast local recall). "
+                "Dense gzip JSONL export is the portable text companion; "
+                "in-place f16 rewrite remains a future format bump."
+            ),
         }
 
     def integrity_check(self) -> dict:

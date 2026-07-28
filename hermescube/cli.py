@@ -528,6 +528,31 @@ def main(argv: list[str] | None = None) -> int:
         help="For curate: force era-milestone forge+garden pass",
     )
 
+    p_dense = sub.add_parser(
+        "dense",
+        help="Portable dense text archive (gzip JSONL) — backup/ship without vectors",
+    )
+    p_dense.add_argument(
+        "dense_command",
+        choices=["export", "import", "stats"],
+        help="export live→dense · import dense→live · stats on live cube",
+    )
+    p_dense.add_argument(
+        "--cube",
+        default=None,
+        help="Live .cube path (default: $HERMES_HOME/memories/memory.cube)",
+    )
+    p_dense.add_argument(
+        "--out",
+        default=None,
+        help="Dense archive path (default: memories/memory.dense.jsonl.gz)",
+    )
+    p_dense.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Override HERMES_HOME for default paths",
+    )
+
     p_har = sub.add_parser(
         "harness",
         help="Self-evolution harness: status/witness/critic/verify/gardener",
@@ -570,6 +595,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_interview(args)
     if args.command == "growth":
         return cmd_growth(args)
+    if args.command == "dense":
+        return cmd_dense(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -1011,6 +1038,62 @@ def cmd_harness(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_dense(args: argparse.Namespace) -> int:
+    """Export/import portable dense text archives (no float vectors)."""
+    import os
+    from pathlib import Path
+
+    from hermescube.dense import export_dense, import_dense_into_cube
+
+    home = Path(
+        args.hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes")
+    )
+    cube = Path(args.cube) if args.cube else (home / "memories" / "memory.cube")
+    out = (
+        Path(args.out)
+        if args.out
+        else (home / "memories" / "memory.dense.jsonl.gz")
+    )
+    cmd = args.dense_command
+    if cmd == "stats":
+        if not cube.is_file():
+            print(f"cube missing: {cube}", file=sys.stderr)
+            return 1
+        with CubeFile.open(str(cube)) as c:
+            dens = c.density_stats()
+        print("HermesCube density")
+        print(f"  cube: {cube}")
+        print(f"  entries: {dens.get('entries')}")
+        print(
+            f"  text+data: {dens.get('text_plus_data_share_pct')}% · "
+            f"vectors≈{dens.get('vector_share_pct')}%"
+        )
+        print(f"  recommendation: {dens.get('recommendation')}")
+        print(f"  note: {dens.get('note')}")
+        return 0
+    if cmd == "export":
+        if not cube.is_file():
+            print(f"cube missing: {cube}", file=sys.stderr)
+            return 1
+        r = export_dense(cube, out)
+        print(
+            f"exported {r.get('entries')} entries → {r.get('path')} "
+            f"({r.get('out_bytes')} bytes, ratio={r.get('compression_ratio'):.1f}x)"
+        )
+        return 0
+    if cmd == "import":
+        if not out.is_file():
+            # allow --out as the dense source for import
+            src = out
+            print(f"dense archive missing: {src}", file=sys.stderr)
+            return 1
+        n = import_dense_into_cube(out, cube, create=True)
+        print(f"imported {n} entries into {cube}")
+        return 0
+    print(f"unknown dense command: {cmd}", file=sys.stderr)
+    return 1
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     import os
     from pathlib import Path
@@ -1105,6 +1188,27 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                   f"cubelog={integ.get('cubelog_bytes')}")
             for issue in integ.get("issues") or []:
                 print(f"    ! {issue}")
+            try:
+                dens = c.density_stats()
+                print(
+                    f"  density: text+data={dens.get('text_plus_data_share_pct')}% "
+                    f"vectors≈{dens.get('vector_share_pct')}% "
+                    f"→ {dens.get('recommendation')}"
+                )
+            except Exception as e:
+                print(f"  density: n/a ({e})")
+            try:
+                from hermescube.bootstrap import bootstrap_status
+
+                bst = bootstrap_status(c, str(home))
+                print(
+                    f"  bootstrap: entries={bst.get('cube_entries')} "
+                    f"needs_import={bst.get('needs_import')} "
+                    f"skills={bst.get('skills_installed')} "
+                    f"hint={bst.get('hint')}"
+                )
+            except Exception as e:
+                print(f"  bootstrap: n/a ({e})")
             try:
                 from hermescube.wisdom import functional_loop_stats
 

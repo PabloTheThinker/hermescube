@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.44.0] - 2026-07-27
+
+### Lift remaining sub-A grades — modularity, CLI, entities, density
+- Extract `agent_manual.py` (system prompt) and `session_end.py` (session-end pipeline) from `provider.py` (~540 LOC out of the hub)
+- Entity mine-on-pulse: `enrich_entries_with_mined_entities` + expanded infra allowlist; small-corpus DF fix
+- CLI: `hermescube dense export|import|stats`; doctor shows density + bootstrap readiness
+- Density stats: vector/text share % + recommendation (dense export companion; f16 remains future format bump)
+- Solo-path callout in agent manual; tests: `test_cli_doctor_dense.py`, `test_entity_enrich.py` (451 total)
+
 ## [0.43.0] - 2026-07-27
 
 ### Instant agent onboarding — bootstrap + operate skills

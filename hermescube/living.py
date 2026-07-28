@@ -324,6 +324,20 @@ def chamber_pulse(
     except Exception as e:
         report["chambers"]["catalog"] = {"error": str(e)}
 
+    # --- entity mine chamber (persist corpus landmarks for assoc recall) ---
+    if n >= 6:
+        try:
+            from hermescube.mirror import enrich_entries_with_mined_entities
+
+            er = enrich_entries_with_mined_entities(cube, entries, max_touch=8)
+            report["chambers"]["entities"] = er
+            if er.get("enriched"):
+                entries = list(cube.read_l1() or [])
+        except Exception as e:
+            report["chambers"]["entities"] = {"error": str(e)}
+    else:
+        report["chambers"]["entities"] = {"skipped": True}
+
     # --- doctrine chamber (wisdom crystalize lite) ---
     if do_crystalize and n >= 6:
         try:
