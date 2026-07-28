@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Purpose — Cube as Hermespace generator core
+- Reframe [PURPOSE.md](PURPOSE.md) + [ABOUT.md](ABOUT.md): HermesCube is the deep-memory **generator** that powers Hermespace
+- Rewrite [docs/HERMESPACE.md](docs/HERMESPACE.md) — generator contract (inject / seal / world charge / status / authority)
+- `space_bridge` module docs aligned with generator language (APIs unchanged)
+
 ## [0.47.0] - 2026-07-27
 
 ### CubeDream complete stack — dialogue, auto-circle, skim, L4 + peel

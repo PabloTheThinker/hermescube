@@ -1,14 +1,17 @@
-"""Hermespace integration — Cube as Space's deep-memory module.
+"""Hermespace generator bridge — Cube powers Space.
 
-Problem Hermespace solves poorly alone under high load:
-  large inject (world, fabric, episodes) → context bloat → monotropic collapse.
+HermesCube is the **core generator** for Hermespace (the pocket workbench).
+Hermespace owns FOA / dual decode / inject budget; Cube owns the durable
+``.cube`` archive and generates dense power when Space asks:
 
-Cube role:
-  Keep the long tail offline in .cube; on FOA turns inject only a **tiny**
-  relevant strip from hyper-recall. Space stays the desk/FOA; Cube is the
-  warehouse module Space opens when it needs facts without the bulk.
+  - ``build_space_inject`` — FOA strip (wisdom → hubs → query hits)
+  - ``seal_to_cube``       — desk decisions → durable archive
+  - ``sync_world_beliefs`` — charge Hermespace WorldModel from Cube wisdom
+  - ``module_status``      — generator readiness
 
-Optional dependency: Hermespace imports this; Cube never requires Space.
+Under high load, Space must not dump the world. It opens this generator and
+takes a tiny relevant strip. Soft dependency: Hermespace imports us; Cube
+never requires Space. See docs/HERMESPACE.md and PURPOSE.md.
 """
 
 from __future__ import annotations
