@@ -45,6 +45,12 @@ class CubePaths:
     journey_md: Path
     living_state: Path
     catalog: Path
+    progress_ledger: Path
+    candidates_ledger: Path
+    cuboasis_state: Path
+    cubewave: Path
+    # Legacy alias kept for callers that still read nexus_state
+    nexus_state: Path
 
     def ensure(self) -> None:
         self.memories_dir.mkdir(parents=True, exist_ok=True)
@@ -109,6 +115,11 @@ def resolve_cube_paths(
         journey_md=side / "journey.md",
         living_state=side / "living_state.json",
         catalog=side / "catalog.json",
+        progress_ledger=side / "progress.jsonl",
+        candidates_ledger=side / "candidates.jsonl",
+        cuboasis_state=side / "cuboasis_state.json",
+        cubewave=side / "cubewave.json",
+        nexus_state=side / "nexus_state.json",
     )
 
 
@@ -131,6 +142,11 @@ _LEGACY_SIDE_CARS = (
     ("journey.md", "journey_md"),
     ("living_state.json", "living_state"),
     ("catalog.json", "catalog"),
+    ("progress.jsonl", "progress_ledger"),
+    ("candidates.jsonl", "candidates_ledger"),
+    ("cuboasis_state.json", "cuboasis_state"),
+    ("cubewave.json", "cubewave"),
+    ("nexus_state.json", "nexus_state"),
 )
 
 

@@ -1,14 +1,13 @@
 name: hermescube
 manifest_version: 1
-version: "0.38.0"
+version: "0.41.0"
 description: >-
-  Living Cube memory for Hermes Agent — provenance-preserving events and
-  temporal claims, HAR retrieval, subagent branches, evidence-packet prefetch,
-  branched consolidation, consent-gated procedure→skill bridge, the Hive
-  nexus for multi-agent collective memory (nightly pilgrimage: offer,
-  assimilate, draw), peer interviews (interview-me protocol) that mint
-  consent-gated skill drafts, a grounded self-evolution harness, and Fleet HQ
-  (charters, routing, handoffs, claims, verification, baselines).
+  Living Cube memory for Hermes Agent — Cuboasis pocket-dimension governance
+  (review-first candidates, safety gate, evidence states), provenance-preserving
+  events and temporal claims, HAR + Cubewave retrieval, subagent branches,
+  evidence-packet prefetch, branched consolidation, consent-gated procedure→skill
+  bridge, the Hive nexus for multi-agent collective memory, peer interviews,
+  a grounded self-evolution harness, and Fleet HQ.
   Zero network dependencies, pure Python with optional numpy acceleration.
 author: PabloTheThinker
 license: MIT
@@ -23,6 +22,12 @@ config:
     description: Auto-extract facts from conversations at session end using regex patterns
     type: bool
     default: false
+  memory_policy:
+    description: >-
+      Cuboasis write policy for auto-extract — review-first (candidates only),
+      auto-safe (safe→durable, risky→candidate), or off
+    type: string
+    default: auto-safe
   query_rewrite:
     description: LLM query rewrite before HAR retrieval (uses auxiliary client; slow)
     type: bool

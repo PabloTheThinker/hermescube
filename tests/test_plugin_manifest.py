@@ -33,6 +33,7 @@ def test_manifest_declares_every_documented_config_key():
     cfg = _load("plugin.yaml")["config"]
     required = {
         "auto_extract",
+        "memory_policy",
         "char_limit",
         "conflict_detect",
         "dim",

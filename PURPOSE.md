@@ -88,6 +88,15 @@ garden before lived memory — `era: eden`, display **Cube of Eden** —
 then leaves through Awakening → Formed → Seasoned → Elder as capability
 rises. Legacy `genesis` migrates automatically.
 
+**Cuboasis (0.40+):** the cube’s pocket-dimension infrastructure —
+**space** (vaults + chambers), **wave** (Cubewave neural field),
+**connections** (unified SPO ∪ colony ∪ engram ∪ Cubewave ∪ HAR), and
+**progress** (append-only ledger + usefulness rollup folded into capability).
+Agents navigate with `manage action=space|connect|progress|cuboasis`;
+triage can `mode=apply` to forge and annotate. See [docs/CUBOASIS.md](docs/CUBOASIS.md).
+
+**Nexus (0.39):** renamed to Cuboasis in 0.40; `action=nexus` remains an alias.
+
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |

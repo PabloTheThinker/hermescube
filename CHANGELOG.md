@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.41.0] - 2026-07-27
+
+### Cuboasis governance — review-first memory oasis
+- New `hermescube/memory_gate.py`: safety gate, evidence states, candidate capture/review/approve/reject, rejected-decision recall, curation sync report, doctor card
+- Manage: `cuboasis mode=capture|review|approve|reject|rejected|sync|doctor`
+- Config: `memory_policy` (`review-first` / `auto-safe` / `off`) gates auto-extract durable writes
+- Sidecar: `candidates.jsonl`; evidence packets show `evidence_state`
+- CLI doctor surfaces candidate backlog + Cuboasis readiness
+- Docs: CUBOASIS governance + IDEAS_FROM_OMH ship order started
+
+[0.40.0] - 2026-07-27
+
+### Cuboasis — pocket-dimension memory oasis (+ Cubewave)
+- **Rename**: functional infra framework is now **Cuboasis** (was Nexus) — Cube-native name for the internal pocket dimension
+- New `hermescube/cuboasis.py` spine: **space** · **wave** · **connections** · **progress**
+- **Cubewave** (`hermescube/cubewave.py`): ELM/LMS neural-like association field wired into HAR beside EngramNet — brainwave mimic without torch
+- Manage actions: `space`, `connect`, `progress`, `cuboasis` (`nexus` kept as alias); triage `mode=apply`
+- Chamber-scoped prefetch: `space mode=chamber:<name>` soft-filters recall into a pocket room
+- Claim → SPO: durable MEMORY.md mirrors bridge inferred subject/predicate/object into RelationStore
+- Stronger entity extract (relation pairs, backticks, path basenames, Cuboasis/Cubewave/Eden phrases)
+- Outcome-weighted capability: progress ledger usefulness folds into `genealogy.measure_strength`
+- Sidecars: `cuboasis_state.json`, `cubewave.json` (+ legacy `nexus_state.json`)
+- Docs: [docs/CUBOASIS.md](docs/CUBOASIS.md); PURPOSE updated
+
+## [0.39.0] - 2026-07-27
+
+### Nexus — functional memory infrastructure
+- New `hermescube/nexus.py` spine: **space** (vaults + chambers), **connections** (unified SPO ∪ colony ∪ engram ∪ HAR), **progress** ledger
+- Manage actions: `space`, `connect`, `progress`, `nexus`; triage `mode=apply` forges consolidate + annotates conflicts
+- Sidecars: `progress.jsonl`, `nexus_state.json` (path registry + legacy migrate)
+- Session-end + feedback write the progress ledger; system prompt shows a Nexus infra strip
+- Docs: [docs/NEXUS.md](docs/NEXUS.md); PURPOSE updated
+
 ## [0.38.0] - 2026-07-27
 
 ### Cube of Eden — the origin era

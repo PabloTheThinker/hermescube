@@ -1115,6 +1115,31 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                     print("  growth_merge: none yet")
             except Exception as e:
                 print(f"  growth_merge: n/a ({e})")
+            try:
+                from hermescube.memory_gate import list_candidates, oasis_doctor_card
+                from hermescube.cuboasis import progress_usefulness
+
+                pend = list_candidates(str(home), status="pending", limit=5)
+                print(
+                    f"  candidates: pending={pend.get('count', 0)} "
+                    f"path={pend.get('path')}"
+                )
+                useful = progress_usefulness(str(home)).get("usefulness")
+                print(f"  usefulness: {useful}")
+                card = oasis_doctor_card(c, str(home))
+                print(
+                    f"  cuboasis_doctor: health={card.get('health')} "
+                    f"pending={card.get('pending_candidates')} "
+                    f"usefulness={card.get('usefulness')}"
+                )
+                for ch in (card.get("checks") or [])[:8]:
+                    if ch.get("status") not in ("ok", "empty"):
+                        print(
+                            f"    ! {ch.get('name')}={ch.get('status')} "
+                            f"{ch.get('detail')}"
+                        )
+            except Exception as e:
+                print(f"  cuboasis_governance: n/a ({e})")
             if not integ.get("ok"):
                 return 1
         except Exception as e:
