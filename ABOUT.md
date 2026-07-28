@@ -42,7 +42,7 @@ Hermes Agent
 3. **Living growth** — Cube of Eden → Elder; cycles; curator skill refine  
 4. **Hive + HQ + interviews** — collective memory, routing, peer craft transfer  
 5. **CubeDream** — L1 soul dream, L2 circle (chorus / conversation), L3 hive commit, L4 MEMORY.md *proposals only* (never auto-applied)  
-6. **Hermespace generator** — dense FOA strips, seals, world-belief charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))
+6. **Hermespace heart (0.48)** — `ensure_heart` / inject / seal / pulse charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))
 
 ## Non-goals
 

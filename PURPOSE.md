@@ -70,7 +70,7 @@ Hermespace is orthogonal: a turn workbench that can sit on either path.
 | Self-evolution | witness, predictions, critic, gardener | SELF_EVOLUTION |
 | Hive / HQ / interviews | pilgrimage, charters, peer craft | HIVE · HQ · INTERVIEW |
 | **CubeDream (0.47)** | L1 solo · L2 circle · auto-circle · skim · L4 proposals | CUBEDREAM |
-| **Hermespace generator** | inject / seal / world charge via `space_bridge` | HERMESPACE |
+| **Hermespace heart (0.48)** | `ensure_heart` · inject · seal · pulse charge (`space_bridge` 1.0) | HERMESPACE |
 
 **First connect:** empty warehouse → optional auto-bootstrap from MEMORY.md/USER.md + operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
 

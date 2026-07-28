@@ -1,12 +1,13 @@
-"""HermesCube — local deep-memory warehouse for Hermes Agent.
+"""HermesCube — local deep-memory heart for Hermes Agent (+ Hermespace).
 
 Binary `.cube` archive with holographic associative retrieval (HAR), Cuboasis
-governance, living growth, optional Hive/HQ, and CubeDream (solo + together).
+governance, living growth, optional Hive/HQ, CubeDream (solo + together), and
+``space_bridge`` — the generator contract that powers Hermespace.
 
-See ABOUT.md / docs/CODEMAP.md in the repository root for orientation.
+See ABOUT.md / PURPOSE.md / docs/HERMESPACE.md for orientation.
 """
 
-__version__ = "0.47.0"
+__version__ = "0.48.0"
 
 from hermescube.hrr import (
     Array,

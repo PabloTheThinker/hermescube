@@ -1,32 +1,34 @@
-# HermesCube × Hermespace — generator contract
+# HermesCube × Hermespace — heart / generator contract
 
-**HermesCube is the core.** Hermespace is the pocket workbench that **runs on Cube power**.
+**HermesCube is the heart.** Hermespace is the pocket workbench that **runs on Cube power**.
 
 Companion: [PabloTheThinker/hermespace](https://github.com/PabloTheThinker/hermespace)  
-North star: [PURPOSE.md](../PURPOSE.md)
+North star: [PURPOSE.md](../PURPOSE.md)  
+Contract version: `GENERATOR_API_VERSION = "1.0"` (additive fields OK within `1.x`)
 
 ```
 Hermes Agent
   ├── Hermespace     FOA desk · dual decode · inject budget · pulse/idle
-  │     ↑ powered by generator
+  │     ↑ powered by heart
   └── HermesCube     .cube SoT · Cuboasis · Hive · CubeDream · growth
            │
-           └─ space_bridge  (inject strip · seal intake · world charge · status)
+           └─ space_bridge  (ensure · status · inject · seal · charge · pulse)
 ```
 
-## Why “generator”
+## Why “heart”
 
 Hermespace alone can keep a turn-focused desk and a JSONL world projection.
 Under load those surfaces either **bloat context** or **starve memory**.
 
-Cube is the generator:
+Cube is the heart:
 
 1. **Stores** the long tail in `memory.cube` (no prune-as-policy)
-2. **Generates** a dense FOA strip when Space asks (`build_space_inject`)
-3. **Intakes** sealed desk decisions into the archive (`seal_to_cube`)
-4. **Charges** Space’s WorldModel active wisdom from Cube crystals (`sync_world_beliefs`)
+2. **Bootstraps** via `ensure_heart` so Space never depends on a missing file
+3. **Generates** a dense FOA strip when Space asks (`build_space_inject`)
+4. **Intakes** sealed desk decisions into the archive (`seal_learning`)
+5. **Charges** Space’s WorldModel on idle/pulse (`pulse_charge` / `sync_world_beliefs`)
 
-Space remains the workbench. Cube remains the warehouse. The generator is the
+Space remains the workbench. Cube remains the warehouse. The heart is the
 cable between them — not a second brain inside Space.
 
 ## Authority
@@ -38,35 +40,83 @@ cable between them — not a second brain inside Space.
 | Hermespace ACTIVE desk | Turn FOA only — seal important decisions into Cube |
 | MEMORY.md | Hot doctrine — Cube mirrors; dream paths only *propose* edits |
 
-## APIs (Cube package)
+## Stable APIs (Cube `hermescube.space_bridge`)
 
 ```python
 from hermescube.space_bridge import (
-    build_space_inject,  # generator → FOA strip
-    seal_to_cube,        # desk → durable archive
-    sync_world_beliefs,  # cube wisdom → WorldModel
-    module_status,       # generator readiness
-    cube_recall,         # raw (desc, score) hits
+    GENERATOR_API_VERSION,
+    ensure_heart,
+    heart_status,          # preferred (module_status is alias)
+    build_space_inject,
+    seal_learning,         # preferred structured seal
+    seal_to_cube,          # bool back-compat
+    sync_world_beliefs,
+    pulse_charge,
 )
 ```
 
 | Call | Typical Space use |
 |------|-------------------|
-| `build_space_inject(query, high_load=…)` | After world/fabric; high load → ~420 chars dense strip |
-| `seal_to_cube(content)` | `remember_learning` / sealed decisions |
-| `sync_world_beliefs()` | Journey / hygiene / evolve — fill Beliefs (Active Wisdom) |
-| `module_status()` | Doctor / desktop status |
+| `ensure_heart()` | Install / `Workbench.enter` / first pulse |
+| `heart_status()` | Doctor / desktop / feature detect `api_version` |
+| `build_space_inject(query, high_load=…)` | `pre_llm_call` after world/fabric |
+| `seal_learning(content, entry_type=…)` | `remember_learning` / sealed decisions |
+| `seal_to_cube(…)` | Legacy bool path (`cube_seal`) |
+| `pulse_charge(agent_id=…)` | `idle_tick` / pulse job — ensure + world charge |
+| `sync_world_beliefs()` | Explicit charge without ensure |
 
-## APIs (Space package)
+## Hermespace integration checklist
 
-Soft dependency — never hard-fail if Cube is missing:
+Wire these on the Space side (soft-import; never hard-fail):
+
+1. **Install / enter** — `ensure_heart()` once so `memory.cube` exists  
+2. **Feature detect** — `heart_status()["api_version"]` starts with `"1."`  
+3. **Inject** — keep `build_space_inject` in `hermes_bridge` under high load  
+4. **Seal** — prefer `seal_learning` (id + ok); keep `seal_to_cube` as fallback  
+5. **Pulse** — call `pulse_charge(agent_id=…)` from idle/pulse so World Beliefs stay charged  
+6. **Doctor** — surface `heart_ready`, `entries`, `growth.era_label` on desktop/status  
+7. **Do not** grow a second durable archive in Space — project from Cube  
+
+### Recommended `cube_module.py` shape (Space)
 
 ```python
-from hermespace.cube_module import cube_inject, cube_seal, cube_status
-```
+def cube_ensure():
+    try:
+        from hermescube.space_bridge import ensure_heart
+        return ensure_heart()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-Wired in Hermespace `hermes_bridge.on_pre_llm_call` (high-load cube strip)
-and learning seal paths.
+def cube_status():
+    try:
+        from hermescube.space_bridge import heart_status
+        return heart_status()
+    except Exception as e:
+        return {"available": False, "heart_ready": False, "error": str(e)}
+
+def cube_inject(query, *, high_load=False, max_chars=None):
+    try:
+        from hermescube.space_bridge import build_space_inject
+        return build_space_inject(query, high_load=high_load, max_chars=max_chars) or ""
+    except Exception:
+        return ""
+
+def cube_seal(content, **kwargs):
+    try:
+        from hermescube.space_bridge import seal_learning, seal_to_cube
+        if kwargs.pop("structured", False):
+            return seal_learning(content, **kwargs)
+        return bool(seal_to_cube(content, **kwargs))
+    except Exception:
+        return False
+
+def cube_pulse(*, agent_id="hermes-agent"):
+    try:
+        from hermescube.space_bridge import pulse_charge
+        return pulse_charge(agent_id=agent_id)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+```
 
 ## High load
 
@@ -92,21 +142,21 @@ Verify:
 
 ```bash
 hermescube doctor
-python -c "from hermescube.space_bridge import module_status; print(module_status())"
+python -c "from hermescube.space_bridge import heart_status; print(heart_status())"
 ```
 
 ## What Cube does *not* do for Space
 
 - Does not own FOA caps, dual decode, or pulse timers  
 - Does not replace `Workbench.receive_order`  
-- Does not dump full L1 into inject (generator = dense strip)  
+- Does not dump full L1 into inject (heart = dense strip)  
 - Does not require Space to operate as Hermes `memory.provider`
 
 ## Roadmap posture (Cube side)
 
-Deepen the generator — don’t fork a second archive inside Space:
+Deepen the heart — don’t fork a second archive inside Space:
 
 1. Keep inject hygiene (no dogfood / superseded / PERSIST spam)
 2. Prefer wisdom → hubs → query hits under load
-3. Journey push keeps WorldModel Beliefs charged from Cube
+3. `pulse_charge` keeps WorldModel Beliefs fed from Cube
 4. Cuboasis governance + CubeDream stay Cube-native; Space may *display* cards, not reimplement the gate

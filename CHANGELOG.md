@@ -1,11 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.48.0] - 2026-07-28
 
-### Purpose — Cube as Hermespace generator core
-- Reframe [PURPOSE.md](PURPOSE.md) + [ABOUT.md](ABOUT.md): HermesCube is the deep-memory **generator** that powers Hermespace
-- Rewrite [docs/HERMESPACE.md](docs/HERMESPACE.md) — generator contract (inject / seal / world charge / status / authority)
-- `space_bridge` module docs aligned with generator language (APIs unchanged)
+### Hermespace heart API — Cube ready as Space's core
+- `space_bridge` stable contract `GENERATOR_API_VERSION = "1.0"`
+- New: `ensure_heart`, `heart_status`, `seal_learning`, `pulse_charge`
+- `module_status` / `seal_to_cube` kept as back-compat aliases for Hermespace 0.18
+- Seals threat-scan + journey log; typed entry support (belief/landmark/trait/…)
+- Docs: [docs/HERMESPACE.md](docs/HERMESPACE.md) integration checklist + recommended Space `cube_module` shape
+- PURPOSE/ABOUT: Cube as Hermespace generator/heart (from prior purpose PR commits)
+
+## [Unreleased]
 
 ## [0.47.0] - 2026-07-27
 
