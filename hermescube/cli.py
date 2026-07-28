@@ -528,6 +528,51 @@ def main(argv: list[str] | None = None) -> int:
         help="For curate: force era-milestone forge+garden pass",
     )
 
+    p_dream = sub.add_parser(
+        "dream",
+        help="CubeDream: soul solo dream + hive circle (dream together)",
+    )
+    p_dream.add_argument(
+        "dream_command",
+        choices=[
+            "status",
+            "solo",
+            "circle",
+        ],
+        help="status · solo · circle …",
+    )
+    p_dream.add_argument(
+        "circle_command",
+        nargs="?",
+        default=None,
+        choices=["open", "join", "signal", "score", "close", "draw", "list", "status"],
+        help="For circle: open|join|signal|score|close|draw|list|status",
+    )
+    p_dream.add_argument("--hive", default=None, help="Hive root (default: $HERMESCUBE_HIVE)")
+    p_dream.add_argument(
+        "--hermes-home",
+        default=None,
+        help="Agent HERMES_HOME (default: $HERMES_HOME)",
+    )
+    p_dream.add_argument("--agent", default=None, help="Agent id")
+    p_dream.add_argument("--id", default="", help="Circle id")
+    p_dream.add_argument("--topic", default="", help="Circle topic")
+    p_dream.add_argument(
+        "--content",
+        default="",
+        help="For circle signal: summary text (else distill from cube)",
+    )
+    p_dream.add_argument(
+        "--apply",
+        action="store_true",
+        help="For solo: run sleep_replay + crystalize (warehouse only)",
+    )
+    p_dream.add_argument(
+        "--commit-crystalize",
+        action="store_true",
+        help="For solo --apply: crystalize for real (default dry_run)",
+    )
+
     p_dense = sub.add_parser(
         "dense",
         help="Portable dense text archive (gzip JSONL) — backup/ship without vectors",
@@ -597,6 +642,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_growth(args)
     if args.command == "dense":
         return cmd_dense(args)
+    if args.command == "dream":
+        return cmd_dream(args)
 
     if args.command == "query":
         # Parse [path.cube] query words… compatibility with tests + everyday CLI
@@ -1035,6 +1082,144 @@ def cmd_harness(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Error: unknown harness command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_dream(args: argparse.Namespace) -> int:
+    """CubeDream CLI — soul solo + hive circle (dream together)."""
+    from pathlib import Path
+
+    from hermescube import dream as dream_mod
+    from hermescube import dream_circle as circle_mod
+    from hermescube.cube import CubeFile
+    from hermescube.hive import init_hive, is_hive
+
+    home = Path(
+        args.hermes_home
+        or os.environ.get("HERMES_HOME")
+        or (Path.home() / ".hermes")
+    )
+    agent = args.agent or os.environ.get("HERMES_PROFILE") or "hermes"
+    cmd = args.dream_command
+
+    if cmd == "status":
+        st = dream_mod.dream_status(home)
+        print(f"CubeDream L1 — mode={st.get('mode')} due={st.get('due')}")
+        for r in st.get("reasons") or []:
+            print(f"  · {r}")
+        print(f"  diary: {st.get('diary')}")
+        hive = args.hive or os.environ.get("HERMESCUBE_HIVE")
+        if hive:
+            circles = circle_mod.list_circles(hive, limit=8)
+            print(f"Circles at {hive}: {len(circles)}")
+            for c in circles:
+                print(
+                    f"  · [{c.get('status')}] {c.get('circle_id')} "
+                    f"members={len(c.get('members') or [])} "
+                    f"topic={c.get('topic')!r}"
+                )
+        return 0
+
+    if cmd == "solo":
+        cube_path = home / "memories" / "memory.cube"
+        if not cube_path.is_file():
+            print(f"Error: cube missing: {cube_path}", file=sys.stderr)
+            return 1
+        with CubeFile.open(str(cube_path)) as cube:
+            from hermescube.engram_net import EngramNet
+            from hermescube.framework.paths import resolve_cube_paths
+
+            paths = resolve_cube_paths(home)
+            engram = EngramNet(paths.engram)
+            report = dream_mod.run_solo_dream(
+                cube,
+                home,
+                engram=engram,
+                apply=bool(args.apply),
+                dry_crystalize=not bool(args.commit_crystalize),
+            )
+        print(f"Soul dream {report.get('run_id')} applied={report.get('applied')}")
+        print(f"  diary: {report.get('diary')}")
+        if report.get("sleep_replay"):
+            print(f"  sleep_replay: {report['sleep_replay']}")
+        if report.get("crystalize"):
+            print(f"  crystalize: {report['crystalize']}")
+        return 0
+
+    if cmd == "circle":
+        hive = args.hive or os.environ.get("HERMESCUBE_HIVE")
+        if not hive:
+            print("Error: --hive or HERMESCUBE_HIVE required", file=sys.stderr)
+            return 1
+        if not is_hive(hive):
+            init_hive(hive)
+        sub = args.circle_command or "list"
+        if sub == "list":
+            for c in circle_mod.list_circles(hive):
+                print(
+                    f"[{c.get('status')}] {c.get('circle_id')} "
+                    f"members={c.get('members')} topic={c.get('topic')!r}"
+                )
+            return 0
+        if sub == "open":
+            r = circle_mod.open_circle(hive, opened_by=agent, topic=args.topic or "")
+            print(f"Opened circle {r.get('circle_id')} topic={r.get('topic')!r}")
+            return 0 if r.get("ok") else 1
+        cid = args.id
+        if sub != "open" and not cid and sub not in ("list",):
+            print("Error: --id required", file=sys.stderr)
+            return 1
+        if sub == "join":
+            r = circle_mod.join_circle(hive, cid, agent_id=agent)
+            print(json.dumps(r, indent=2, default=str))
+            return 0 if r.get("ok") else 1
+        if sub == "status":
+            r = circle_mod.circle_status(hive, cid)
+            print(json.dumps(r, indent=2, default=str))
+            return 0 if r.get("ok") else 1
+        if sub == "signal":
+            if args.content:
+                r = circle_mod.post_signal(
+                    hive, cid, agent_id=agent, summary=args.content
+                )
+            else:
+                cube_path = home / "memories" / "memory.cube"
+                if not cube_path.is_file():
+                    print(f"Error: cube missing: {cube_path}", file=sys.stderr)
+                    return 1
+                with CubeFile.open(str(cube_path)) as cube:
+                    r = circle_mod.signal_from_cube(
+                        hive, cid, cube, agent_id=agent
+                    )
+            print(json.dumps(r, indent=2, default=str))
+            return 0 if r.get("ok") else 1
+        if sub == "score":
+            r = circle_mod.score_circle(hive, cid, scorer=agent)
+            print(
+                f"Scored: signals={r.get('signals')} candidates={r.get('candidates')} "
+                f"together={r.get('together_count')}"
+            )
+            for t in r.get("top") or []:
+                mark = "★" if t.get("together") else "·"
+                print(f"  {mark} {t.get('score')}  {t.get('summary', '')[:70]}")
+            return 0 if r.get("ok") else 1
+        if sub == "close":
+            r = circle_mod.close_circle(hive, cid, closer=agent)
+            print(json.dumps(r, indent=2, default=str))
+            return 0 if r.get("ok") else 1
+        if sub == "draw":
+            cube_path = home / "memories" / "memory.cube"
+            if not cube_path.is_file():
+                print(f"Error: cube missing: {cube_path}", file=sys.stderr)
+                return 1
+            with CubeFile.open(str(cube_path)) as cube:
+                r = circle_mod.draw_circle(hive, cid, cube, agent_id=agent)
+            print(json.dumps(r, indent=2, default=str))
+            return 0 if r.get("ok") else 1
+        print(f"Error: unknown circle command {sub}", file=sys.stderr)
+        return 1
+
+    print(f"Error: unknown dream command {cmd}", file=sys.stderr)
     return 1
 
 

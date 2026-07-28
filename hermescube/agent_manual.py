@@ -219,4 +219,31 @@ def build_system_prompt_block(provider: Any) -> str:
         lines.append(nudge)
         provider._nudge_prefetch_line = True
 
+    if hermes_home:
+        try:
+            from hermescube.dream import reminder_strip
+
+            pending = 0
+            try:
+                from hermescube.memory_gate import list_candidates
+
+                pending = int(
+                    (
+                        list_candidates(
+                            hermes_home, status="pending", limit=1, **path_kw
+                        )
+                        or {}
+                    ).get("count")
+                    or 0
+                )
+            except Exception:
+                pending = 0
+            strip = reminder_strip(
+                hermes_home, candidate_pending=pending, **path_kw
+            )
+            if strip:
+                lines.extend(["", strip.rstrip()])
+        except Exception:
+            pass
+
     return "\n".join(lines)

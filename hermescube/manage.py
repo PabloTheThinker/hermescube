@@ -10,11 +10,13 @@ import json
 from typing import Any, Callable
 
 from hermescube import manage_cuboasis
+from hermescube import manage_dream
 from hermescube import manage_fleet
 from hermescube import manage_growth
 from hermescube import manage_warehouse
 
 _ACTIONS: dict[str, Callable[[Any, dict[str, Any]], str]] = {
+    "dream": manage_dream.handle_dream,
     "bootstrap": manage_warehouse.handle_bootstrap,
     "add": manage_warehouse.handle_add,
     "remove": manage_warehouse.handle_remove,

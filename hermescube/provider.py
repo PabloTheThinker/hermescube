@@ -973,14 +973,41 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "progress",
                                 "cuboasis",
                                 "nexus",
+                                "dream",
                             ],
                             "description": (
                                 "bootstrap (import hot memories + install skills) · "
                                 "warehouse ops + living pulse + consent + peer + hive "
                                 "+ witness + harness + hq + interview + growth + curate "
                                 "+ triage / merge / relations "
-                                "+ space / connect / progress / cuboasis"
+                                "+ space / connect / progress / cuboasis · "
+                                "dream (solo soul dream / hive circle together)"
                             ),
+                        },
+                        "circle_action": {
+                            "type": "string",
+                            "enum": [
+                                "open",
+                                "join",
+                                "signal",
+                                "score",
+                                "close",
+                                "draw",
+                                "list",
+                                "status",
+                            ],
+                            "description": (
+                                "For action=dream mode=circle: open/join/signal/"
+                                "score/close/draw/list/status"
+                            ),
+                        },
+                        "circle_id": {
+                            "type": "string",
+                            "description": "Dream circle id (action=dream circle ops)",
+                        },
+                        "topic": {
+                            "type": "string",
+                            "description": "Dream circle topic (mode=circle:open)",
                         },
                         "interview_action": {
                             "type": "string",

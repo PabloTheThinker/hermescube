@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.46.0] - 2026-07-27
+
+### CubeDream — soul dreams + dream together (circle MVP)
+- **L1 soul dream** (`dream.py`): due-reasons scheduler, `DREAMS.md` diary, `solo` / `solo:apply` (packages `sleep_replay` + crystalize; never touches MEMORY.md)
+- **L2 dream circle** (`dream_circle.py`): open → join → signal → score → close → draw
+- **Together bonus**: multi-agent agreement on `canonical_key` raises score; close promotes to `hive.cube` under hive dream lock
+- Manage: `hermescube_manage action=dream`; CLI: `hermescube dream status|solo|circle …`
+- Prompt reminder strip when soul dream is due; deep ASSESSMENT refreshed
+- Tests: `test_dream_circle.py` (460 total)
+
 ## [0.45.0] - 2026-07-27
 
 ### Peel manage hub — code health + fleet CLI coverage

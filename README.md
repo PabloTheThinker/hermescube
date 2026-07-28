@@ -7,9 +7,9 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/hermescube"><img src="https://img.shields.io/pypi/v/hermescube?color=%2334D058&label=pypi" alt="PyPI"></a>
-  <a href="https://pypi.org/project/hermescube"><img src="https://img.shields.io/pypi/pyversions/hermescube.svg?color=%2334D058" alt="Python 3.11+"></a>
+  <a href="https://github.com/PabloTheThinker/hermescube"><img src="https://img.shields.io/badge/install-git%20plugin-34D058" alt="Install via git / Hermes plugin"></a>
   <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
   <a href="https://github.com/PabloTheThinker/hermescube"><img src="https://img.shields.io/github/stars/PabloTheThinker/hermescube?style=social" alt="Stars"></a>
 </p>
