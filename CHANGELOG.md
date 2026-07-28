@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.43.0] - 2026-07-27
+
+### Instant agent onboarding — bootstrap + operate skills
+- New `hermescube/bootstrap.py`: import MEMORY.md / USER.md / SOUL.md into the warehouse (idempotent, threat-scanned) + install bundled skills
+- `hermescube_manage action=bootstrap` modes: `status` · `import` · `skills` · `all` (plus `import:force`)
+- **Auto-bootstrap on initialize** when the warehouse is empty / skills missing (`auto_bootstrap`, default true)
+- System prompt rewritten as an **instant operating manual** (mental model table, Start-here CTA, everyday loop, rules)
+- Bundled skills: `hermescube-operate`, `hermescube-import` (+ existing `interview-me`)
+- Install script copies skills and seeds the cube from hot markdown when empty
+- Tests: `tests/test_bootstrap.py`
+
 ## [0.42.0] - 2026-07-27
 
 ### A− → A lifts — governance, isolation, cost, security, doctor

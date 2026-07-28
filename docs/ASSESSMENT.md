@@ -1,9 +1,9 @@
 # HermesCube project assessment & audit
 
 **Date:** 2026-07-27  
-**Version:** 0.42.0  
+**Version:** 0.43.0  
 **Repo:** https://github.com/PabloTheThinker/hermescube  
-**Basis:** Live CI + A− lift pass (governance / isolation / session-end / security / doctor) + Hermes MemoryProvider contract
+**Basis:** Instant agent onboarding (bootstrap import + operate skills) + A− lift pass + Hermes MemoryProvider contract
 
 ---
 
@@ -11,7 +11,8 @@
 
 | Dimension | Grade | Note |
 |-----------|:-----:|------|
-| Ship readiness (public) | **A** | Clean `main`, isolation check, 440 tests, no open PRs |
+| Ship readiness (public) | **A** | Clean `main`, isolation check, 446+ tests, no open PRs |
+| Agent onboarding | **A** | Instant prompt manual + auto-bootstrap MEMORY.md + bundled skills |
 | Hermes Agent integration | **A** | Native MemoryProvider; profile/workspace/`user_id`; session-end flush |
 | Day-to-day no-loss | **A** | WAL sync_turn; MEMORY.md mirror; compaction-safe extract |
 | Recall quality + speed | **A** | IR/assoc gates; trust×rank + entity overlap; infra allowlist; warm prefetch |

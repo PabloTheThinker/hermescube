@@ -1,14 +1,11 @@
 name: hermescube
 manifest_version: 1
-version: "0.42.0"
+version: "0.43.0"
 description: >-
-  Living Cube memory for Hermes Agent — Cuboasis pocket-dimension governance
-  (review-first candidates, safety gate, evidence states), provenance-preserving
-  events and temporal claims, HAR + Cubewave retrieval, subagent branches,
-  evidence-packet prefetch, branched consolidation, consent-gated procedure→skill
-  bridge, the Hive nexus for multi-agent collective memory, peer interviews,
-  a grounded self-evolution harness, and Fleet HQ.
-  Zero network dependencies, pure Python with optional numpy acceleration.
+  Living Cube memory for Hermes Agent — instant agent onboarding (auto-bootstrap
+  from MEMORY.md + operate/import skills), Cuboasis governance, HAR + Cubewave
+  retrieval, subagent branches, branched consolidation, Hive / peer interviews /
+  Fleet HQ. Zero network deps; pure Python with optional numpy.
 author: PabloTheThinker
 license: MIT
 homepage: https://github.com/PabloTheThinker/hermescube
@@ -22,6 +19,12 @@ config:
     description: Auto-extract facts from conversations at session end using regex patterns
     type: bool
     default: false
+  auto_bootstrap:
+    description: >-
+      On first connect to an empty warehouse, import MEMORY.md/USER.md
+      and install HermesCube skills automatically
+    type: bool
+    default: true
   memory_policy:
     description: >-
       Cuboasis write policy for auto-extract — review-first (candidates only),

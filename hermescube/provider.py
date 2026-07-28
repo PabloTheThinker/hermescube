@@ -277,6 +277,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._memory_nudge_interval = memory_nudge_interval
         self._auto_extract = auto_extract
         self._memory_policy = "auto-safe"  # review-first | auto-safe | off
+        self._auto_bootstrap = True  # seed MEMORY.md + skills on empty warehouse
+        self._last_bootstrap: dict[str, Any] | None = None
         self._query_rewrite = False
         # Cadence knobs (Nous-style cost control — local)
         self._peer_card_cadence_s = 3600.0  # rebuild peer card at most hourly
@@ -450,6 +452,9 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             self._interview_on_pilgrimage = _coerce_bool(
                 plugin_config.get("interview_on_pilgrimage"), False
             )
+            self._auto_bootstrap = _coerce_bool(
+                plugin_config.get("auto_bootstrap"), self._auto_bootstrap
+            )
         else:
             self._query_rewrite = _query_rewrite_enabled(None)
             self._hive_path = os.environ.get("HERMESCUBE_HIVE", "").strip()
@@ -502,20 +507,6 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             setattr(self._engine, "_active_user_id", self._user_id)
             if getattr(self, "_user_id_alt", ""):
                 setattr(self._engine, "_active_user_id_alt", self._user_id_alt)
-
-        # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
-        try:
-            from hermescube.genealogy import ensure_genesis
-            from hermescube import __version__ as _pkg_v
-
-            ensure_genesis(
-                self._hermes_home or None,
-                agent_id=self._agent_identity or "hermes",
-                package_version=_pkg_v,
-            )
-            self._refresh_maturity()
-        except Exception as e:
-            logger.debug("genealogy genesis skipped: %s", e)
 
         # Living genealogy — fresh cubes start at 0.0.0 and grow with experience
         try:
@@ -603,6 +594,39 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             l2_centroids=centroids,
             entry_count=self._cube.entry_count,
         )
+
+        # First-run: import hot MEMORY.md/USER.md + install Cube skills so the
+        # connecting agent can search immediately (idempotent; skip for subagents).
+        if (
+            getattr(self, "_auto_bootstrap", True)
+            and self._hermes_home
+            and not self._should_skip_writes()
+            and self._agent_context == "primary"
+        ):
+            try:
+                from hermescube.bootstrap import needs_auto_bootstrap, run_bootstrap
+
+                if needs_auto_bootstrap(self._cube, self._hermes_home):
+                    self._last_bootstrap = run_bootstrap(
+                        self._cube,
+                        self._hermes_home,
+                        mode="all",
+                        vault=getattr(self, "_vault", "") or "",
+                        session_id=self._session_id or "",
+                    )
+                    if self._engine:
+                        try:
+                            self._engine.invalidate_cache()
+                        except Exception:
+                            pass
+                    self._refresh_snapshot()
+                    logger.info(
+                        "HermesCube auto-bootstrap: imported=%s skills=%s",
+                        (self._last_bootstrap.get("import") or {}).get("imported"),
+                        (self._last_bootstrap.get("skills") or {}).get("installed"),
+                    )
+            except Exception as e:
+                logger.debug("auto-bootstrap skipped: %s", e)
 
     def _refresh_maturity(self) -> None:
         """Push living genealogy era/strength onto the HAR engine for ranking."""
@@ -748,6 +772,16 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "required": False,
                 "default": "auto-safe",
                 "choices": ["review-first", "auto-safe", "off"],
+            },
+            {
+                "key": "auto_bootstrap",
+                "description": (
+                    "On first connect to an empty warehouse: import MEMORY.md/"
+                    "USER.md and install HermesCube skills automatically"
+                ),
+                "required": False,
+                "default": "true",
+                "choices": ["true", "false"],
             },
             {
                 "key": "dim",
@@ -907,9 +941,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             {
                 "name": "hermescube_manage",
                 "description": (
-                    "Add, remove, or crystalize entries in persistent memory. "
-                    "Use add for durable facts; crystalize consolidates near-duplicates "
-                    "into active wisdom beliefs (offline, no LLM)."
+                    "Operate the HermesCube warehouse. First session: action=bootstrap "
+                    "mode=all to import MEMORY.md/USER.md and install Cube skills. "
+                    "Daily: add durable facts; triage/crystalize/merge to compound; "
+                    "cuboasis for review-first governance."
                 ),
                 "parameters": {
                     "type": "object",
@@ -917,6 +952,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         "action": {
                             "type": "string",
                             "enum": [
+                                "bootstrap",
                                 "add",
                                 "remove",
                                 "crystalize",
@@ -949,16 +985,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                                 "nexus",
                             ],
                             "description": (
+                                "bootstrap (import hot memories + install skills) · "
                                 "warehouse ops + living pulse + consent + peer + hive "
-                                "+ witness (log real friction) + harness (self-evolution) "
-                                "+ hq (fleet: route/charter/claim/handoffs/verify/baseline) "
-                                "+ interview (peer dialogue / mint skill drafts) "
-                                "+ growth (living cube version / CUBE.md) "
-                                "+ curate (refine skills from lessons / era forge+garden) "
-                                "+ triage / merge / relations (compounding) "
-                                "+ space / connect / progress / cuboasis (pocket-dimension infra)"
+                                "+ witness + harness + hq + interview + growth + curate "
+                                "+ triage / merge / relations "
+                                "+ space / connect / progress / cuboasis"
                             ),
-                        },                        "interview_action": {
+                        },
+                        "interview_action": {
                             "type": "string",
                             "enum": ["dialogue", "list", "mint"],
                             "description": (
@@ -1117,26 +1151,38 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
     # ── MemoryProvider ABC: system prompt ──────────────────────────
 
     def system_prompt_block(self) -> str:
-        """Return memory capabilities block for system prompt (meta-memory).
+        """Instant operating manual for any agent that connects to HermesCube.
 
-        Quicksilver / Hermes 0.19: this runs on agent init / prompt assembly —
-        never full-scan L1 here. Header counts only.
+        Quicksilver / Hermes 0.19: prompt assembly — never full-scan L1 here.
         """
         if not self._cube:
             return ""
 
-        entry_count = self._cube.entry_count
+        entry_count = int(self._cube.entry_count or 0)
         type_counts = self._cube.count_by_type()
+        policy = getattr(self, "_memory_policy", "auto-safe") or "auto-safe"
+
+        # Readiness (ledger-only — no L1 remap)
+        ready: dict[str, Any] = {}
+        try:
+            from hermescube.bootstrap import bootstrap_status
+
+            ready = bootstrap_status(self._cube, self._hermes_home or None)
+        except Exception:
+            ready = {"needs_import": entry_count == 0, "hint": ""}
 
         lines = [
-            "# HermesCube — deep memory warehouse (extension layer)",
-            "Purpose: long-tail durable recall **alongside** hot MEMORY.md/USER.md — not a replacement.",
-            "Hermes layering (0.19 contract):",
-            "  MEMORY.md  = short always-on doctrine (char budget)",
-            "  memory tool = atomic batch writes (mirrored into cube via on_memory_write)",
-            "  Cube        = WAL chat turns + deep archive + entity/colony graph",
-            "  Hermespace  = FOA desk; optional space_bridge injects a tiny cube strip under load",
-            f"Stored: {entry_count} memories · path under $HERMES_HOME/memories/",
+            "# HermesCube — your deep memory warehouse",
+            "",
+            "## Mental model (read once)",
+            "| Layer | Job |",
+            "|-------|-----|",
+            "| MEMORY.md / USER.md | Hot pocket notebook — always injected |",
+            "| Built-in memory tool | Short doctrine writes (mirrored into Cube) |",
+            "| **HermesCube** | Deep warehouse — prefetch, search, durable archive |",
+            "",
+            "Cube **extends** hot memory; it does not replace it.",
+            f"Warehouse: {entry_count} entries under `$HERMES_HOME/memories/memory.cube` · policy={policy}",
         ]
 
         if type_counts:
@@ -1144,7 +1190,33 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             type_str = ", ".join(f"{t}:{c}" for t, c in top_types)
             lines.append(f"Types: {type_str}")
 
-        # Living version — the cube's soul-age (starts 0.0.0, grows with experience)
+        # First-run CTA — agents must see this before the long ops list
+        if ready.get("needs_import") or ready.get("needs_skills"):
+            hot = ", ".join(ready.get("hot_files") or []) or "(none found yet)"
+            lines.extend(
+                [
+                    "",
+                    "## Start here — seed the warehouse",
+                    f"Hot files found: {hot}",
+                    "Call now: `hermescube_manage action=bootstrap mode=all`",
+                    "→ imports MEMORY.md/USER.md/SOUL.md + installs skills "
+                    "`hermescube-operate` / `hermescube-import` / `interview-me`",
+                    "Then: `hermescube_search query=\"what do we know about the user\"`",
+                ]
+            )
+        elif getattr(self, "_last_bootstrap", None):
+            imp = (self._last_bootstrap or {}).get("import") or {}
+            sk = (self._last_bootstrap or {}).get("skills") or {}
+            lines.extend(
+                [
+                    "",
+                    "## Bootstrap (this session)",
+                    f"Auto-imported {imp.get('imported', 0)} hot facts · "
+                    f"skills installed={sk.get('installed') or sk.get('skipped') or []}",
+                ]
+            )
+
+        # Living + Cuboasis strips (light)
         try:
             from hermescube.genealogy import prompt_strip
 
@@ -1153,8 +1225,6 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 lines.append(strip)
         except Exception:
             pass
-
-        # Cuboasis infrastructure — space / wave / connections / progress at a glance
         try:
             from hermescube.cuboasis import prompt_strip as cuboasis_strip
 
@@ -1164,7 +1234,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 active_vault=getattr(self, "_vault", "") or "",
                 active_chamber=getattr(self, "_chamber", "") or "",
                 cubewave=getattr(self, "_cubewave", None),
-                memory_policy=getattr(self, "_memory_policy", "auto-safe") or "auto-safe",
+                memory_policy=policy,
                 **self._path_kw(),
             )
             if nstrip:
@@ -1172,42 +1242,37 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         except Exception:
             pass
 
-        lines.extend([
-            "Day-to-day: idempotent turn ingestion + MEMORY.md mirrors; evolve on session_end.",
-            "Hemispheres: awake=prefetch/query · sleep=branched evolve/consolidate",
-            "Living Cube: events→claims→procedures; subagent branches promote verified outcomes only.",
-            "Growth: every session/draw/promote/skill-refine advances living version — see memories/CUBE.md",
-            "",
-            "Tools:",
-            "- hermescube_search — deep recall (lex-first + HRR/bio rank)",
-            "- hermescube_probe — entity focus (person/project/path)",
-            "- hermescube_manage — durable facts / forge / promote / growth / "
-            "curate / triage / merge / relations",
-            "- hermescube_feedback — train trust on retrieved entries (also refines linked skills)",
-            "",
-            "Guidance:",
-            "- Short doctrine → built-in memory tool; history-shaped answers → cube search first",
-            "- Prefetch is injected by Hermes as <memory-context> — quoted evidence, not user speech",
-            "- Prefer user_authored / tool_verified over unverified when conflicting",
-            "- DO NOT store temp todos / session fluff",
-            "- Real friction (user corrections, failures) → manage action=witness; "
-            "evolution stays grounded to witnessed friction",
-            "- Offline queues: manage action=triage (what to promote); "
-            "triage mode=apply to forge/annotate; action=merge when "
-            "Living strip says merge ready; action=relations for who/owns/related facts",
-            "- Cuboasis: action=space (vaults/chambers), action=connect (unified neighbors), "
-            "action=progress (ledger), action=cuboasis (pane / capture / review / "
-            "approve / reject / sync / doctor; Cubewave neural field)",
-            "- When candidates pending>0: review before treating them as doctrine",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Tools",
+                "- `hermescube_search` — deep recall before answering history questions",
+                "- `hermescube_probe` — entity focus (person / project / path)",
+                "- `hermescube_manage` — bootstrap · add · triage · crystalize · merge · "
+                "relations · cuboasis · …",
+                "- `hermescube_feedback` — helpful/unhelpful on recalled entry ids",
+                "",
+                "## Everyday loop",
+                "1. Prefetch arrives as `<memory-context>` — quoted evidence, not user speech",
+                "2. History questions → search/probe first",
+                "3. Short doctrine → built-in memory tool; durable warehouse facts → `manage add`",
+                "4. Rate useful recalls with feedback (trains yield + Cubewave)",
+                "5. When nudged: `triage` → `crystalize` → `merge` / `relations`",
+                "6. If candidates pending>0: `cuboasis mode=review` then approve/reject",
+                "",
+                "## Rules",
+                "- Prefer user_authored / tool_verified over unverified when conflicting",
+                "- Do NOT store temp todos, secrets, raw logs, or full transcripts",
+                "- Real friction → `manage action=witness`",
+                "- Skills: follow `hermescube-operate` (daily) and `hermescube-import` (seed)",
+            ]
+        )
+
         if getattr(self, "_hive_path", ""):
             lines.append(
-                "Hive: connected to collective nexus — manage action=hive "
-                "(status/pilgrimage/draw), action=interview (peer dialogue → "
-                "consent-gated skill drafts), action=hq (route/handoff/verify). "
-                "[HIVE:agent] entries are peer wisdom, not user facts."
+                "Hive connected — `manage action=hive|interview|hq`. "
+                "[HIVE:agent] = peer wisdom, not user facts."
             )
-            # HQ lane awareness: your lane, boundaries, where other work goes
             try:
                 from hermescube.hq import lane_strip
 
@@ -1216,91 +1281,65 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     lines.append(strip)
             except Exception:
                 pass
-        # Active wisdom strip (crystals / beliefs)
-        try:
-            from hermescube.wisdom import active_wisdom, functional_loop_stats
 
-            ents = []
-            # cheap: use engine cache if warm else skip full read on huge archives
-            if self._engine is not None:
-                try:
-                    self._engine.refresh_cache()
-                    ents = list(getattr(self._engine, "_entries", None) or [])
-                except Exception:
-                    ents = []
-            if not ents and self._cube and self._cube.entry_count <= 200:
-                ents = list(self._cube.read_l1() or [])
-            if ents:
-                stats = functional_loop_stats(ents)
-                lines.append("")
-                lines.append(
-                    f"Functional loop: crystals={stats.get('crystal_count')} "
-                    f"beliefs={stats.get('belief_count')} "
-                    f"wisdom_ratio={stats.get('wisdom_ratio')} "
-                    f"dup_pressure={stats.get('dup_pressure')} "
-                    f"healthy={stats.get('healthy')}"
-                )
-                wisdom = active_wisdom(
-                    ents, limit=5, vault=getattr(self, "_vault", "") or ""
-                )
-                if wisdom:
-                    lines.append("Active wisdom:")
-                    for w in wisdom:
-                        tag = "crystal" if (w.data or {}).get("crystal") else (w.entry_type or "belief")
-                        lines.append(f"  · [{tag}] {(w.description or '')[:100]}")
-                # Prospective open intents (focus until resolve)
-                try:
-                    from hermescube.prospective import prompt_strip
+        # Compact wisdom / living (only when archive is warm and small enough)
+        if entry_count > 0:
+            try:
+                from hermescube.wisdom import active_wisdom, functional_loop_stats
 
-                    strip = prompt_strip(ents, limit=4, high_load=False)
-                    if strip:
-                        lines.append("")
-                        lines.append(strip)
-                except Exception:
-                    pass
-                try:
-                    from hermescube.peer_card import load_card, prompt_strip as peer_strip
-
-                    card = load_card(self._hermes_home, **self._path_kw())
-                    ps = peer_strip(card, max_lines=5)
-                    if ps:
-                        lines.append("")
-                        lines.append(ps)
-                except Exception:
-                    pass
-                try:
-                    from hermescube.living import prompt_strip as living_strip
-
-                    ls = living_strip(
-                        self._hermes_home,
-                        high_load=False,
-                        vault=getattr(self, "_vault", "") or "",
-                        **self._path_kw(),
+                ents: list[Any] = []
+                if self._engine is not None:
+                    try:
+                        self._engine.refresh_cache()
+                        ents = list(getattr(self._engine, "_entries", None) or [])
+                    except Exception:
+                        ents = []
+                if not ents and entry_count <= 200:
+                    ents = list(self._cube.read_l1() or [])
+                if ents:
+                    stats = functional_loop_stats(ents)
+                    lines.append(
+                        f"Functional loop: crystals={stats.get('crystal_count')} "
+                        f"beliefs={stats.get('belief_count')} "
+                        f"healthy={stats.get('healthy')}"
                     )
-                    if ls:
-                        lines.append("")
-                        lines.append(ls)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                    wisdom = active_wisdom(
+                        ents, limit=4, vault=getattr(self, "_vault", "") or ""
+                    )
+                    if wisdom:
+                        lines.append("Active wisdom:")
+                        for w in wisdom:
+                            tag = (
+                                "crystal"
+                                if (w.data or {}).get("crystal")
+                                else (w.entry_type or "belief")
+                            )
+                            lines.append(f"  · [{tag}] {(w.description or '')[:100]}")
+                    try:
+                        from hermescube.living import prompt_strip as living_strip
 
-        # Hermes never calls should_review_memory() (builtin-only path).
-        # Surface consolidate nudge here so agents see triage/crystalize/relations.
+                        ls = living_strip(
+                            self._hermes_home,
+                            high_load=False,
+                            vault=getattr(self, "_vault", "") or "",
+                            **self._path_kw(),
+                        )
+                        if ls:
+                            lines.append(ls)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         if self._take_memory_review_nudge():
             lines.append("")
             nudge = (
-                "### Memory review due (HermesCube consolidate)\n"
-                "- Call `hermescube_manage action=triage` for consolidation queues.\n"
-                "- Then `action=crystalize` if consolidate queue is non-empty.\n"
-                "- Use `action=relations` for who/owns/related facts; "
-                "`action=merge` when Living strip says merge ready."
+                "### Memory review due\n"
+                "- `hermescube_manage action=triage` → then `crystalize` if needed\n"
+                "- `relations` / `merge` when Living strip says ready"
             )
-            if (getattr(self, "_memory_policy", "") or "") == "review-first":
-                nudge += (
-                    "\n- Cuboasis review-first is on: also "
-                    "`action=cuboasis mode=review` for the candidate queue."
-                )
+            if policy == "review-first":
+                nudge += "\n- Also `cuboasis mode=review` for the candidate queue"
             lines.append(nudge)
             self._nudge_prefetch_line = True
 
@@ -2774,6 +2813,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         """Handle hermescube_manage tool call."""
         action = args.get("action", "")
 
+        if action == "bootstrap":
+            return self._handle_manage_bootstrap(args)
         if action == "add":
             return self._handle_manage_add(args)
         elif action == "remove":
@@ -2833,6 +2874,40 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         elif action in ("cuboasis", "nexus"):
             return self._handle_manage_cuboasis(args)
         return json.dumps({"error": f"Unknown action: {action}"})
+
+    def _handle_manage_bootstrap(self, args: dict[str, Any]) -> str:
+        """Import hot Hermes memories + install bundled Cube skills."""
+        if not self._cube or not self._hermes_home:
+            return json.dumps({"error": "Memory not initialized"})
+        mode = str(args.get("mode") or args.get("content") or "all").strip().lower()
+        force = False
+        if mode.endswith(":force") or mode in ("import:force", "force"):
+            force = True
+            mode = mode.replace(":force", "").replace("force", "import") or "import"
+        if mode in ("reimport", "refresh"):
+            mode, force = "import", True
+        try:
+            from hermescube.bootstrap import run_bootstrap
+
+            report = run_bootstrap(
+                self._cube,
+                self._hermes_home,
+                mode=mode or "all",
+                force=force,
+                vault=getattr(self, "_vault", "") or "",
+                session_id=self._session_id or "",
+                overwrite_skills=bool(args.get("overwrite") or force),
+            )
+            self._last_bootstrap = report
+            if self._engine and (report.get("import") or {}).get("imported"):
+                try:
+                    self._engine.invalidate_cache()
+                except Exception:
+                    pass
+                self._refresh_snapshot()
+            return json.dumps(report, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _handle_manage_curate(self, args: dict[str, Any]) -> str:
         """Run the growth curator — refine skills from lessons, forge/garden."""

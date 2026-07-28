@@ -113,6 +113,10 @@ triage can `mode=apply` to forge and annotate. See [docs/CUBOASIS.md](docs/CUBOA
 
 New operators should learn the solo path first. Fleet layers compound on top — they are not required for warehouse usefulness.
 
+## First connect (0.43+)
+
+Any agent that loads HermesCube gets an **instant operating manual** in `system_prompt_block` and, when the warehouse is empty, **auto-bootstrap** imports MEMORY.md / USER.md and installs skills `hermescube-operate` + `hermescube-import`. Manual: `hermescube_manage action=bootstrap mode=all`.
+
 ## Non-goals
 
 - Not a second agent brain / not J-space weights  

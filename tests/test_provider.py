@@ -77,7 +77,9 @@ class TestCubeMemoryProvider:
             provider = CubeMemoryProvider()
             provider.initialize(session_id="s1", hermes_home=tmpdir)
             block = provider.system_prompt_block()
-            assert "Stored: 0 memories" in block
+            assert "Mental model" in block
+            assert "0 entries" in block or "Warehouse: 0" in block
+            assert "bootstrap" in block.lower()
             provider.shutdown()
 
     def test_get_tool_schemas(self):

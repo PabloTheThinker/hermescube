@@ -175,6 +175,7 @@ hc.setdefault("auto_extract", False)
 hc.setdefault("evolve_interval", 50)
 hc.setdefault("query_rewrite", False)
 hc.setdefault("memory_policy", "auto-safe")
+hc.setdefault("auto_bootstrap", True)
 hc.setdefault("hive_on_session_end", False)
 hc.setdefault("interview_on_pilgrimage", False)
 hc.setdefault("witness_detect", True)
@@ -190,6 +191,53 @@ p.write_text(
 )
 print("  OK config written")
 print(f"  User cube path: {home / 'memories' / 'memory.cube'}")
+PY
+
+# ── bundled skills → $HERMES_HOME/skills/ ──
+echo
+echo "→ install HermesCube skills"
+if [[ -d "$ROOT/skills" ]]; then
+  mkdir -p "$HERMES_HOME/skills"
+  for sk in hermescube-operate hermescube-import interview-me; do
+    if [[ -f "$ROOT/skills/$sk/SKILL.md" ]]; then
+      mkdir -p "$HERMES_HOME/skills/$sk"
+      cp -f "$ROOT/skills/$sk/SKILL.md" "$HERMES_HOME/skills/$sk/SKILL.md"
+      echo "  skill: $sk"
+    fi
+  done
+else
+  echo "  (no skills/ in source — provider bootstrap will install on first connect)"
+fi
+
+# ── seed cube from hot MEMORY.md if present (idempotent) ──
+echo
+echo "→ bootstrap warehouse (import hot memories if empty)"
+HERMES_HOME="$HERMES_HOME" "$PY" - <<'PY'
+import os
+from pathlib import Path
+home = Path(os.environ["HERMES_HOME"])
+try:
+    from hermescube.bootstrap import needs_auto_bootstrap, run_bootstrap
+    from hermescube.cube import CubeFile
+except Exception as e:
+    print(f"  skip bootstrap import ({e})")
+    raise SystemExit(0)
+mem = home / "memories"
+mem.mkdir(parents=True, exist_ok=True)
+cube_path = mem / "memory.cube"
+if cube_path.is_file():
+    cube = CubeFile.open(str(cube_path))
+else:
+    cube = CubeFile.create(str(cube_path))
+try:
+    if needs_auto_bootstrap(cube, home):
+        r = run_bootstrap(cube, home, mode="all")
+        imp = (r.get("import") or {})
+        print(f"  imported={imp.get('imported', 0)} skills={ (r.get('skills') or {}).get('installed') }")
+    else:
+        print("  warehouse already seeded — OK")
+finally:
+    cube.close()
 PY
 
 # ── verify ──
