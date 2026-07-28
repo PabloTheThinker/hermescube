@@ -106,41 +106,22 @@ expressions with numpy types can't be fully resolved without it installed.
 
 ## Project Structure
 
+High-level layout:
+
 ```
 hermescube/
-├── hermescube/          # Core library
-│   ├── __init__.py       # Public API exports
-│   ├── __main__.py       # python -m hermescube
-│   ├── cli.py            # CLI entrypoint (7 commands)
-│   ├── hrr.py            # HRR algebra (numpy / pure-Python dual backend)
-│   ├── cube.py           # .cube binary file I/O
-│   ├── har.py            # HAR query engine + k-means
-│   ├── embed.py          # Learned embeddings (TF-IDF + projection)
-│   ├── provider.py       # CubeMemoryProvider (HermesAgent ABC)
-│   ├── threats.py        # Prompt injection scanning
-│   └── py.typed          # PEP 561 marker
-├── plugin/               # HermesAgent plugin registration
-│   ├── __init__.py
-│   ├── cli.py
-│   └── plugin.yaml
-├── tests/                # Pytest test suite
-│   ├── test_cube.py       # 25 tests — cube I/O, concurrency, edge cases
-│   ├── test_har.py        # 14 tests — HAR queries, k-means, β updates
-│   ├── test_hrr.py        # 17 tests — HRR algebra correctness
-│   ├── test_embed.py      # 13 tests — learned embeddings + persistence
-│   ├── test_provider.py   # 75 tests — provider ABC, tools, lifecycle
-│   └── test_cli.py        # 14 tests — all CLI commands
-├── benchmarks/           # HAR vs linear scan performance
-├── docs/                 # Documentation
-│   ├── SPEC.md            # Binary format specification
-│   ├── ARCHITECTURE.md    # Design rationale
-│   ├── API_REFERENCE.md   # Full API reference
-│   └── USER_GUIDE.md      # How-to guides
-├── pyproject.toml        # Package config + pyright + pytest settings
-├── CHANGELOG.md
-├── LICENSE
-└── README.md
+├── ABOUT.md · PURPOSE.md · README.md
+├── hermescube/           # Library + CLI + MemoryProvider (see docs/CODEMAP.md)
+├── plugin/               # Hermes register(ctx) + dual plugin.yaml
+├── skills/               # operate · import · interview-me
+├── docs/                 # Guides + docs/assets/ + CODEMAP.md
+├── tests/                # pytest (~466)
+├── scripts/              # install · update · check_isolation
+└── benchmarks/
 ```
+
+**Where to edit what:** [docs/CODEMAP.md](docs/CODEMAP.md).  
+Prefer peeling new manage/dream/tools surfaces into focused modules over growing `provider.py`.
 
 ---
 

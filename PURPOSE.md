@@ -2,11 +2,15 @@
 
 **One line:** HermesCube is the **local deep-memory warehouse** for Hermes Agent — long-tail durable recall that works *with* hot MEMORY.md, not instead of it.
 
+Public pitch: **[ABOUT.md](ABOUT.md)**. Docs index: **[docs/README.md](docs/README.md)**. Code layout: **[docs/CODEMAP.md](docs/CODEMAP.md)**.
+
+---
+
 ## Problem
 
 Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud memory leaks and costs, flat logs don't retrieve by meaning under load.
 
-## Solution (layered — Hermes 0.19+ contract)
+## Solution (Hermes MemoryProvider contract)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -21,101 +25,34 @@ Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Living Cube (0.21+):** Hermes is the active nervous system; HermesCube is
-the durable lifetime structure — immutable events → temporal claims →
-verified procedures, with subagent branches and branched consolidation.
-Compression never erases provenance.
-
-**Hive nexus (0.22+):** many agents, one collective. Each agent keeps its
-private cube (its soul-record); a shared hive directory holds the collective
-cube plus soul cards. Nightly pilgrimage: OFFER distilled experience →
-ASSIMILATE (threat-scanned, deduped, branch-tagged) → DRAW focus-relevant
-wisdom back, quarantined as `hive_shared` and labeled `[HIVE:<agent>]`.
-See [docs/HIVE.md](docs/HIVE.md).
-
-**Grounded self-evolution (0.23+):** the Cube improves itself under rules
-enforced in code — real friction lands in an append-only witness ledger,
-every evolve cycle reports (no silent failures), promotions commit
-falsifiable predictions a verifier later settles, a mechanical critic flags
-bookkeeping theatre, and a gardener surfaces dormant memories without
-deleting. See [docs/SELF_EVOLUTION.md](docs/SELF_EVOLUTION.md).
-
-**Fleet HQ (0.24+):** the hive root doubles as the command layer for any
-number of agents — charters record who owns which lane, routing sends work
-to its owner (command fallback for the rest), handoffs carry distilled
-evidence packets, task claims prevent turf wars, `hq verify` catches ghost
-routes and lane conflicts, and frozen baselines prove what changed.
-Subagents get read-only memory tools: work flows upward, privilege does
-not flow down. See [docs/HQ.md](docs/HQ.md).
-
-**Peer interviews (0.25+):** agents that pilgrimage back can interview
-each other with the interview-me protocol — inspect soul cards before
-asking, one high-value question at a time, grounded answers, a structured
-brief, and consent-gated skill drafts. See [docs/INTERVIEW.md](docs/INTERVIEW.md).
-
-**One system (0.26+):** the layers are one machine, not four features.
-The night cycle at the nexus runs OFFER → SOUL CARD → INTERVIEW →
-ASSIMILATE → DRAW, so interviewed knowledge joins the collective in the
-same visit. Interviews take HQ task claims and land in the HQ handoff
-ledger; minted peer lessons commit falsifiable harness predictions;
-handoffs route, carry distilled evidence packets, and settle
-(`hq_action=handoff` / `complete`); echo guards and provenance filters
-keep every fact attributed to the soul that lived it. `hive status` is
-the single pane: souls, collective, charters, handoffs, interviews.
-
-**Living growth (0.27+):** every cube is born at living version `0.0.0`
-and strengthens with experience — the same visible growth story Hermes
-Agent has for skills and MEMORY.md, but for the archive itself. Sessions,
-draws, interviews, promotions, skill installs, and confirmed predictions
-advance the version; helpful feedback *refines* installed skills in place
-(patch bump + lessons ledger); era thresholds (25/50/75/90 strength)
-earn major bumps. The diary is `memories/CUBE.md`. See [docs/GROWTH.md](docs/GROWTH.md).
-
-**Curator + maturity (0.28+):** growth changes behavior. Elder cubes
-prefer distilled knowledge in retrieval; soul cards advertise living
-version to the hive; a curator matches drawn lessons to installed skills
-and refines them (Hermes closed learning loop), forging and gardening on
-era milestones — still consent-gated.
-
-**Digital soul age (0.29+):** agents don't age in human years or on a
-0–100 scorecard. Age is **cycles** (lived growth epochs) + **lived**
-wall-clock since birth. Capability stays a separate coherence score;
-era is the life stage that score earns. Soul cards and the system prompt
-speak this language clearly.
-
-**Cube of Eden (0.30+):** the origin era. Every fresh cube begins in the
-garden before lived memory — `era: eden`, display **Cube of Eden** —
-then leaves through Awakening → Formed → Seasoned → Elder as capability
-rises. Legacy `genesis` migrates automatically.
-
-**Cuboasis (0.40+):** the cube’s pocket-dimension infrastructure —
-**space** (vaults + chambers), **wave** (Cubewave neural field),
-**connections** (unified SPO ∪ colony ∪ engram ∪ Cubewave ∪ HAR), and
-**progress** (append-only ledger + usefulness rollup folded into capability).
-Agents navigate with `manage action=space|connect|progress|cuboasis`;
-triage can `mode=apply` to forge and annotate. See [docs/CUBOASIS.md](docs/CUBOASIS.md).
-
-**Nexus (0.39):** renamed to Cuboasis in 0.40; `action=nexus` remains an alias.
-
 | Layer | Job | Cube relation |
 |-------|-----|----------------|
 | MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |
 | memory tool | Agent-initiated doctrine | Mirrored into cube |
-| **Cube** | WAL turns, deep archive, entity/colony, dense export | **This package** |
+| **Cube** | WAL turns, deep archive, Cuboasis, dream | **This package** |
 | Hermespace | FOA / dual-decode / load | `space_bridge` tiny strip |
 
 ## Solo path vs fleet path
 
 | Path | Day-to-day surface | Optional |
 |------|--------------------|----------|
-| **Solo** (default) | prefetch · sync_turn · feedback · triage · Cuboasis review | crystalize / merge / relations |
-| **Fleet** | hive pilgrimage · HQ route/handoff · interview · curator | only when `HERMESCUBE_HIVE` / hive config is set |
+| **Solo** (default) | prefetch · sync_turn · feedback · triage · Cuboasis · dream solo | crystalize / merge / relations |
+| **Fleet** | hive · HQ · interview · dream circle | only when hive is configured |
 
-New operators should learn the solo path first. Fleet layers compound on top — they are not required for warehouse usefulness.
+New operators learn the solo path first. Fleet layers compound on top.
 
-## First connect (0.43+)
+## Capability stack (current product)
 
-Any agent that loads HermesCube gets an **instant operating manual** in `system_prompt_block` and, when the warehouse is empty, **auto-bootstrap** imports MEMORY.md / USER.md and installs skills `hermescube-operate` + `hermescube-import`. Manual: `hermescube_manage action=bootstrap mode=all`.
+| Area | What ships | Doc |
+|------|------------|-----|
+| Warehouse | `.cube`, HAR, WAL, threat scan, dense export | SPEC · ARCHITECTURE |
+| Cuboasis | review-first, space, Cubewave, connections, progress | CUBOASIS |
+| Living growth | Eden→Elder, CUBE.md diary, curator | GROWTH |
+| Self-evolution | witness, predictions, critic, gardener | SELF_EVOLUTION |
+| Hive / HQ / interviews | pilgrimage, charters, peer craft | HIVE · HQ · INTERVIEW |
+| **CubeDream (0.47)** | L1 solo · L2 circle · auto-circle · skim · L4 proposals | CUBEDREAM |
+
+**First connect:** empty warehouse → optional auto-bootstrap from MEMORY.md/USER.md + operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
 
 ## Non-goals
 
@@ -123,27 +60,22 @@ Any agent that loads HermesCube gets an **instant operating manual** in `system_
 - Not a cloud memory SaaS  
 - Not a replacement for MEMORY.md  
 - Not “HAR always beats scan” marketing — lex-first + bio rank; honest benches  
-- Not AgentDrive / Mission Control — borrow algorithms (merge, triage, SPO), not the conductor OS  
-
-## Yield Gradient (0.8+)
-
-Closed loop: feedback teaches which memories *pay off for similar queries* (query-local, not global trust / not colony trails). Hot path stays multiplicative boost only.
+- Not AgentDrive / Mission Control — borrow algorithms, not the conductor OS  
+- **Never** auto-rewrite Hermes MEMORY.md from Cube dream paths (proposals only)
 
 ## Success metrics
 
 1. **No lost day-to-day turns** — WAL sync before return  
 2. **Hot path ms-class** — warm prefetch without full L1 every inject  
 3. **IR useful** — hybrid lexical+HRR; score-first; labeled recall tracked  
-4. **User data isolation** — only `$HERMES_HOME/memories/memory.cube`  
-5. **Company agents** — same plugin socket; cube = deep extension per profile  
-6. **Compounding sessions** — ≥2 axes → growth-merge crystal; triage skips empty crystalize  
-
-## Research spine (Fudoshin)
-
-Canon: `brain/research/hermes-stack-benchmarks/`  
-Study tree: clean Hermes `v2026.7.20` at `~/projects/hermes-agent-study`  
-Key RE: MemoryProvider ABC, MemoryManager one-external, `<memory-context>` fence, builtin+external coexistence.
+4. **User data isolation** — only `$HERMES_HOME/memories/`  
+5. **Compounding sessions** — growth-merge / triage / dream without theatre  
 
 ## Version posture
 
-Ship purpose-aligned increments. Public GH scrubbed. `hermescube update` never overwrites cube data.
+Ship purpose-aligned increments. Dual `plugin.yaml` must stay identical.  
+`hermescube update` never overwrites cube data. Assessment: [docs/ASSESSMENT.md](docs/ASSESSMENT.md).
+
+### Historical layer notes (compressed)
+
+Living Cube (0.21) · Hive (0.22) · self-evolution (0.23) · Fleet HQ (0.24) · interviews (0.25) · one night cycle (0.26) · living growth (0.27–0.30 Eden) · Cuboasis (0.40) · bootstrap/manual (0.43) · manage peels (0.45) · CubeDream MVP→full (0.46–0.47). Detail lives in [CHANGELOG.md](CHANGELOG.md).

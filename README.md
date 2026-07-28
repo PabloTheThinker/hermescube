@@ -1,30 +1,47 @@
 <p align="center">
-  <h1 align="center">HermesCube</h1>
+  <img src="docs/assets/hermescube-047-cubedream-graphic-novel.png" alt="HermesCube · CubeDream" width="100%">
+</p>
+
+# HermesCube
+
+<p align="center">
+  <em>Local deep-memory warehouse for Hermes Agent — durable, semantic, offline.</em>
 </p>
 
 <p align="center">
-  <em>Binary columnar archive with holographic associative retrieval — persistent agent memory that grows forever.</em>
+  <a href="ABOUT.md"><img src="https://img.shields.io/badge/About-what%20%26%20why-0A7A6A?style=for-the-badge" alt="About"></a>
+  <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-34D058?style=for-the-badge" alt="CI"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=for-the-badge" alt="Python 3.11+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/version-0.47.0-informational?style=for-the-badge" alt="0.47.0">
 </p>
 
-<p align="center">
-  <a href="https://github.com/PabloTheThinker/hermescube"><img src="https://img.shields.io/badge/install-git%20plugin-34D058" alt="Install via git / Hermes plugin"></a>
-  <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
-  <a href="https://github.com/PabloTheThinker/hermescube"><img src="https://img.shields.io/github/stars/PabloTheThinker/hermescube?style=social" alt="Stars"></a>
-</p>
+**HermesCube plugs into [Hermes Agent](https://github.com/NousResearch/hermes-agent) as the one external `MemoryProvider`.** Hermes keeps the hot notebook (`MEMORY.md`); Cube keeps the long tail — a crash-safe `.cube` archive with holographic associative retrieval, Cuboasis governance, living growth, and optional multi-agent Hive / CubeDream.
+
+No cloud memory APIs. No pruning tax. Your data stays under `$HERMES_HOME/memories/`.
+
+<table>
+<tr><td><b>Works with Hermes, not instead of it</b></td><td>Hot MEMORY.md stays always-on. Cube mirrors writes, WAL-syncs turns, and injects a small deep strip when useful.</td></tr>
+<tr><td><b>Semantic recall, local</b></td><td>HAR + learned embeddings + entity/colony graphs — meaning over keywords, no embedding SaaS.</td></tr>
+<tr><td><b>Safe under load</b></td><td>Atomic writes, cross-process lock, threat scan, Cuboasis review-first candidates.</td></tr>
+<tr><td><b>Grows with the agent</b></td><td>Cube of Eden → Elder living version, diary, curator skill refine, grounded self-evolution harness.</td></tr>
+<tr><td><b>Dream alone or together</b></td><td><a href="docs/CUBEDREAM.md">CubeDream</a>: soul solo cycles, dream circles (chorus / conversation), hive commit, MEMORY.md proposals only — never auto-applied.</td></tr>
+<tr><td><b>Fleet when you need it</b></td><td>Optional Hive pilgrimage, Fleet HQ routing/handoffs, peer interviews. Solo path is enough for day one.</td></tr>
+</table>
+
+Read the product pitch in **[ABOUT.md](ABOUT.md)**. North star for maintainers: **[PURPOSE.md](PURPOSE.md)**.
 
 ---
 
-## Install into Hermes Agent (per-user)
+## Install into Hermes Agent
 
-Your cube lives under **your** Hermes home — not the git tree.
+Your cube lives under **your** Hermes home — never inside the git tree.
 
 ```bash
 # Option A — Hermes plugin installer (recommended)
 hermes plugins install PabloTheThinker/hermescube
-cd "$HERMES_HOME/plugins/hermescube"   # usually ~/.hermes/plugins/hermescube
-./scripts/install_hermes.sh            # pip into Hermes Python + wire config
+cd "${HERMES_HOME:-$HOME/.hermes}/plugins/hermescube"
+./scripts/install_hermes.sh
 hermes config set memory.provider hermescube
 
 # Option B — clone then install
@@ -44,212 +61,88 @@ hermes memory status
 
 | Path | Who owns it |
 |------|-------------|
-| `$HERMES_HOME/plugins/hermescube/` | Plugin code (from install) |
+| `$HERMES_HOME/plugins/hermescube/` | Plugin code |
 | `$HERMES_HOME/memories/memory.cube` | **Your** memory data |
 | `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` |
 
 ### Update
 
 ```bash
-# Full update (recommended): pull plugin + reinstall package
 hermescube update
-# or
-cd "${HERMES_HOME:-$HOME/.hermes}/plugins/hermescube" && ./scripts/update.sh
-
-# Hermes-native git-only pull (same as other plugins)
-hermes plugins update hermescube
-# then reinstall package if needed:
-hermescube update
+# or: hermes plugins update hermescube   then   hermescube update
 ```
 
-`hermes update` updates the **Hermes Agent** core only. Cube is a plugin —
-use `hermes plugins update hermescube` and/or `hermescube update`.
-
-User memory at `$HERMES_HOME/memories/memory.cube` is **never** overwritten by update.
+`hermes update` updates Hermes Agent core only. Cube is a plugin — use `hermescube update`.  
+User memory is **never** overwritten by update.
 
 ---
 
-## Why
+## Getting started
 
-LLM agents forget. Context windows are finite. Cloud memory APIs cost money,
-add latency, and leak data. Flat files work at first but degrade with scale.
+```bash
+hermescube doctor              # wiring + density / bootstrap hints
+hermescube info                # warehouse stats
+hermescube query "…"           # semantic search
+hermescube dream status        # CubeDream due reasons
+hermescube dream solo          # private night cycle (add --apply to commit)
+hermescube dense               # dense export for backup / density view
+```
 
-HermesCube gives your agent **persistent, semantic, local memory** — no network
-calls, no API keys, no pruning. It uses holographic vectors to understand what
-your conversations *mean*, not just what words they contain.
+After `memory.provider: hermescube`, the agent gets four tools:
+
+| Tool | Purpose |
+|------|---------|
+| `hermescube_search` | Semantic search over the warehouse |
+| `hermescube_manage` | Hub: warehouse · Cuboasis · growth · fleet · dream |
+| `hermescube_feedback` | Rate memories helpful / unhelpful (yield gradient) |
+| `hermescube_probe` | Diagnostic probe / density peeks |
+
+First connect on an empty warehouse auto-imports MEMORY.md / USER.md (when enabled) and installs operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
+
+---
+
+## How the `.cube` works
+
+Three layers inside the file:
+
+| | | |
+|---|---|---|
+| **L1** | Entry log | Append-only records + 256-d HRR vectors |
+| **L2** | Topic index | Centroids rebuilt on `evolve()` — O(log n) buckets |
+| **L3** | β attention | Bind with the query to bias toward what matters now |
+
+```
+query("what theme?")
+  → embed → bind(q, β) → match L2 centroids → rank sim × recency
+  → low confidence falls back to linear scan
+```
+
+Full algebra and on-disk layout: [docs/SPEC.md](docs/SPEC.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Library quick start
+
+Prefer Hermes install above for real agent use. For a scratch cube:
+
+```bash
+pip install -e .                 # from a clone; optional: numpy
+hermescube init ./scratch.cube
+hermescube append ./scratch.cube -t belief -d "User prefers dark mode"
+hermescube evolve ./scratch.cube
+hermescube query ./scratch.cube "what does the user prefer?"
+```
 
 ```python
 from hermescube import CubeFile, HARQueryEngine
 
 cube = CubeFile.create("memory.cube")
-
-# Store memories like an agent would
 cube.append("belief", "User prefers dark mode in all editors")
-cube.append("trait",  "User values concise replies over verbosity")
-cube.append("resolve", "Deployed auth module v2.1", outcome="success")
-
-# Ask semantic questions — understands meaning, not just keywords
 engine = HARQueryEngine(cube)
-engine.evolve()  # build topic clusters
-results = engine.query("what theme does the user like?")
-
-for entry, score in results:
-    print(f"[{entry.entry_type}] {entry.description}  score={score:.4f}")
+engine.evolve()
+for entry, score in engine.query("what theme does the user like?"):
+    print(entry.entry_type, entry.description, f"{score:.4f}")
 ```
-
----
-
-See [Framework housing](docs/FRAMEWORK.md), [Day-to-day usefulness](docs/DAY_TO_DAY.md), and [Assessment](docs/ASSESSMENT.md).
-
-## Colony communication (Cube-native)
-
-Memories **talk to each other** via stigmergy (inspired by ants/bees + mammal social maps — not a copy of any other plugin):
-
-- **Ant trails** — entity–entity pheromone edges strengthen when memories are used together
-- **Bee dances** — each entry encodes *what* (kind) + *where* (entities)
-- **Markdown board** — `$HERMES_HOME/memories/COLONY.md` (readable colony song sheet)
-
-## How It Works
-
-A `.cube` file stores three layers:
-
-<table>
-<tr>
-  <td width="80"><b>L1</b></td>
-  <td width="200">Entry log</td>
-  <td>Append-only. Every memory is a timestamped record with a type, outcome, and 256-dimensional HRR vector.</td>
-</tr>
-<tr>
-  <td><b>L2</b></td>
-  <td>Topic index</td>
-  <td>64 k-means centroids, rebuilt on <code>evolve()</code>. Maps queries to relevant buckets in O(log n).</td>
-</tr>
-<tr>
-  <td><b>L3</b></td>
-  <td>&beta; vector</td>
-  <td>The agent's attention state. Bind it with your query to bias retrieval toward what the agent cares about.</td>
-</tr>
-</table>
-
-**HAR queries** bind your question with the β attention vector, match against
-topic centroids, retrieve the best entries, and rank by semantic similarity ×
-recency. If confidence is low, it falls back to a linear scan. You get
-logarithmic search with the safety of exhaustive fallback.
-
-```
-query("what theme?")
-  → embed("what theme?")                  → q
-  → bind(q, β)                            → qβ
-  → match qβ against L2 centroids         → top 3 buckets
-  → retrieve entries from those buckets   → candidates
-  → rank by cosine_sim × e^(-age/48h)     → results
-```
-
----
-
-## Features
-
-| | | |
-|---|---|---|
-| **HAR retrieval** | Semantic search without an embedding API | `engine.query("deployment issues")` |
-| **Learned embeddings** | TF-IDF trains on your data, improves with use | Auto-trains during `evolve()` |
-| **Atomic writes** | `.tmp` → `fsync` → `os.replace()` — crash-safe | No partial files survive |
-| **Cross-process lock** | `fcntl.flock(LOCK_EX)` — two processes can't race | Clear error, no corruption |
-| **10 entry types** | landmark, belief, trait, focus, resolve, evolution, relationship, enter, leave, epoch_transition | Rich memory modeling |
-| **Threat scanning** | 6 injection/escape patterns blocked before storage | `scan_text()` with block/warn |
-| **Circuit breaker** | 3 evolve failures → 5-min cooldown | Prevents cascading failures |
-| **Auto-extract** | Regex-based fact extraction on session end | "I prefer X" → trait entry |
-| **Zero dependencies** | Pure Python with numpy autodetect | `pip install hermescube` |
-| **HermesAgent native** | Drop-in `MemoryProvider` plugin with 3 tools | `memory.provider: hermescube` |
-
----
-
-## Quick Start (library / scratch cube)
-
-For Hermes users, prefer **Install into Hermes Agent** above (user home paths).
-
-```bash
-pip install hermescube
-
-# Scratch cube in cwd (explicit path)
-hermescube init ./scratch.cube
-hermescube append ./scratch.cube -t belief -d "User prefers dark mode"
-hermescube evolve ./scratch.cube
-hermescube query ./scratch.cube "what does the user prefer?"
-hermescube info ./scratch.cube
-
-# After Hermes install — defaults to $HERMES_HOME/memories/memory.cube
-hermescube info
-hermescube query "what does the user prefer?"
-hermescube doctor
-```
-
----
-
-## HermesAgent Integration
-
-Full install is at the top of this README. After `memory.provider: hermescube`:
-
-| Tool | Purpose |
-|------|---------|
-| `hermescube_search` | Semantic search over past conversations |
-| `hermescube_manage` | Add or remove persistent memories |
-| `hermescube_feedback` | Rate entries helpful/unhelpful (trains trust scores) |
-
-```python
-from hermescube.provider import CubeMemoryProvider
-import os
-
-home = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
-provider = CubeMemoryProvider()
-provider.initialize(session_id="abc123", hermes_home=home)
-context = provider.prefetch("user's current question")
-provider.sync_turn(user_msg, assistant_msg)
-```
-
-User data path is always `$HERMES_HOME/memories/memory.cube`.
-
----
-
-## Real-use bench (for operators)
-
-```bash
-# Results land in ~/.hermes/hermescube-lab/results/ — not the repo
-PYTHONPATH=. python3 benchmarks/real_use_bench.py
-hermescube update   # after pull
-```
-
-Gates: durable facts beat noise, prefetch p50 &lt; 25ms, questions don't bury facts, cross-session OK.
-
-## Benchmarks
-
-HAR query latency scales logarithmically with archive size.
-
-| Entries | HAR | Linear scan | Speedup |
-|---------|-----|-------------|---------|
-| 10 | 0.4 ms | 0.2 ms | 0.5× |
-| 100 | 0.7 ms | 1.2 ms | 1.7× |
-| 500 | 1.2 ms | 5.8 ms | 4.8× |
-| 1,000 | 1.5 ms | 11.4 ms | **7.6×** |
-
----
-
-## Entry Types
-
-Choose the right type for each memory.
-
-| Type | Use for | Example |
-|------|---------|---------|
-| `landmark` | Notable events, decisions | "Deployed v2 to production" |
-| `belief` | Learned facts, conclusions | "Pyright catches type errors early" |
-| `trait` | User characteristics | "Prefers dark mode editors" |
-| `focus` | Current priorities | "Working on auth module" |
-| `resolve` | Completed tasks | "Fixed login timeout bug" |
-| `evolution` | Changes in understanding | "Migrated from flask to fastapi" |
-| `relationship` | Entity connections | "auth-service depends on redis" |
-| `enter` | Session start | "Started coding session" |
-| `leave` | Session end | "Ended coding session" |
-| `epoch_transition` | Phase shifts | "Completed project milestone" |
 
 ---
 
@@ -257,48 +150,55 @@ Choose the right type for each memory.
 
 | | |
 |---|---|
-| **[User Guide](docs/USER_GUIDE.md)** | How-tos: install, store, search, evolve, integrate |
-| **[API Reference](docs/API_REFERENCE.md)** | Every module, class, and function documented |
-| **[Architecture](docs/ARCHITECTURE.md)** | Design rationale, algorithms, data flow |
-| **[Binary Format Spec](docs/SPEC.md)** | `.cube` file layout, HRR algebra, HAR protocol |
-| **[Hive Nexus](docs/HIVE.md)** | Multi-agent collective memory: pilgrimage, soul cards, trust model |
-| **[Cuboasis](docs/CUBOASIS.md)** | Pocket-dimension infra: space, Cubewave neural field, connections, progress |
-| **[Ideas from OMH](docs/IDEAS_FROM_OMH.md)** | Dissect oh-my-hermes → Cuboasis memory governance (review-first, evidence states) |
-| **[Self-Evolution](docs/SELF_EVOLUTION.md)** | Grounded harness: witness ledger, predictions, critic, gardener |
-| **[Fleet HQ](docs/HQ.md)** | Charters, routing, handoffs, claims, fleet verification, baselines |
-| **[Peer Interviews](docs/INTERVIEW.md)** | interview-me at the Hive: dialogue, briefs, skill drafts |
-| **[Living Growth](docs/GROWTH.md)** | Cube of Eden → elder; cycles age; maturity ranking; curator |
-| **[Contributing](CONTRIBUTING.md)** | Setup, testing, conventions, PR process |
+| **[About](ABOUT.md)** | What HermesCube is (and is not) |
+| **[Docs index](docs/README.md)** | Full map of guides |
+| **[User Guide](docs/USER_GUIDE.md)** | Install, store, search, evolve |
+| **[Day-to-day](docs/DAY_TO_DAY.md)** | Operator usefulness |
+| **[CubeDream](docs/CUBEDREAM.md)** | Solo + together dreaming |
+| **[Cuboasis](docs/CUBOASIS.md)** | Space, Cubewave, policy |
+| **[Hive](docs/HIVE.md)** · **[HQ](docs/HQ.md)** · **[Interviews](docs/INTERVIEW.md)** | Multi-agent |
+| **[Code map](docs/CODEMAP.md)** | Where to edit in the package |
+| **[Assessment](docs/ASSESSMENT.md)** | Honest ship grades |
+| **[Contributing](CONTRIBUTING.md)** | Dev setup, tests, PRs |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 hermescube/
-├── hermescube/          # Core library (7 modules, zero required deps)
-│   ├── hrr.py            # HRR algebra — bind, unbind, superpose, embed
-│   ├── cube.py           # .cube binary format — atomic read/write
-│   ├── har.py            # HAR query engine — k-means, retrieval, ranking
-│   ├── embed.py          # Learned embeddings — TF-IDF + projection
-│   ├── provider.py       # CubeMemoryProvider — HermesAgent ABC
-│   ├── threats.py        # Injection scanning — 6 patterns
-│   ├── cli.py            # CLI — 7 commands
-│   └── __init__.py       # Public API surface
-├── plugin/               # HermesAgent plugin
-│   ├── __init__.py        # register(ctx) entry point
-│   ├── cli.py             # Plugin CLI (status, evolve, dump, compact)
-│   └── plugin.yaml        # Plugin metadata
-├── tests/                # 158 tests (pytest)
-├── docs/                 # Full documentation suite
-├── benchmarks/           # HAR vs linear scan
-├── CONTRIBUTING.md
-├── CHANGELOG.md
-└── README.md
+├── ABOUT.md                 # Product about
+├── PURPOSE.md               # North star (maintainers / agents)
+├── hermescube/              # Library + CLI + MemoryProvider
+│   ├── cube.py · har.py · hrr.py · embed.py
+│   ├── provider.py          # Hermes MemoryProvider socket
+│   ├── tools_recall.py      # search / probe / feedback
+│   ├── manage*.py           # manage hub peels
+│   ├── dream.py · dream_circle.py
+│   ├── cuboasis.py · hive.py · hq.py · interview.py
+│   └── …                    # see docs/CODEMAP.md
+├── plugin/                  # Hermes plugin register + CLI
+├── skills/                  # hermescube-operate · import · interview-me
+├── docs/                    # Guides + assets/
+├── tests/                   # pytest (466+)
+├── scripts/                 # install · update · isolation check
+└── benchmarks/              # HAR / real-use (results outside repo)
 ```
+
+---
+
+## Real-use bench
+
+```bash
+# Results land in ~/.hermes/hermescube-lab/results/ — not the repo
+PYTHONPATH=. python3 benchmarks/real_use_bench.py
+```
+
+Gates: durable facts beat noise, warm prefetch stays ms-class, questions don't bury facts.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).  
+Built to sit beside [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent); not affiliated as an official Nous product.

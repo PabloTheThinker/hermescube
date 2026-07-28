@@ -2,10 +2,10 @@ name: hermescube
 manifest_version: 1
 version: "0.47.0"
 description: >-
-  Living Cube memory for Hermes Agent — instant agent onboarding (auto-bootstrap
-  from MEMORY.md + operate/import skills), Cuboasis governance, HAR + Cubewave
-  retrieval, subagent branches, branched consolidation, Hive / peer interviews /
-  Fleet HQ. Zero network deps; pure Python with optional numpy.
+  Local deep-memory warehouse for Hermes Agent — HAR retrieval, Cuboasis
+  governance, living growth, auto-bootstrap + operate/import skills, optional
+  Hive / Fleet HQ / peer interviews / CubeDream (solo + circles). Offline;
+  pure Python with optional numpy. Not a second agent — extends MEMORY.md.
 author: PabloTheThinker
 license: MIT
 homepage: https://github.com/PabloTheThinker/hermescube

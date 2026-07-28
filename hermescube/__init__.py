@@ -1,4 +1,10 @@
-"""HermesCube — binary columnar archive with holographic associative retrieval."""
+"""HermesCube — local deep-memory warehouse for Hermes Agent.
+
+Binary `.cube` archive with holographic associative retrieval (HAR), Cuboasis
+governance, living growth, optional Hive/HQ, and CubeDream (solo + together).
+
+See ABOUT.md / docs/CODEMAP.md in the repository root for orientation.
+"""
 
 __version__ = "0.47.0"
 
