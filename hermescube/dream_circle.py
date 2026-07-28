@@ -648,3 +648,295 @@ def circle_status(hive_root: str | Path, circle_id: str) -> dict[str, Any]:
         "signal_count": len(signals),
         "claim_boundary": CLAIM_BOUNDARY,
     }
+
+
+def dialogue_in_circle(
+    hive_root: str | Path,
+    circle_id: str,
+    *,
+    interviewer: str,
+    subject: str,
+    topic: str = "",
+    hermes_home: str | Path | None = None,
+    subject_cube: Any = None,
+    mint: bool = False,
+    max_turns: int = 6,
+) -> dict[str, Any]:
+    """Conversation mode: peer interview inside a circle; facts become signals."""
+    meta = _load_meta(hive_root, circle_id)
+    if not meta:
+        return {"ok": False, "error": "circle_not_found"}
+    if meta.get("status") != "open":
+        return {"ok": False, "error": f"circle_{meta.get('status')}"}
+
+    join_circle(hive_root, circle_id, agent_id=interviewer)
+    join_circle(hive_root, circle_id, agent_id=subject)
+
+    from hermescube.interview import peer_dialogue
+
+    focus = (topic or meta.get("topic") or "shared craft").strip()
+    dialogue = peer_dialogue(
+        hive_root,
+        interviewer=interviewer,
+        subject=subject,
+        topic=focus,
+        mode="discover",
+        subject_cube=subject_cube,
+        hermes_home=hermes_home,
+        persist=True,
+        mint=bool(mint),
+        max_turns=max_turns,
+    )
+    if not dialogue.get("ok"):
+        return dialogue
+
+    paths = circle_paths(hive_root, circle_id)
+    paths["dialogues"].mkdir(parents=True, exist_ok=True)
+    sid = str(dialogue.get("session_id") or uuid.uuid4().hex[:10])
+    rec_path = paths["dialogues"] / f"{sid}.json"
+    rec_path.write_text(
+        json.dumps(
+            {
+                "circle_id": circle_id,
+                "session_id": sid,
+                "interviewer": interviewer,
+                "subject": subject,
+                "topic": focus,
+                "outcome": dialogue.get("outcome"),
+                "turns": dialogue.get("turns"),
+                "brief_path": dialogue.get("brief_path"),
+            },
+            indent=2,
+            default=str,
+        ),
+        encoding="utf-8",
+    )
+
+    posted = 0
+    # Distill brief / outcome into chorus signals attributed to both agents
+    snippets: list[str] = []
+    brief_path = dialogue.get("brief_path")
+    if brief_path and Path(brief_path).is_file():
+        try:
+            text = Path(brief_path).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                line = line.strip(" -*")
+                if len(line) >= 24 and not line.startswith("#"):
+                    snippets.append(line[:400])
+                if len(snippets) >= 4:
+                    break
+        except Exception:
+            pass
+    if not snippets:
+        snippets.append(
+            f"Peer interview {interviewer}↔{subject} on {focus}: "
+            f"{dialogue.get('outcome') or 'done'}"
+        )
+
+    for snip in snippets:
+        for agent in (interviewer, subject):
+            r = post_signal(
+                hive_root,
+                circle_id,
+                agent_id=agent,
+                summary=snip,
+                entities=[interviewer, subject, focus.split()[0] if focus else "craft"],
+                evidence_refs=[sid],
+                kind="dialogue_fact",
+                trust=0.62,
+            )
+            if r.get("ok"):
+                posted += 1
+
+    with open(paths["diary"], "a", encoding="utf-8") as f:
+        f.write(
+            f"\n## Dialogue\n\n{interviewer} interviewed {subject} on {focus!r}\n"
+            f"session={sid} outcome={dialogue.get('outcome')} "
+            f"signals_posted={posted}\n"
+            f"_{CLAIM_BOUNDARY}_\n"
+        )
+
+    meta = _load_meta(hive_root, circle_id) or meta
+    meta["dialogues"] = int(meta.get("dialogues") or 0) + 1
+    _save_meta(hive_root, meta)
+
+    return {
+        "ok": True,
+        "circle_id": circle_id,
+        "dialogue": dialogue,
+        "signals_posted": posted,
+        "record": str(rec_path),
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def adversarial_skim(
+    hive_root: str | Path,
+    circle_id: str,
+    *,
+    local_entries: list[Any] | None = None,
+) -> dict[str, Any]:
+    """Loom-lite: flag circle candidates that conflict with hive/local evidence.
+
+    Report-only — adjusts candidate risk_flags / score in candidates.jsonl;
+    does not delete signals.
+    """
+    meta = _load_meta(hive_root, circle_id)
+    if not meta:
+        return {"ok": False, "error": "circle_not_found"}
+    paths = circle_paths(hive_root, circle_id)
+    if not paths["candidates"].is_file() or paths["candidates"].stat().st_size == 0:
+        scored = score_circle(hive_root, circle_id, scorer="adversary")
+        if not scored.get("ok"):
+            return scored
+
+    from hermescube.conflict import find_conflicts
+    from hermescube.hive import hive_paths
+
+    corpus: list[Any] = list(local_entries or [])
+    hp = hive_paths(hive_root)
+    if hp["cube"].is_file():
+        with CubeFile.open(str(hp["cube"])) as hive_cube:
+            corpus.extend(list(hive_cube.read_l1() or [])[-400:])
+
+    updated: list[dict[str, Any]] = []
+    flagged = 0
+    with open(paths["candidates"], encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                c = json.loads(line)
+            except Exception:
+                continue
+            summary = str(c.get("summary") or "")
+            confs = find_conflicts(summary, corpus, limit=3) if summary else []
+            if confs:
+                flagged += 1
+                flags = list(c.get("risk_flags") or [])
+                flags.append("adversarial_conflict")
+                c["risk_flags"] = flags
+                c["adversary"] = {
+                    "verdict": "harmful" if len(confs) >= 2 else "neutral",
+                    "conflicts": confs[:3],
+                }
+                # Bounded penalty — report-influenced ranking
+                c["score"] = round(max(0.0, float(c.get("score") or 0) - 0.12), 4)
+                if c.get("kind") == "promote" and c["adversary"]["verdict"] == "harmful":
+                    c["kind"] = "theme"
+            else:
+                c.setdefault("adversary", {"verdict": "helpful", "conflicts": []})
+            updated.append(c)
+
+    updated.sort(key=lambda c: (-float(c.get("score") or 0), -int(c.get("occurrence_count") or 0)))
+    with open(paths["candidates"], "w", encoding="utf-8") as f:
+        for c in updated:
+            f.write(json.dumps(c, ensure_ascii=False) + "\n")
+
+    with open(paths["diary"], "a", encoding="utf-8") as f:
+        f.write(
+            f"\n## Adversarial skim\n\nFlagged {flagged}/{len(updated)} candidates\n"
+            f"_{CLAIM_BOUNDARY}_\n"
+        )
+    return {
+        "ok": True,
+        "circle_id": circle_id,
+        "candidates": len(updated),
+        "flagged": flagged,
+        "top": updated[:5],
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def run_auto_circle(
+    hive_root: str | Path,
+    *,
+    agent_homes: dict[str, str | Path],
+    topic: str = "night chorus",
+    opened_by: str = "night-watch",
+    max_promotes: int = 5,
+    interview_pairs: list[tuple[str, str]] | None = None,
+    skim: bool = True,
+) -> dict[str, Any]:
+    """Quiet-hour Chorus: open circle, signal from each soul cube, score, close.
+
+    ``agent_homes`` maps agent_id → hermes_home path. Offline agents still
+    dream together via distilled cube offerings (no live chat required).
+    """
+    from hermescube.hive import init_hive, is_hive
+
+    if not is_hive(hive_root):
+        init_hive(hive_root)
+
+    opened = open_circle(hive_root, opened_by=opened_by, topic=topic)
+    if not opened.get("ok"):
+        return opened
+    cid = str(opened["circle_id"])
+    feeds: list[dict[str, Any]] = []
+
+    for agent_id, home in agent_homes.items():
+        home_p = Path(home)
+        cube_path = home_p / "memories" / "memory.cube"
+        if not cube_path.is_file():
+            feeds.append({"agent_id": agent_id, "ok": False, "error": "cube_missing"})
+            continue
+        join_circle(hive_root, cid, agent_id=agent_id)
+        with CubeFile.open(str(cube_path)) as cube:
+            feeds.append(
+                signal_from_cube(hive_root, cid, cube, agent_id=agent_id, limit=20)
+            )
+
+    dialogues: list[dict[str, Any]] = []
+    for pair in interview_pairs or []:
+        if len(pair) != 2:
+            continue
+        a, b = pair
+        home_b = agent_homes.get(b)
+        cube_b = Path(home_b) / "memories" / "memory.cube" if home_b else None
+        if cube_b and cube_b.is_file():
+            with CubeFile.open(str(cube_b)) as sub_cube:
+                dialogues.append(
+                    dialogue_in_circle(
+                        hive_root,
+                        cid,
+                        interviewer=a,
+                        subject=b,
+                        topic=topic,
+                        hermes_home=agent_homes.get(a),
+                        subject_cube=sub_cube,
+                        mint=False,
+                    )
+                )
+        else:
+            dialogues.append(
+                dialogue_in_circle(
+                    hive_root,
+                    cid,
+                    interviewer=a,
+                    subject=b,
+                    topic=topic,
+                    hermes_home=agent_homes.get(a),
+                    mint=False,
+                )
+            )
+
+    scored = score_circle(hive_root, cid, scorer=opened_by)
+    skim_report: dict[str, Any] = {}
+    if skim and scored.get("ok"):
+        skim_report = adversarial_skim(hive_root, cid)
+    closed = close_circle(
+        hive_root, cid, closer=opened_by, max_promotes=max_promotes
+    )
+
+    return {
+        "ok": bool(closed.get("ok")),
+        "circle_id": cid,
+        "topic": topic,
+        "feeds": feeds,
+        "dialogues": dialogues,
+        "score": scored,
+        "adversarial": skim_report,
+        "close": closed,
+        "claim_boundary": CLAIM_BOUNDARY,
+    }

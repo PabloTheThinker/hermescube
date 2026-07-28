@@ -1,6 +1,6 @@
 # CubeDream — multi-layer dreaming, alone and together
 
-**Status:** L1 + L2 Chorus MVP **shipped in 0.46.0** (Conversation / auto-circle still open)  
+**Status:** Full stack **shipped in 0.47.0** (L1–L4 + Chorus + Conversation + auto-circle + skim)  
 **Date:** 2026-07-27  
 **North star:** Agents keep a private soul dream **and** can join a shared **dream circle** at the hive — dreaming *together* by reinforcing the same themes, interviewing craft, then committing only what survives multi-agent evidence.
 
@@ -263,12 +263,12 @@ dream:
 ## 11. Ship order (revised for “together”)
 
 1. ~~L1 scheduler + diary stub (reminder strip)~~ **shipped 0.46**  
-2. ~~**L2 circle MVP** — open / signal / score / close (Chorus only)~~ **shipped 0.46**  
+2. ~~**L2 circle MVP** — open / signal / score / close (Chorus)~~ **shipped 0.46**  
 3. ~~Hive lock + circle→hive promote + draw~~ **shipped 0.46**  
-4. Dialogue-in-circle (wire interview)  
+4. ~~Dialogue-in-circle (wire interview)~~ **shipped 0.47**  
 5. ~~L1 Apply via sleep_replay packaging~~ **shipped 0.46** (`solo:apply`)  
-6. L4 MEMORY.md proposals (optional)  
-7. Adversarial skim + auto-circle cron  
+6. ~~L4 MEMORY.md proposals~~ **shipped 0.47** (`dream propose`, never apply)  
+7. ~~Adversarial skim + auto-circle~~ **shipped 0.47** (`circle skim`, `auto-circle`)  
 
 ---
 

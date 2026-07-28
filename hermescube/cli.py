@@ -538,15 +538,28 @@ def main(argv: list[str] | None = None) -> int:
             "status",
             "solo",
             "circle",
+            "propose",
+            "auto-circle",
         ],
-        help="status · solo · circle …",
+        help="status · solo · propose · auto-circle · circle …",
     )
     p_dream.add_argument(
         "circle_command",
         nargs="?",
         default=None,
-        choices=["open", "join", "signal", "score", "close", "draw", "list", "status"],
-        help="For circle: open|join|signal|score|close|draw|list|status",
+        choices=[
+            "open",
+            "join",
+            "signal",
+            "score",
+            "close",
+            "draw",
+            "list",
+            "status",
+            "dialogue",
+            "skim",
+        ],
+        help="For circle: open|join|signal|dialogue|skim|score|close|draw|list|status",
     )
     p_dream.add_argument("--hive", default=None, help="Hive root (default: $HERMESCUBE_HIVE)")
     p_dream.add_argument(
@@ -571,6 +584,27 @@ def main(argv: list[str] | None = None) -> int:
         "--commit-crystalize",
         action="store_true",
         help="For solo --apply: crystalize for real (default dry_run)",
+    )
+    p_dream.add_argument(
+        "--subject",
+        default="",
+        help="For circle dialogue: subject agent id",
+    )
+    p_dream.add_argument(
+        "--peer-home",
+        action="append",
+        default=[],
+        help="For auto-circle: agent_id:/path/to/hermes_home (repeatable)",
+    )
+    p_dream.add_argument(
+        "--interview-pair",
+        default="",
+        help="For auto-circle: interviewer:subject",
+    )
+    p_dream.add_argument(
+        "--no-skim",
+        action="store_true",
+        help="For auto-circle: skip adversarial skim",
     )
 
     p_dense = sub.add_parser(
@@ -1146,6 +1180,47 @@ def cmd_dream(args: argparse.Namespace) -> int:
             print(f"  crystalize: {report['crystalize']}")
         return 0
 
+    if cmd == "propose":
+        cube_path = home / "memories" / "memory.cube"
+        if cube_path.is_file():
+            with CubeFile.open(str(cube_path)) as c:
+                report = dream_mod.propose_memory_md(home, cube=c)
+        else:
+            report = dream_mod.propose_memory_md(home, cube=None)
+        print(f"L4 proposals: {len(report.get('proposals') or [])} (not applied)")
+        print(f"  path: {report.get('path')}")
+        for p in (report.get("proposals") or [])[:5]:
+            print(f"  · {p.get('line', '')[:90]}")
+        return 0
+
+    if cmd == "auto-circle":
+        hive = args.hive or os.environ.get("HERMESCUBE_HIVE")
+        if not hive:
+            print("Error: --hive or HERMESCUBE_HIVE required", file=sys.stderr)
+            return 1
+        if not is_hive(hive):
+            init_hive(hive)
+        homes: dict[str, str] = {agent: str(home)}
+        for spec in args.peer_home or []:
+            if ":" not in spec:
+                continue
+            aid, path = spec.split(":", 1)
+            homes[aid.strip()] = path.strip()
+        pairs: list[tuple[str, str]] = []
+        if args.interview_pair and ":" in args.interview_pair:
+            a, b = args.interview_pair.split(":", 1)
+            pairs.append((a.strip(), b.strip()))
+        report = circle_mod.run_auto_circle(
+            hive,
+            agent_homes=homes,
+            topic=args.topic or "night chorus",
+            opened_by=agent,
+            interview_pairs=pairs or None,
+            skim=not bool(args.no_skim),
+        )
+        print(json.dumps(report, indent=2, default=str)[:4000])
+        return 0 if report.get("ok") else 1
+
     if cmd == "circle":
         hive = args.hive or os.environ.get("HERMESCUBE_HIVE")
         if not hive:
@@ -1202,6 +1277,28 @@ def cmd_dream(args: argparse.Namespace) -> int:
             for t in r.get("top") or []:
                 mark = "★" if t.get("together") else "·"
                 print(f"  {mark} {t.get('score')}  {t.get('summary', '')[:70]}")
+            return 0 if r.get("ok") else 1
+        if sub == "dialogue":
+            subject = args.subject or ""
+            if not subject:
+                print("Error: --subject required", file=sys.stderr)
+                return 1
+            r = circle_mod.dialogue_in_circle(
+                hive,
+                cid,
+                interviewer=agent,
+                subject=subject,
+                topic=args.topic or "",
+                hermes_home=home,
+                mint=False,
+            )
+            print(json.dumps(r, indent=2, default=str)[:3000])
+            return 0 if r.get("ok") else 1
+        if sub == "skim":
+            r = circle_mod.adversarial_skim(hive, cid)
+            print(
+                f"Adversarial skim: flagged={r.get('flagged')}/{r.get('candidates')}"
+            )
             return 0 if r.get("ok") else 1
         if sub == "close":
             r = circle_mod.close_circle(hive, cid, closer=agent)

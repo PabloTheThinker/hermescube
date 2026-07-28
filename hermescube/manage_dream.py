@@ -72,6 +72,50 @@ def handle_dream(provider: Any, args: dict[str, Any]) -> str:
                     pass
             return json.dumps(report, default=str)
 
+        if mode in ("propose", "memory_md", "l4", "hot_md"):
+            return json.dumps(
+                dream_mod.propose_memory_md(
+                    hh, cube=provider._cube, **pkw
+                ),
+                default=str,
+            )
+
+        if mode in ("auto-circle", "auto_circle", "night"):
+            if not hive_root:
+                return json.dumps(
+                    {
+                        "error": "hive not configured",
+                        "hint": "set plugins.hermescube.hive_path or HERMESCUBE_HIVE",
+                    }
+                )
+            homes = {agent: hh}
+            # Optional peers: content="id1:/path1,id2:/path2"
+            peers = str(args.get("peers") or args.get("content") or "").strip()
+            if peers and ":" in peers:
+                for part in peers.split(","):
+                    part = part.strip()
+                    if ":" not in part:
+                        continue
+                    aid, path = part.split(":", 1)
+                    homes[aid.strip()] = path.strip()
+            topic = str(args.get("topic") or "night chorus").strip()
+            pairs: list[tuple[str, str]] = []
+            pair_s = str(args.get("interview") or "").strip()
+            if pair_s and ":" in pair_s:
+                a, b = pair_s.split(":", 1)
+                pairs.append((a.strip(), b.strip()))
+            return json.dumps(
+                circle_mod.run_auto_circle(
+                    hive_root,
+                    agent_homes=homes,
+                    topic=topic,
+                    opened_by=agent,
+                    interview_pairs=pairs or None,
+                    skim=str(args.get("skim") or "1") not in ("0", "false", "no"),
+                ),
+                default=str,
+            )
+
         if mode.startswith("circle:") or mode in (
             "circle",
             "open",
@@ -81,6 +125,9 @@ def handle_dream(provider: Any, args: dict[str, Any]) -> str:
             "close",
             "draw",
             "list",
+            "dialogue",
+            "skim",
+            "adversary",
         ):
             if not hive_root:
                 return json.dumps(
@@ -185,12 +232,47 @@ def handle_dream(provider: Any, args: dict[str, Any]) -> str:
                         pass
                 return json.dumps(r, default=str)
 
+            if sub == "dialogue":
+                if not circle_id:
+                    return json.dumps({"error": "circle_id required"})
+                subject = str(args.get("agent") or args.get("subject") or "").strip()
+                if not subject:
+                    return json.dumps({"error": "subject agent required"})
+                topic = str(args.get("topic") or args.get("content") or "").strip()
+                return json.dumps(
+                    circle_mod.dialogue_in_circle(
+                        hive_root,
+                        circle_id,
+                        interviewer=agent,
+                        subject=subject,
+                        topic=topic,
+                        hermes_home=hh,
+                        subject_cube=provider._cube if subject == agent else None,
+                        mint=bool(args.get("mint")),
+                    ),
+                    default=str,
+                )
+
+            if sub in ("skim", "adversary", "adversarial"):
+                if not circle_id:
+                    return json.dumps({"error": "circle_id required"})
+                ents = list(provider._cube.read_l1() or []) if provider._cube else []
+                return json.dumps(
+                    circle_mod.adversarial_skim(
+                        hive_root, circle_id, local_entries=ents
+                    ),
+                    default=str,
+                )
+
             return json.dumps({"error": f"unknown circle action: {sub}"})
 
         return json.dumps(
             {
                 "error": f"unknown dream mode: {mode}",
-                "hint": "status|solo|solo:apply|circle:open|circle:signal|…",
+                "hint": (
+                    "status|solo|solo:apply|propose|auto-circle|"
+                    "circle:open|signal|dialogue|skim|score|close|draw"
+                ),
             }
         )
     except Exception as e:

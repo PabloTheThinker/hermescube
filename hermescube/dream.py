@@ -285,6 +285,89 @@ def run_solo_dream(
     return report
 
 
+def propose_memory_md(
+    hermes_home: str | Path,
+    *,
+    cube: Any = None,
+    limit: int = 5,
+    **path_kw: Any,
+) -> dict[str, Any]:
+    """L4 — propose MEMORY.md additions from durable cube facts (never apply).
+
+    Writes ``memories/dreams/memory_md_proposals.jsonl`` + diary note.
+    Hermes ``background_review`` / human approval owns actual MEMORY.md writes.
+    """
+    home = Path(hermes_home)
+    mem_path = home / "MEMORY.md"
+    existing = ""
+    if mem_path.is_file():
+        try:
+            existing = mem_path.read_text(encoding="utf-8")
+        except Exception:
+            existing = ""
+    existing_l = existing.lower()
+
+    entries: list[Any] = []
+    if cube is not None:
+        try:
+            entries = list(cube.read_l1() or [])
+        except Exception:
+            entries = []
+
+    proposals: list[dict[str, Any]] = []
+    for e in entries:
+        et = (getattr(e, "entry_type", "") or "").lower()
+        if et not in ("belief", "trait", "resolve"):
+            continue
+        d = getattr(e, "data", None) or {}
+        if not (d.get("durable") or d.get("crystal")):
+            continue
+        if d.get("hive_shared") or str(d.get("verification") or "") == "hive_shared":
+            continue
+        desc = (getattr(e, "description", "") or "").strip()
+        if len(desc) < 16 or desc.startswith("["):
+            continue
+        # Skip if already present (prefix or substantial token overlap)
+        needle = desc[:40].lower()
+        if needle and needle in existing_l:
+            continue
+        toks = {t for t in needle.replace("-", " ").split() if len(t) >= 4}
+        if toks and sum(1 for t in toks if t in existing_l) >= max(2, len(toks) // 2):
+            continue
+        proposals.append(
+            {
+                "op": "add_line",
+                "entry_id": getattr(e, "id", ""),
+                "line": f"- {desc[:220]}",
+                "reason": "durable_cube_fact_missing_from_memory_md",
+                "claim_boundary": CLAIM_BOUNDARY,
+            }
+        )
+        if len(proposals) >= limit:
+            break
+
+    out_path = dreams_dir(hermes_home, **path_kw) / "memory_md_proposals.jsonl"
+    with open(out_path, "w", encoding="utf-8") as f:
+        for p in proposals:
+            f.write(json.dumps(p, ensure_ascii=False) + "\n")
+
+    diary = (
+        f"**L4 MEMORY.md proposals** (not applied)\n\n"
+        f"- count: {len(proposals)}\n"
+        f"- file: `{out_path.name}`\n"
+        f"- Apply only via Hermes memory tool / human review."
+    )
+    append_diary(hermes_home, diary, **path_kw)
+    return {
+        "ok": True,
+        "layer": "L4_hot_md",
+        "applied": False,
+        "proposals": proposals,
+        "path": str(out_path),
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
 def reminder_strip(
     hermes_home: str | Path,
     *,

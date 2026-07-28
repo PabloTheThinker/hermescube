@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.47.0] - 2026-07-27
+
+### CubeDream complete stack — dialogue, auto-circle, skim, L4 + peel
+- **Conversation**: `dream_circle.dialogue_in_circle` runs peer interview inside a circle; brief facts become chorus signals
+- **Auto-circle**: `run_auto_circle` / `hermescube dream auto-circle` — multi-agent night chorus from soul cubes (+ optional interview pair)
+- **Adversarial skim**: conflict-aware demotion of circle candidates (report-ranked, no deletes)
+- **L4 proposals**: `dream.propose_memory_md` / `hermescube dream propose` — MEMORY.md diffs never auto-applied
+- Manage modes: `propose`, `auto-circle`, `circle:dialogue`, `circle:skim`
+- Peel `search` / `probe` / `feedback` into `tools_recall.py` (provider hub thinner)
+- Tests: `test_dream_full.py` + interview CLI list (466 total)
+
 ## [0.46.0] - 2026-07-27
 
 ### CubeDream — soul dreams + dream together (circle MVP)

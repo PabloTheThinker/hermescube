@@ -1,6 +1,6 @@
 """HermesCube — binary columnar archive with holographic associative retrieval."""
 
-__version__ = "0.46.0"
+__version__ = "0.47.0"
 
 from hermescube.hrr import (
     Array,
@@ -44,6 +44,7 @@ from hermescube import manage_fleet
 from hermescube import manage_dream
 from hermescube import dream
 from hermescube import dream_circle
+from hermescube import tools_recall
 from hermescube import nexus  # backward-compat shim → cuboasis
 
 __all__ = [
@@ -92,6 +93,7 @@ __all__ = [
     "manage_dream",
     "dream",
     "dream_circle",
+    "tools_recall",
     "nexus",
     "__version__",
 ]
