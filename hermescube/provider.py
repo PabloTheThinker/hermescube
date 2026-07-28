@@ -199,17 +199,19 @@ class _SyncQueue:
         except RuntimeError as e:
             logger.warning("sync submit failed (executor shut down?): %s", e)
 
-    def flush(self, timeout: float = 5.0) -> None:
+    def flush(self, timeout: float = 5.0) -> bool:
         """Drain background work without hanging forever.
 
         Honors ``timeout``: waits up to that many seconds for in-flight
         work, then abandons the wait (daemon workers may still finish).
         Never cancels pending futures — dropping them silently lost
         memories (see TestSyncQueueRegression).
+
+        Returns True if the queue drained within ``timeout``.
         """
         with self._lock:
             if self._executor is None:
-                return
+                return True
             executor = self._executor
             self._executor = None
 
@@ -227,16 +229,18 @@ class _SyncQueue:
             target=_shutdown, name="hermescube_flush", daemon=True
         )
         t.start()
-        if not done.wait(timeout=max(0.1, float(timeout))):
-            logger.warning(
-                "sync queue flush timed out after %.1fs — abandoning wait "
-                "(in-flight work may still finish on daemon threads)",
-                timeout,
-            )
-            try:
-                executor.shutdown(wait=False, cancel_futures=False)
-            except Exception:
-                pass
+        if done.wait(timeout=max(0.1, float(timeout))):
+            return True
+        logger.warning(
+            "sync queue flush timed out after %.1fs — abandoning wait "
+            "(in-flight work may still finish on daemon threads)",
+            timeout,
+        )
+        try:
+            executor.shutdown(wait=False, cancel_futures=False)
+        except Exception:
+            pass
+        return False
 
 
 # ── Provider ─────────────────────────────────────────────────────────
@@ -1160,6 +1164,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 active_vault=getattr(self, "_vault", "") or "",
                 active_chamber=getattr(self, "_chamber", "") or "",
                 cubewave=getattr(self, "_cubewave", None),
+                memory_policy=getattr(self, "_memory_policy", "auto-safe") or "auto-safe",
                 **self._path_kw(),
             )
             if nstrip:
@@ -1193,6 +1198,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             "- Cuboasis: action=space (vaults/chambers), action=connect (unified neighbors), "
             "action=progress (ledger), action=cuboasis (pane / capture / review / "
             "approve / reject / sync / doctor; Cubewave neural field)",
+            "- When candidates pending>0: review before treating them as doctrine",
         ])
         if getattr(self, "_hive_path", ""):
             lines.append(
@@ -1255,7 +1261,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 try:
                     from hermescube.peer_card import load_card, prompt_strip as peer_strip
 
-                    card = load_card(self._hermes_home)
+                    card = load_card(self._hermes_home, **self._path_kw())
                     ps = peer_strip(card, max_lines=5)
                     if ps:
                         lines.append("")
@@ -1283,13 +1289,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         # Surface consolidate nudge here so agents see triage/crystalize/relations.
         if self._take_memory_review_nudge():
             lines.append("")
-            lines.append(
+            nudge = (
                 "### Memory review due (HermesCube consolidate)\n"
                 "- Call `hermescube_manage action=triage` for consolidation queues.\n"
                 "- Then `action=crystalize` if consolidate queue is non-empty.\n"
                 "- Use `action=relations` for who/owns/related facts; "
                 "`action=merge` when Living strip says merge ready."
             )
+            if (getattr(self, "_memory_policy", "") or "") == "review-first":
+                nudge += (
+                    "\n- Cuboasis review-first is on: also "
+                    "`action=cuboasis mode=review` for the candidate queue."
+                )
+            lines.append(nudge)
             self._nudge_prefetch_line = True
 
         return "\n".join(lines)
@@ -1314,8 +1326,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if self._engine is not None:
             setattr(self._engine, "_chamber_filter", chamber)
 
+        vault_key = getattr(self, "_vault", "") or ""
+        uid_key = getattr(self, "_user_id", "") or ""
         cache_key = hashlib.md5(
-            f"{retrieval_query}|ch:{chamber}".encode()
+            f"{retrieval_query}|ch:{chamber}|v:{vault_key}|u:{uid_key}".encode()
         ).hexdigest()
         if cache_key in self._prefetch_cache:
             results = self._prefetch_cache[cache_key]
@@ -1588,7 +1602,32 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             for fet, fdesc in fact_lines:
                 try:
                     from hermescube.events import event_to_entry_data, make_event
+                    from hermescube.memory_gate import (
+                        capture_candidate,
+                        gate_text_for_write,
+                    )
 
+                    gated = gate_text_for_write(
+                        fdesc,
+                        policy=getattr(self, "_memory_policy", "auto-safe") or "auto-safe",
+                        explicit=False,
+                        tags=[vault] if vault else None,
+                    )
+                    write_path = gated.get("path") or "skip"
+                    if write_path in ("skip", "block"):
+                        continue
+                    if write_path == "candidate":
+                        capture_candidate(
+                            self._hermes_home,
+                            fdesc,
+                            record_type=fet or "fact",
+                            source="sync_extract",
+                            entry_type=fet or "belief",
+                            session_id=session_id or self._session_id,
+                            tags=[vault] if vault else None,
+                            **self._path_kw(),
+                        )
+                        continue
                     fev = make_event(
                         "claim",
                         session_id=session_id or self._session_id,
@@ -1602,16 +1641,24 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         payload={"text": fdesc, "claim_type": fet},
                         parent_event_ids=[result.get("event_id") or ""],
                     )
+                    fdata = event_to_entry_data(
+                        fev,
+                        source="extract",
+                        trust=0.7,
+                        durable=True,
+                        session_id=session_id or self._session_id,
+                    )
+                    if vault:
+                        fdata["vault"] = vault
+                    if uid:
+                        fdata["user_id"] = uid
+                        alt = getattr(self, "_user_id_alt", "") or ""
+                        if alt:
+                            fdata["user_id_alt"] = alt
                     self._cube.append(
                         entry_type=fet,
                         description=fdesc,
-                        data=event_to_entry_data(
-                            fev,
-                            source="extract",
-                            trust=0.7,
-                            durable=True,
-                            session_id=session_id or self._session_id,
-                        ),
+                        data=fdata,
                         outcome="none",
                     )
                 except Exception:
@@ -1707,6 +1754,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         vault = getattr(self, "_vault", "") or ""
 
         def _session_end_work() -> None:
+            import time as _time
+
+            t0 = _time.perf_counter()
+            stages: dict[str, float] = {}
             start_count = int(getattr(cube, "entry_count", 0) or 0)
 
             # Auto-extract (uses captured session_id via temporary bind)
@@ -1717,6 +1768,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     self._auto_extract_facts(messages_snap)
                 finally:
                     self._session_id = prev
+            stages["auto_extract_ms"] = (_time.perf_counter() - t0) * 1000.0
 
             # Single L1 deserialize for the closure (plus intentional reread
             # after crystalize/digest appends if those fire).
@@ -1725,6 +1777,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             except Exception:
                 entries = []
             l1_reads = 1
+            t_stage = _time.perf_counter()
 
             # Triage — decide what offline work is worth doing this cycle
             triage_plan: dict = {}
@@ -1741,6 +1794,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     )
                 except Exception:
                     triage_plan = {}
+            stages["triage_ms"] = (_time.perf_counter() - t_stage) * 1000.0
+            t_stage = _time.perf_counter()
 
             # Numeric / count contradiction pass before crystalize
             if not skip and len(entries) >= 6:
@@ -1785,6 +1840,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         l1_reads += 1
                 except Exception:
                     pass
+            stages["crystalize_ms"] = (_time.perf_counter() - t_stage) * 1000.0
+            t_stage = _time.perf_counter()
 
             # Sleep replay
             if replay_enabled and not skip and len(entries) >= 6 and engram:
@@ -1800,19 +1857,27 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 except Exception:
                     pass
 
-            # Trajectory observe
+            # Trajectory observe (cap transcript tail — cost control)
             if observe_enabled and not skip and messages_snap:
                 try:
                     from hermescube.trajectory import observe_messages
+
+                    obs_msgs = (
+                        messages_snap[-40:]
+                        if len(messages_snap) > 40
+                        else messages_snap
+                    )
                     observe_messages(
                         cube,
-                        messages_snap,
+                        obs_msgs,
                         hermes_home=hermes_home,
                         min_tools=3,
                         max_forge=2,
                     )
                 except Exception:
                     pass
+            stages["observe_ms"] = (_time.perf_counter() - t_stage) * 1000.0
+            t_stage = _time.perf_counter()
 
             # Session digest + peer card
             if not skip:
@@ -1841,6 +1906,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         hermes_home=hermes_home,
                         peer_name=agent_identity or "user",
                         min_interval_s=peer_cadence,
+                        **path_kw,
                     )
                 except Exception:
                     pass
@@ -1882,26 +1948,32 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 except Exception as e:
                     logger.debug("growth_merge skipped: %s", e)
 
+            end_count = int(getattr(cube, "entry_count", 0) or 0)
+            durable_delta = max(0, end_count - int(start_count or 0))
+            elapsed_ms = (_time.perf_counter() - t0) * 1000.0
+
             # Progress ledger — prove the session moved the infrastructure
             if hermes_home and not skip:
                 try:
                     from hermescube.cuboasis import record_progress, cuboasis_status
 
-                    end_count = int(getattr(cube, "entry_count", 0) or 0)
                     record_progress(
                         hermes_home,
                         "session_end",
                         detail=f"entries {start_count}→{end_count}",
                         metrics={
-                            "durable_delta": max(0, end_count - int(start_count or 0)),
+                            "durable_delta": durable_delta,
                             "crystalized": 1 if crystalized else 0,
                             "triage_consolidate": int(
                                 (triage_plan.get("counts") or {}).get("consolidate") or 0
                             ),
+                            "session_end_ms": round(elapsed_ms, 2),
+                            "l1_reads": l1_reads,
+                            **{k: round(v, 2) for k, v in stages.items()},
                         },
                         **path_kw,
                     )
-                    # Refresh Cuboasis snapshot for agents / doctor
+                    # Refresh Cuboasis snapshot — reuse entries (no extra L1)
                     cuboasis_status(
                         cube,
                         hermes_home,
@@ -1910,6 +1982,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         colony=getattr(self, "_colony", None),
                         engram=engram,
                         cubewave=getattr(self, "_cubewave", None),
+                        entries=entries,
                         **path_kw,
                     )
                 except Exception as e:
@@ -1917,11 +1990,19 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
 
             try:
                 setattr(self, "_last_session_end_l1_reads", l1_reads)
+                setattr(self, "_last_session_end_ms", elapsed_ms)
+                setattr(self, "_last_session_end_stages", stages)
             except Exception:
                 pass
 
-            # Evolve (grounded: witness-anchored, no silent cycles)
-            if cube.entry_count > 0 and not breaker_open:
+            # Evolve — skip when triage says idle and nothing durable landed
+            idle = (
+                bool(triage_plan)
+                and not should_crystal
+                and not crystalized
+                and durable_delta == 0
+            )
+            if cube.entry_count > 0 and not breaker_open and not idle:
                 try:
                     from hermescube.self_evolution import run_grounded_evolve
 
@@ -1973,8 +2054,6 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     else:
                         from hermescube.genealogy import tick_session
 
-                        end_count = int(getattr(cube, "entry_count", 0) or 0)
-                        durable_delta = max(0, end_count - int(start_count or 0))
                         growth_report = tick_session(
                             hermes_home,
                             cube=cube,
@@ -2012,9 +2091,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         # Hermes MemoryManager serializes session_end → session_switch;
         # flush so closure finishes before switch can rebind identity.
         try:
-            self._sync_queue.flush(timeout=30.0)
+            flush_ok = self._sync_queue.flush(timeout=30.0)
+            setattr(self, "_last_session_end_flush_ok", bool(flush_ok))
         except Exception as e:
             logger.debug("session_end flush: %s", e)
+            setattr(self, "_last_session_end_flush_ok", False)
 
     def on_session_switch(
         self,
@@ -2936,6 +3017,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             if mode == "set" and args.get("query"):
                 # Soft-set active vault for this session (affinity tag)
                 self._vault = str(args.get("query") or "").strip()[:80]
+                if self._engine is not None:
+                    setattr(self._engine, "_active_vault", self._vault)
+                with self._state_lock:
+                    self._prefetch_cache.clear()
             report = space_map(
                 self._cube,
                 hermes_home=self._hermes_home,

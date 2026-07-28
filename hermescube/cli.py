@@ -376,6 +376,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override HERMES_HOME",
     )
+    p_doc.add_argument(
+        "--identity",
+        default="",
+        help="Agent identity for nested profile sidecars",
+    )
+    p_doc.add_argument(
+        "--workspace",
+        default="",
+        help="Agent workspace for nested profile sidecars",
+    )
 
     # update — pull + reinstall into user Hermes home (like hermes plugins update)
     p_up = sub.add_parser(
@@ -1009,23 +1019,58 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     cube = home / "memories" / "memory.cube"
     plugin = home / "plugins" / "hermescube"
     cfg = home / "config.yaml"
+    identity = str(getattr(args, "identity", "") or "").strip()
+    workspace = str(getattr(args, "workspace", "") or "").strip()
+    nest = bool(identity and workspace)
+    path_kw = {
+        "agent_identity": identity,
+        "agent_workspace": workspace,
+        "nest_profiles": nest,
+    }
     print("HermesCube doctor")
     print(f"  HERMES_HOME: {home}")
     print(f"  cube:        {cube}  {'EXISTS' if cube.is_file() else 'missing (ok until first use)'}")
     print(f"  plugin dir:  {plugin}  {'OK' if (plugin / '__init__.py').is_file() else 'MISSING'}")
     print(f"  config:      {cfg}  {'OK' if cfg.is_file() else 'MISSING'}")
+    if nest:
+        print(f"  profile nest: identity={identity} workspace={workspace}")
     provider = None
+    plugin_cfg: dict = {}
     if cfg.is_file():
         try:
             import yaml
             c = yaml.safe_load(cfg.read_text()) or {}
             provider = (c.get("memory") or {}).get("provider")
+            plugin_cfg = ((c.get("plugins") or {}).get("hermescube") or {})
         except Exception as e:
             print(f"  config parse error: {e}")
     print(f"  memory.provider: {provider or '(unset)'}")
+    if plugin_cfg:
+        print(
+            f"  plugins.hermescube: policy={plugin_cfg.get('memory_policy', '(unset)')} "
+            f"auto_extract={plugin_cfg.get('auto_extract', '(unset)')}"
+        )
     try:
         import hermescube
         print(f"  package: {hermescube.__version__} @ {hermescube.__file__}")
+        # Version skew: installed package vs plugin tree manifest
+        man = plugin / "plugin.yaml"
+        if not man.is_file():
+            man = plugin / "plugin" / "plugin.yaml"
+        if man.is_file():
+            try:
+                import yaml
+
+                mv = str((yaml.safe_load(man.read_text()) or {}).get("version") or "")
+                if mv and mv != hermescube.__version__:
+                    print(
+                        f"  ! version skew: package={hermescube.__version__} "
+                        f"plugin.yaml={mv} — run hermescube update"
+                    )
+                else:
+                    print(f"  versions: package=plugin.yaml={hermescube.__version__}")
+            except Exception as e:
+                print(f"  plugin.yaml: unreadable ({e})")
     except Exception as e:
         print(f"  package: NOT IMPORTABLE ({e})")
         return 1
@@ -1077,8 +1122,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             try:
                 from hermescube.triage import load_plan, plan_path
 
-                plan = load_plan(home)
-                pp = plan_path(home)
+                plan = load_plan(home, **path_kw)
+                pp = plan_path(home, **path_kw)
                 if plan:
                     cp = plan.get("control_plan") or {}
                     print(
@@ -1092,7 +1137,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             try:
                 from hermescube.relations import RelationStore
 
-                st = RelationStore(home).stats()
+                st = RelationStore(home, **path_kw).stats()
                 print(
                     f"  relations: {st.get('relations')} "
                     f"(open={st.get('open')}) path={st.get('path')}"
@@ -1119,14 +1164,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 from hermescube.memory_gate import list_candidates, oasis_doctor_card
                 from hermescube.cuboasis import progress_usefulness
 
-                pend = list_candidates(str(home), status="pending", limit=5)
+                pend = list_candidates(str(home), status="pending", limit=5, **path_kw)
                 print(
                     f"  candidates: pending={pend.get('count', 0)} "
                     f"path={pend.get('path')}"
                 )
-                useful = progress_usefulness(str(home)).get("usefulness")
+                useful = progress_usefulness(str(home), **path_kw).get("usefulness")
                 print(f"  usefulness: {useful}")
-                card = oasis_doctor_card(c, str(home))
+                card = oasis_doctor_card(c, str(home), **path_kw)
                 print(
                     f"  cuboasis_doctor: health={card.get('health')} "
                     f"pending={card.get('pending_candidates')} "

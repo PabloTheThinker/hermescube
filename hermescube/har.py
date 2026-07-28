@@ -425,8 +425,14 @@ class HARQueryEngine:
         active_user = getattr(self, "_active_user_id", "") or ""
         if active_user and isinstance(data, dict):
             eu = str(data.get("user_id") or "")
+            eu_alt = str(data.get("user_id_alt") or "")
             alt = getattr(self, "_active_user_id_alt", "") or ""
+            match = False
             if eu and (eu == active_user or (alt and eu == alt)):
+                match = True
+            elif eu_alt and (eu_alt == active_user or (alt and eu_alt == alt)):
+                match = True
+            if match:
                 score *= 1.08
             elif eu and eu != active_user:
                 score *= 0.92

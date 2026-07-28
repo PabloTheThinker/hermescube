@@ -50,6 +50,10 @@ _RE_SENSITIVE = re.compile(
     r"|\b(?:access[_-]?token|auth[_-]?token|bearer)\s+[a-z0-9._\-]{16,}"
     r"|\bsk-[a-z0-9]{16,}\b"
     r"|\b(?:aws|ghp|github_pat)_[a-z0-9]{12,}\b"
+    r"|\bghp_[A-Za-z0-9]{20,}\b"
+    r"|\bxox[baprs]-[A-Za-z0-9-]{10,}\b"  # Slack tokens
+    r"|\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"  # JWT-shaped
+    r"|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"  # JWT header
     r"|\bBEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY\b"
     r")"
 )
@@ -177,6 +181,65 @@ def decide_write_path(
     return "candidate"
 
 
+def gate_text_for_write(
+    text: str,
+    *,
+    policy: str = "auto-safe",
+    explicit: bool = False,
+    tags: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Single entrypoint: safety + write path for any near-durable text.
+
+    Returns ``{"path": durable|candidate|block|skip, "safety": {...}}``.
+    """
+    summary = (text or "").strip()
+    safety = memory_safety(summary, summary, tags=tags)
+    return {
+        "path": decide_write_path(safety, policy=policy, explicit=explicit),
+        "safety": safety,
+    }
+
+
+def governance_prompt_lines(
+    hermes_home: str | Path | None,
+    *,
+    memory_policy: str = "auto-safe",
+    limit: int = 3,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> list[str]:
+    """Agent-visible Cuboasis governance strip (policy + pending queue)."""
+    policy = normalize_policy(memory_policy)
+    lines = [f"Memory policy: {policy}"]
+    try:
+        pend = list_candidates(
+            hermes_home,
+            status="pending",
+            limit=max(1, limit),
+            agent_identity=agent_identity,
+            agent_workspace=agent_workspace,
+            nest_profiles=nest_profiles,
+        )
+    except Exception:
+        return lines
+    n = int(pend.get("count") or 0)
+    if n <= 0:
+        return lines
+    lines.append(
+        f"Cuboasis review queue: {n} candidate(s) — "
+        "call `hermescube_manage action=cuboasis mode=review` then "
+        "`mode=approve:<id>` / `mode=reject:<id>`."
+    )
+    for c in (pend.get("candidates") or [])[:limit]:
+        cid = str(c.get("candidate_id") or "")[:18]
+        st = str(c.get("status") or "pending")
+        summ = str(c.get("summary") or "")[:90]
+        if summ:
+            lines.append(f"  · [{st}] {cid}: {summ}")
+    return lines
+
+
 # ── Candidate store ───────────────────────────────────────────────────
 
 
@@ -244,11 +307,9 @@ def capture_candidate(
     if not summary:
         return {"ok": False, "error": "text required"}
     safety = memory_safety(summary, summary, tags=tags or [])
-    status = (
-        "blocked_review_required"
-        if safety["status"] == "blocked"
-        else "pending_review"
-    )
+    blocked = safety["status"] == "blocked"
+    status = "blocked_review_required" if blocked else "pending_review"
+    content_sha = hashlib.sha256(summary.encode("utf-8")).hexdigest()
     cid = "cand_" + hashlib.sha256(
         f"{summary}|{record_type}|{source}".encode()
     ).hexdigest()[:16]
@@ -266,14 +327,26 @@ def capture_candidate(
             "blocked_review_required",
         ):
             return {"ok": True, "duplicate": True, **existing}
+    # Blocked bodies are redacted in the ledger (hash + reasons only) so a
+    # world-readable candidates.jsonl does not retain credential plaintext.
+    if blocked:
+        store_summary = f"[REDACTED blocked candidate {content_sha[:16]}]"
+        store_content = (
+            f"[REDACTED] reasons={','.join(safety.get('review_reasons') or [])}"
+        )
+    else:
+        store_summary = summary[:500]
+        store_content = summary[:4000]
     rec = {
         "schema_version": SCHEMA,
         "candidate_id": cid,
         "status": status,
         "record_type": (record_type or "fact").strip()[:32],
         "entry_type": entry_type or "belief",
-        "summary": summary[:500],
-        "content": summary[:4000],
+        "summary": store_summary,
+        "content": store_content,
+        "content_sha256": content_sha,
+        "redacted": blocked,
         "tags": list(tags or [])[:12],
         "source": (source or "capture")[:64],
         "session_id": session_id or "",

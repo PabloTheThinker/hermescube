@@ -74,7 +74,15 @@ Review-first memory oasis — inspired by oh-my-hermes discipline, Cube-native:
 | `cuboasis mode=sync` | Curation report (duplicates / risky / low-trust) — proposals only |
 | `cuboasis mode=doctor` | Readiness card (not execution evidence) |
 
-Config: `memory_policy` = `review-first` | `auto-safe` | `off` (gates auto-extract).
+Config: `memory_policy` = `review-first` | `auto-safe` | `off` (gates auto-extract **and** sync-turn fact extracts).
 
-Safety gate blocks credentials / raw logs / full transcripts; flags temp PR/commit noise.
+Safety gate blocks credentials / raw logs / full transcripts / JWT·Slack-shaped secrets; flags temp PR/commit noise.
+Blocked candidates store a **redacted** body (hash + reasons) — not plaintext secrets.
 Evidence states on entries: `prepared_not_observed` · `observed` · `verified` · `superseded` · `refuted` · `rejected`.
+
+### Agent visibility (0.42+)
+
+The system prompt Cuboasis strip is **light** (no full L1 remap) and includes:
+- `policy=<mode>`
+- `candidates pending=N`
+- When N>0: 2–3 candidate summaries + `mode=review` / approve / reject instructions

@@ -386,6 +386,15 @@ def assimilate_offerings(hive_root: str | Path) -> dict[str, Any]:
                             ):
                                 stats["blocked"] += 1
                                 continue
+                            # Credential / raw-log gate (beyond injection scan)
+                            try:
+                                from hermescube.memory_gate import memory_safety
+
+                                if memory_safety(desc, desc).get("status") == "blocked":
+                                    stats["blocked"] += 1
+                                    continue
+                            except Exception:
+                                pass
                             agent = str(row.get("agent_id") or "unknown")
                             ev = make_event(
                                 "hive_offer",
@@ -493,6 +502,16 @@ def draw_wisdom(
             if f"[INTERVIEW:{agent_id}]" in desc:
                 skipped_own += 1
                 continue
+            try:
+                from hermescube.threats import has_blockable_threat
+                from hermescube.memory_gate import memory_safety
+
+                if has_blockable_threat(desc) or memory_safety(desc, desc).get(
+                    "status"
+                ) == "blocked":
+                    continue
+            except Exception:
+                pass
             ev = make_event(
                 "hive_draw",
                 session_id="",

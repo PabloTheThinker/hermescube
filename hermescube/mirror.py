@@ -52,7 +52,23 @@ _STOP_ENT = frozenset({
     "ran", "set", "got", "put", "let", "use", "used", "config", "note",
     "todo", "task", "step", "next", "then", "now", "was", "were", "will",
     "session", "turn", "reply", "answer", "question", "context", "prompt",
+    "please", "sure", "okay", "ok", "thanks", "thank", "hello", "hi",
 })
+
+# Lowercase infra landmarks that assoc benches + real agent memories use
+# constantly — extract_entities otherwise requires Cap/hyphen/snake shape.
+_INFRA_ALLOWLIST = frozenset({
+    "redis", "postgres", "postgresql", "mysql", "sqlite", "mongodb", "mongo",
+    "nginx", "apache", "kubernetes", "k8s", "docker", "podman", "terraform",
+    "ansible", "prometheus", "grafana", "elasticsearch", "kafka", "rabbitmq",
+    "celery", "fastapi", "django", "flask", "pytorch", "cuda", "ollama",
+    "supabase", "cloudflare", "vercel", "github", "gitlab", "s3", "gcs",
+    "openai", "anthropic", "hermes", "cuboasis", "cubewave", "engram",
+})
+
+_RE_HASHTAG = re.compile(r"(?<!\w)#([A-Za-z][A-Za-z0-9_-]{2,32})\b")
+_RE_HANDLE = re.compile(r"(?<!\w)@([A-Za-z][A-Za-z0-9_-]{2,32})\b")
+_RE_SEMVER = re.compile(r"^v?\d+(?:\.\d+){1,3}(?:[-+][\w.]+)?$", re.I)
 
 # Known multiword concepts (bee landmarks + Cuboasis pocket dimension)
 _CANON_PHRASES = (
@@ -108,15 +124,20 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
         key = s.lower()
         if key in _STOP_ENT or key in seen:
             return
+        if _RE_SEMVER.match(s):
+            return
         parts = key.split()
         if len(parts) == 1:
-            if len(key) < 4:
+            if len(key) < 4 and key not in _INFRA_ALLOWLIST:
                 return
             # single token must look like a name or a machine identifier
             if not (
                 allow_lower
+                or key in _INFRA_ALLOWLIST
                 or s[:1].isupper()
                 or s.startswith("$")
+                or s.startswith("#")
+                or s.startswith("@")
                 or "_" in s
                 or "." in s
                 or "-" in s
@@ -126,6 +147,14 @@ def extract_entities(text: str, *, max_entities: int = 8) -> list[str]:
         found.append(s)
 
     low = text.lower()
+    # Seed infra allowlist when the token appears as a whole word
+    for tok in _INFRA_ALLOWLIST:
+        if re.search(rf"(?<![a-z0-9_]){re.escape(tok)}(?![a-z0-9_])", low):
+            _add(tok, allow_lower=True)
+    for m in _RE_HASHTAG.finditer(text):
+        _add("#" + m.group(1), allow_lower=True)
+    for m in _RE_HANDLE.finditer(text):
+        _add("@" + m.group(1), allow_lower=True)
     for phrase, label in _CANON_PHRASES:
         if phrase in low or phrase.replace(" ", "_") in low:
             _add(label)

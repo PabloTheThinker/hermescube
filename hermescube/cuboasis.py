@@ -73,11 +73,15 @@ def space_map(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    entries: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Organization map: chambers + vaults + density — one warehouse, many rooms."""
     from hermescube.living import CHAMBERS, _chamber_of
 
-    entries = list(cube.read_l1() or []) if cube is not None else []
+    if entries is None:
+        entries = list(cube.read_l1() or []) if cube is not None else []
+    else:
+        entries = list(entries)
     chamber_counts: Counter[str] = Counter()
     vault_counts: Counter[str] = Counter()
     labeled = 0
@@ -652,20 +656,47 @@ def cuboasis_status(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    entries: list[Any] | None = None,
+    light: bool = False,
 ) -> dict[str, Any]:
-    """Single pane: space + wave + connections density + progress."""
+    """Single pane: space + wave + connections density + progress.
+
+    ``light=True`` skips full L1 remap (prompt / session-end reuse path).
+    Pass ``entries`` to avoid a second deserialize when the caller already
+    holds L1.
+    """
     pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
     )
-    space = space_map(
-        cube,
-        hermes_home=hermes_home,
-        active_vault=active_vault,
-        **pkw,
+    if light:
+        space = {
+            "ok": True,
+            "entries": int(getattr(cube, "entry_count", 0) or 0) if cube is not None else 0,
+            "labeled_vault": 0,
+            "unlabeled": 0,
+            "active_vault": active_vault or "",
+            "agent_identity": agent_identity or "",
+            "agent_workspace": agent_workspace or "",
+            "chambers": [],
+            "vaults": [],
+            "topics": [],
+            "types": {},
+            "light": True,
+        }
+    else:
+        space = space_map(
+            cube,
+            hermes_home=hermes_home,
+            active_vault=active_vault,
+            entries=entries,
+            **pkw,
+        )
+    # Light prompts: ledger-only progress (growth_status can full-scan L1)
+    progress = progress_status(
+        hermes_home, cube=None if light else cube, **pkw
     )
-    progress = progress_status(hermes_home, cube=cube, **pkw)
 
     rel_stats: dict[str, Any] = {}
     try:
@@ -731,7 +762,10 @@ def cuboasis_status(
             "pending_candidates": pending.get("count", 0),
             "claim_boundary": pending.get("claim_boundary"),
         }
-        if cubewave is not None or engram is not None or cube is not None:
+        if (
+            not light
+            and (cubewave is not None or engram is not None or cube is not None)
+        ):
             status["doctor"] = oasis_doctor_card(
                 cube,
                 hermes_home,
@@ -743,7 +777,7 @@ def cuboasis_status(
     except Exception as e:
         logger.debug("governance strip skip: %s", e)
 
-    if hermes_home:
+    if hermes_home and not light:
         try:
             sp = cuboasis_state_path(hermes_home, **pkw)
             sp.parent.mkdir(parents=True, exist_ok=True)
@@ -775,8 +809,9 @@ def prompt_strip(
     agent_identity: str = "",
     agent_workspace: str = "",
     nest_profiles: bool = False,
+    memory_policy: str = "",
 ) -> str:
-    """One-line Cuboasis infrastructure strip for the system prompt."""
+    """Cuboasis strip for the system prompt — light (no full L1 remap)."""
     try:
         st = cuboasis_status(
             cube,
@@ -784,24 +819,26 @@ def prompt_strip(
             active_vault=active_vault,
             active_chamber=active_chamber,
             cubewave=cubewave,
+            light=True,
             agent_identity=agent_identity,
             agent_workspace=agent_workspace,
             nest_profiles=nest_profiles,
         )
     except Exception:
-        return ""
-    space = st.get("space") or {}
+        st = {}
     conn = st.get("connections") or {}
     prog = st.get("progress") or {}
     wave = st.get("wave") or {}
     g = prog.get("growth") or {}
-    n_ch = sum(int(c.get("entries") or 0) for c in (space.get("chambers") or []))
     vault = active_vault or "(shared)"
     chamber = active_chamber or "all"
     gov = st.get("governance") or {}
-    pending = gov.get("pending_candidates", 0)
-    return (
-        f"Cuboasis · vault={vault} · chamber={chamber} · rooms={n_ch} entries · "
+    pending = int(gov.get("pending_candidates") or 0)
+    n_entries = int((st.get("space") or {}).get("entries") or 0)
+    policy = (memory_policy or "").strip() or "auto-safe"
+    line = (
+        f"Cuboasis · policy={policy} · vault={vault} · chamber={chamber} · "
+        f"entries={n_entries} · "
         f"SPO={conn.get('relations', 0)} colony={conn.get('colony_edges', 0)} "
         f"engram={conn.get('engram_nodes', 0)} "
         f"cubewave={wave.get('readouts', 0)}/{wave.get('edges', 0)} · "
@@ -809,3 +846,24 @@ def prompt_strip(
         f"progress events={prog.get('events', 0)} · "
         f"living v{g.get('version') or '?'} {g.get('era_label') or ''}"
     ).strip()
+    # Append actionable review lines when the queue is non-empty
+    extra: list[str] = []
+    if pending > 0 or policy == "review-first":
+        try:
+            from hermescube.memory_gate import governance_prompt_lines
+
+            gov_lines = governance_prompt_lines(
+                hermes_home,
+                memory_policy=policy,
+                limit=3,
+                agent_identity=agent_identity,
+                agent_workspace=agent_workspace,
+                nest_profiles=nest_profiles,
+            )
+            # Drop duplicate policy line — already in header
+            extra = [ln for ln in gov_lines if not ln.startswith("Memory policy:")]
+        except Exception:
+            extra = []
+    parts = [line]
+    parts.extend(extra)
+    return "\n".join(p for p in parts if p)

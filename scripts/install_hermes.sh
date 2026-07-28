@@ -174,6 +174,10 @@ hc = pl.setdefault("hermescube", {})
 hc.setdefault("auto_extract", False)
 hc.setdefault("evolve_interval", 50)
 hc.setdefault("query_rewrite", False)
+hc.setdefault("memory_policy", "auto-safe")
+hc.setdefault("hive_on_session_end", False)
+hc.setdefault("interview_on_pilgrimage", False)
+hc.setdefault("witness_detect", True)
 
 bak = p.with_suffix(".yaml.bak-hermescube-install")
 if not bak.exists():

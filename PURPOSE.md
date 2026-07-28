@@ -104,6 +104,15 @@ triage can `mode=apply` to forge and annotate. See [docs/CUBOASIS.md](docs/CUBOA
 | **Cube** | WAL turns, deep archive, entity/colony, dense export | **This package** |
 | Hermespace | FOA / dual-decode / load | `space_bridge` tiny strip |
 
+## Solo path vs fleet path
+
+| Path | Day-to-day surface | Optional |
+|------|--------------------|----------|
+| **Solo** (default) | prefetch · sync_turn · feedback · triage · Cuboasis review | crystalize / merge / relations |
+| **Fleet** | hive pilgrimage · HQ route/handoff · interview · curator | only when `HERMESCUBE_HIVE` / hive config is set |
+
+New operators should learn the solo path first. Fleet layers compound on top — they are not required for warehouse usefulness.
+
 ## Non-goals
 
 - Not a second agent brain / not J-space weights  

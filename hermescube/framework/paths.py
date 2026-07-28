@@ -49,6 +49,7 @@ class CubePaths:
     candidates_ledger: Path
     cuboasis_state: Path
     cubewave: Path
+    peer_card: Path
     # Legacy alias kept for callers that still read nexus_state
     nexus_state: Path
 
@@ -119,6 +120,7 @@ def resolve_cube_paths(
         candidates_ledger=side / "candidates.jsonl",
         cuboasis_state=side / "cuboasis_state.json",
         cubewave=side / "cubewave.json",
+        peer_card=side / "peer_card.json",
         nexus_state=side / "nexus_state.json",
     )
 
@@ -146,6 +148,7 @@ _LEGACY_SIDE_CARS = (
     ("candidates.jsonl", "candidates_ledger"),
     ("cuboasis_state.json", "cuboasis_state"),
     ("cubewave.json", "cubewave"),
+    ("peer_card.json", "peer_card"),
     ("nexus_state.json", "nexus_state"),
 )
 

@@ -72,6 +72,26 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         ),
         "block",
     ),
+    (
+        "memory_doctrine_override",
+        re.compile(
+            r"(?:ignore|disregard|forget|do\s+not\s+follow)\s+"
+            r"(?:the\s+)?(?:memory\.md|user\.md|soul\.md|memory\s+doctrine|"
+            r"stored\s+memories|hermescube)",
+            re.IGNORECASE,
+        ),
+        "block",
+    ),
+    (
+        "html_comment_injection",
+        re.compile(r"<!--[\s\S]{0,200}(?:system|instruction|override)[\s\S]{0,200}-->", re.I),
+        "warn",
+    ),
+    (
+        "jwt_blob",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+        "warn",
+    ),
 ]
 
 

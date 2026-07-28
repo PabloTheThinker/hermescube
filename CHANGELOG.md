@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.42.0] - 2026-07-27
+
+### A− → A lifts — governance, isolation, cost, security, doctor
+- **Governance**: sync-turn fact extracts honor `memory_policy`; system prompt shows `policy=` + pending candidate summaries (`mode=review`); consolidate nudge mentions Cuboasis when review-first
+- **Light Cuboasis strip**: prompt path no longer full-scans L1; `cuboasis_status(light=True, entries=…)` for session-end reuse
+- **Isolation**: vault switch updates HAR + clears prefetch; cache key includes vault/`user_id`; HAR matches entry `user_id_alt`; nested `peer_card.json`
+- **Session-end cost**: stage timers + `session_end_ms` in progress metrics; observe capped to last 40 msgs; idle skip evolve; flush returns bool
+- **Security**: JWT/Slack/ghp patterns; MEMORY.md doctrine-override threat; blocked candidates redacted (hash + reasons); hive assimilate/draw run `memory_safety`
+- **Entity extract**: infra allowlist (`redis`/`postgres`/…), `#tag`/`@handle`, semver filter
+- **Doctor / install**: `--identity`/`--workspace`, version skew check, effective `memory_policy`; install seeds `memory_policy` + hive keys
+- Docs: ASSESSMENT refreshed to 0.42; tests: `test_a_minus_lifts.py` (440 total)
+
 ## [0.41.1] - 2026-07-27
 
 ### Sync queue flush honors timeout

@@ -3,6 +3,9 @@
 Nous/Honcho parallel: peer card + base context refreshed on cadence.
 Cube version: assemble from warehouse types (trait/relationship/belief)
 into memories/peer_card.json + prompt strip. No cloud, no dialectic LLM.
+
+When nest_profiles is on, the card lives under the profile sidecar dir so
+multi-workspace homes do not bleed peer models.
 """
 
 from __future__ import annotations
@@ -14,7 +17,22 @@ from pathlib import Path
 from typing import Any
 
 
-def card_path(hermes_home: str | Path | None = None) -> Path:
+def card_path(
+    hermes_home: str | Path | None = None,
+    *,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
+) -> Path:
+    from hermescube.framework.paths import resolve_cube_paths
+
+    if nest_profiles or agent_identity or agent_workspace:
+        return resolve_cube_paths(
+            hermes_home,
+            agent_identity=agent_identity,
+            agent_workspace=agent_workspace,
+            nest_profiles=nest_profiles,
+        ).peer_card
     hh = Path(hermes_home or os.environ.get("HERMES_HOME") or (Path.home() / ".hermes"))
     return hh / "memories" / "peer_card.json"
 
@@ -91,15 +109,22 @@ def build_card(entries: list[Any], *, peer_name: str = "user") -> dict[str, Any]
     }
 
 
-def save_card(card: dict[str, Any], hermes_home: str | Path | None = None) -> Path:
-    path = card_path(hermes_home)
+def save_card(
+    card: dict[str, Any],
+    hermes_home: str | Path | None = None,
+    **path_kw: Any,
+) -> Path:
+    path = card_path(hermes_home, **path_kw)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(card, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
 
-def load_card(hermes_home: str | Path | None = None) -> dict[str, Any] | None:
-    path = card_path(hermes_home)
+def load_card(
+    hermes_home: str | Path | None = None,
+    **path_kw: Any,
+) -> dict[str, Any] | None:
+    path = card_path(hermes_home, **path_kw)
     if not path.is_file():
         return None
     try:
@@ -114,15 +139,23 @@ def refresh_card(
     hermes_home: str | Path | None = None,
     peer_name: str = "user",
     min_interval_s: float = 0.0,
+    agent_identity: str = "",
+    agent_workspace: str = "",
+    nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Rebuild card unless within cadence interval."""
-    prev = load_card(hermes_home)
+    pkw = dict(
+        agent_identity=agent_identity,
+        agent_workspace=agent_workspace,
+        nest_profiles=nest_profiles,
+    )
+    prev = load_card(hermes_home, **pkw)
     if prev and min_interval_s > 0:
         age = time.time() - float(prev.get("updated_ts") or 0)
         if age < min_interval_s:
             return {"skipped": True, "age_s": age, "card": prev}
     card = build_card(entries, peer_name=peer_name)
-    path = save_card(card, hermes_home)
+    path = save_card(card, hermes_home, **pkw)
     return {"skipped": False, "path": str(path), "card": card}
 
 
