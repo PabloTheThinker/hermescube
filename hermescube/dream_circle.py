@@ -14,7 +14,7 @@ import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from hermescube.cube import CubeFile
 from hermescube.threats import sanitize_for_storage, scan_text
@@ -852,7 +852,7 @@ def adversarial_skim(
 def run_auto_circle(
     hive_root: str | Path,
     *,
-    agent_homes: dict[str, str | Path],
+    agent_homes: Mapping[str, str | Path],
     topic: str = "night chorus",
     opened_by: str = "night-watch",
     max_promotes: int = 5,
