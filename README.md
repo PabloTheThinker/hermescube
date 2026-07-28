@@ -13,7 +13,7 @@
   <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-34D058?style=for-the-badge" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=for-the-badge" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/version-0.47.0-informational?style=for-the-badge" alt="0.47.0">
+  <img src="https://img.shields.io/badge/version-0.49.0-informational?style=for-the-badge" alt="0.49.0">
 </p>
 
 **HermesCube plugs into [Hermes Agent](https://github.com/NousResearch/hermes-agent) as the one external `MemoryProvider`.** Hermes keeps the hot notebook (`MEMORY.md`); Cube keeps the long tail — a crash-safe `.cube` archive with holographic associative retrieval, Cuboasis governance, living growth, and optional multi-agent Hive / CubeDream.
@@ -26,6 +26,7 @@ No cloud memory APIs. No pruning tax. Your data stays under `$HERMES_HOME/memori
 <tr><td><b>Safe under load</b></td><td>Atomic writes, cross-process lock, threat scan, Cuboasis review-first candidates.</td></tr>
 <tr><td><b>Grows with the agent</b></td><td>Cube of Eden → Elder living version, diary, curator skill refine, grounded self-evolution harness.</td></tr>
 <tr><td><b>Dream alone or together</b></td><td><a href="docs/CUBEDREAM.md">CubeDream</a>: soul solo cycles, dream circles (chorus / conversation), hive commit, MEMORY.md proposals only — never auto-applied.</td></tr>
+<tr><td><b>Powers Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">anatomical center</a> — circulatory beat (systole/diastole), load-tiered FOA blood, autonomic pulse charge. Space focuses the turn; Cube holds the floor.</td></tr>
 <tr><td><b>Fleet when you need it</b></td><td>Optional Hive pilgrimage, Fleet HQ routing/handoffs, peer interviews. Solo path is enough for day one.</td></tr>
 </table>
 
@@ -151,9 +152,11 @@ for entry, score in engine.query("what theme does the user like?"):
 | | |
 |---|---|
 | **[About](ABOUT.md)** | What HermesCube is (and is not) |
+| **[Architecture Blueprint](docs/ARCHITECTURE.md)** | **Whole-project architecture map** |
 | **[Docs index](docs/README.md)** | Full map of guides |
 | **[User Guide](docs/USER_GUIDE.md)** | Install, store, search, evolve |
 | **[Day-to-day](docs/DAY_TO_DAY.md)** | Operator usefulness |
+| **[Hermespace](docs/HERMESPACE.md)** · **[Anatomy](docs/ANATOMY.md)** | Heart / circulatory center |
 | **[CubeDream](docs/CUBEDREAM.md)** | Solo + together dreaming |
 | **[Cuboasis](docs/CUBOASIS.md)** | Space, Cubewave, policy |
 | **[Hive](docs/HIVE.md)** · **[HQ](docs/HQ.md)** · **[Interviews](docs/INTERVIEW.md)** | Multi-agent |
@@ -176,10 +179,11 @@ hermescube/
 │   ├── manage*.py           # manage hub peels
 │   ├── dream.py · dream_circle.py
 │   ├── cuboasis.py · hive.py · hq.py · interview.py
+│   ├── space_bridge.py · center.py   # Hermespace heart / anatomy
 │   └── …                    # see docs/CODEMAP.md
 ├── plugin/                  # Hermes plugin register + CLI
 ├── skills/                  # hermescube-operate · import · interview-me
-├── docs/                    # Guides + assets/
+├── docs/                    # ARCHITECTURE blueprint + guides + assets/
 ├── tests/                   # pytest (466+)
 ├── scripts/                 # install · update · isolation check
 └── benchmarks/              # HAR / real-use (results outside repo)

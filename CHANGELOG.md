@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased]
+
+### Architecture Blueprint — whole-project map
+- Rewrite [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) as the full HermesCube Architecture Blueprint (ecosystem, L0–L7 stack, anatomy, lifecycles, Cuboasis/Hive/Dream/Hermespace, safety, module map)
+- Refresh [docs/CODEMAP.md](docs/CODEMAP.md) + docs index / ABOUT / PURPOSE pointers
+
+## [0.49.0] - 2026-07-28
+
+### Anatomical center — stronger Cube × Hermespace heart integration
+- Research merge: Nous MemoryProvider lifecycle/caps/soft-fail + Hermespace Baddeley/Cowan/GWT/Sweller/pulse + Cube bio-rank / species maps
+- New `hermescube/center.py` (`CENTER_API_VERSION = "1.1"`): organ map, `beat`, `supply`/`return_flow` (diastole/systole), `autonomic_tick`, load-tiered strip budgets
+- Docs: [docs/ANATOMY.md](docs/ANATOMY.md) — circulatory architecture + Space turn/idle wiring
+- Tests: `tests/test_center.py`
+
+## [0.48.0] - 2026-07-28
+
+### Hermespace heart API — Cube ready as Space's core
+- `space_bridge` stable contract `GENERATOR_API_VERSION = "1.0"`
+- New: `ensure_heart`, `heart_status`, `seal_learning`, `pulse_charge`
+- `module_status` / `seal_to_cube` kept as back-compat aliases for Hermespace 0.18
+- Seals threat-scan + journey log; typed entry support (belief/landmark/trait/…)
+- Docs: [docs/HERMESPACE.md](docs/HERMESPACE.md) integration checklist + recommended Space `cube_module` shape
+- PURPOSE/ABOUT: Cube as Hermespace generator/heart (from prior purpose PR commits)
+
+## [Unreleased]
+
 ## [0.47.0] - 2026-07-27
 
 ### CubeDream complete stack — dialogue, auto-circle, skim, L4 + peel

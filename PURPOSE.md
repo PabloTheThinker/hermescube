@@ -1,36 +1,56 @@
 # PURPOSE.md — HermesCube north star
 
-**One line:** HermesCube is the **local deep-memory warehouse** for Hermes Agent — long-tail durable recall that works *with* hot MEMORY.md, not instead of it.
+**One line:** HermesCube is the **local deep-memory generator** for Hermes Agent — the durable warehouse that **powers Hermespace**, working *with* hot MEMORY.md, not instead of it.
 
-Public pitch: **[ABOUT.md](ABOUT.md)**. Docs index: **[docs/README.md](docs/README.md)**. Code layout: **[docs/CODEMAP.md](docs/CODEMAP.md)**.
+Public pitch: **[ABOUT.md](ABOUT.md)**. Docs index: **[docs/README.md](docs/README.md)**.  
+**Architecture Blueprint:** **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. Code layout: **[docs/CODEMAP.md](docs/CODEMAP.md)**.  
+Hermespace contract: **[docs/HERMESPACE.md](docs/HERMESPACE.md)** · Anatomy: **[docs/ANATOMY.md](docs/ANATOMY.md)**.
 
 ---
 
 ## Problem
 
-Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud memory leaks and costs, flat logs don't retrieve by meaning under load.
+Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud memory leaks and costs, flat logs don't retrieve by meaning under load — and a workbench alone cannot invent a lifetime archive.
 
-## Solution (Hermes MemoryProvider contract)
+## Solution (Hermes + Hermespace stack)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ Hermes Agent                                            │
-│  state.db                canonical sessions / tools     │
-│  MEMORY.md / USER.md     short doctrine (always-on)     │
-│  Skills                  executable procedures          │
-│  memory tool batch       atomic hot writes              │
-│  MemoryProvider socket   ONE external plugin            │
-│       └── HermesCube     living warehouse + tools       │
-│  Hermespace (optional)   FOA desk; cube strip under load│
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│ Hermes Agent                                                    │
+│  state.db · MEMORY.md · skills · memory tool                    │
+│  MemoryProvider socket ──► HermesCube  (ONE external plugin)    │
+│                                                                 │
+│  Hermespace          pocket workbench (FOA · dual decode · load)│
+│    ↑ powered by generator                                       │
+│  HermesCube          living warehouse + generator core          │
+│    .cube · Cuboasis · Hive · CubeDream · growth                 │
+│    space_bridge → inject strip · seal · world-belief charge     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-| Layer | Job | Cube relation |
-|-------|-----|----------------|
-| MEMORY.md | Hot inject, tiny | Extended via `on_memory_write` mirror |
-| memory tool | Agent-initiated doctrine | Mirrored into cube |
-| **Cube** | WAL turns, deep archive, Cuboasis, dream | **This package** |
-| Hermespace | FOA / dual-decode / load | `space_bridge` tiny strip |
+| Layer | Job | Relation |
+|-------|-----|----------|
+| MEMORY.md | Hot doctrine (tiny, always-on) | Cube mirrors via `on_memory_write` |
+| memory tool | Agent-initiated hot writes | Mirrored into cube |
+| **HermesCube** | Durable warehouse + **generator** | **This package** — SoT for long-tail memory |
+| **Hermespace** | FOA desk / dual decode / inject budget | Consumes Cube power; never a second archive |
+
+Hermespace without Cube is a desk with no deep floor.  
+Cube without Hermespace is still a complete memory plugin.  
+**Together:** Cube generates durable truth; Space focuses the turn.
+
+### Generator (Cube → Hermespace)
+
+| Surface | API | What Space gets |
+|---------|-----|-----------------|
+| **Inject power** | `space_bridge.build_space_inject` | Cap-bounded FOA strip (wisdom → hubs → query) |
+| **Seal intake** | `space_bridge.seal_to_cube` | Desk decisions → durable `.cube` |
+| **World charge** | `space_bridge.sync_world_beliefs` | Active wisdom → Hermespace `WorldModel` |
+| **Status** | `space_bridge.module_status` | Generator readiness |
+
+**Rule:** `memory.cube` is authoritative for durable memory. Hermespace world/desk
+projections are working surfaces — charged from Cube, never a competing SoT.
+See [docs/HERMESPACE.md](docs/HERMESPACE.md).
 
 ## Solo path vs fleet path
 
@@ -40,6 +60,7 @@ Agents lose the long tail: context windows fill, MEMORY.md is char-capped, cloud
 | **Fleet** | hive · HQ · interview · dream circle | only when hive is configured |
 
 New operators learn the solo path first. Fleet layers compound on top.
+Hermespace is orthogonal: a turn workbench that can sit on either path.
 
 ## Capability stack (current product)
 
@@ -51,6 +72,8 @@ New operators learn the solo path first. Fleet layers compound on top.
 | Self-evolution | witness, predictions, critic, gardener | SELF_EVOLUTION |
 | Hive / HQ / interviews | pilgrimage, charters, peer craft | HIVE · HQ · INTERVIEW |
 | **CubeDream (0.47)** | L1 solo · L2 circle · auto-circle · skim · L4 proposals | CUBEDREAM |
+| **Hermespace heart (0.48)** | `ensure_heart` · inject · seal · pulse charge (`space_bridge` 1.0) | HERMESPACE |
+| **Anatomical center (0.49)** | Circulatory `beat` / supply / return / autonomic + organ map | ANATOMY |
 
 **First connect:** empty warehouse → optional auto-bootstrap from MEMORY.md/USER.md + operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
 
@@ -58,10 +81,11 @@ New operators learn the solo path first. Fleet layers compound on top.
 
 - Not a second agent brain / not J-space weights  
 - Not a cloud memory SaaS  
-- Not a replacement for MEMORY.md  
+- Not a replacement for MEMORY.md **or** for Hermespace’s FOA desk  
 - Not “HAR always beats scan” marketing — lex-first + bio rank; honest benches  
 - Not AgentDrive / Mission Control — borrow algorithms, not the conductor OS  
-- **Never** auto-rewrite Hermes MEMORY.md from Cube dream paths (proposals only)
+- **Never** auto-rewrite Hermes MEMORY.md from Cube dream paths (proposals only)  
+- Cube does **not** require Hermespace; Space does **not** reimplement Cube  
 
 ## Success metrics
 
@@ -69,12 +93,15 @@ New operators learn the solo path first. Fleet layers compound on top.
 2. **Hot path ms-class** — warm prefetch without full L1 every inject  
 3. **IR useful** — hybrid lexical+HRR; score-first; labeled recall tracked  
 4. **User data isolation** — only `$HERMES_HOME/memories/`  
-5. **Compounding sessions** — growth-merge / triage / dream without theatre  
+5. **Hermespace powered** — under high load, Space inject stays cap-bounded *and* memory-bearing via Cube strip  
+6. **One SoT** — desk seals flow into Cube; world beliefs recharge from Cube wisdom  
+7. **Compounding sessions** — growth-merge / triage / dream without theatre  
 
 ## Version posture
 
 Ship purpose-aligned increments. Dual `plugin.yaml` must stay identical.  
-`hermescube update` never overwrites cube data. Assessment: [docs/ASSESSMENT.md](docs/ASSESSMENT.md).
+`hermescube update` never overwrites cube data. Assessment: [docs/ASSESSMENT.md](docs/ASSESSMENT.md).  
+Hermespace upgrades should deepen the **generator** link (inject / seal / charge), not fork a second archive.
 
 ### Historical layer notes (compressed)
 

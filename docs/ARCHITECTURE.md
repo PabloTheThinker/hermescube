@@ -1,399 +1,515 @@
-# Architecture
+# Architecture Blueprint — HermesCube
 
-Design rationale, data flow, and algorithmic choices in HermesCube.
+**Status:** living blueprint for the whole project (v0.49)  
+**Audience:** maintainers, agents, and Hermespace integrators  
+**Companions:** [PURPOSE.md](../PURPOSE.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md)
 
----
-
-## Design Philosophy
-
-### Where state lives (Hermes users)
-
-The library can open any path. The **Hermes MemoryProvider** always stores the
-live cube at `$HERMES_HOME/memories/memory.cube` (and optional
-`memory.embedder` beside it). Plugin code is installed under
-`$HERMES_HOME/plugins/hermescube/` via `hermes plugins install` +
-`scripts/install_hermes.sh`. Project checkouts must not be treated as the
-runtime data directory.
-
-## Design Philosophy
-
-HermesCube is built on three principles:
-
-1. **Append-only is the only safe write pattern.** Entries are never deleted
-   or modified in-place. Superseded entries are marked, not removed. This
-   eliminates whole classes of corruption and makes crash recovery trivial.
-
-2. **Semantic search beats keyword search for memory.** Agent conversations
-   are about meaning, not exact words. HRR vectors capture compositional
-   semantics without requiring an embedding API.
-
-3. **The system should improve with use.** Learned embeddings train on
-   accumulated data. k-means refines incrementally. β tracks attention
-   drift. Every evolve cycle makes retrieval better.
+This document is the **single architecture map** for HermesCube: where it sits in the Hermes ecosystem, how every product layer fits, how data flows on a turn, and how the binary warehouse works underneath.
 
 ---
 
-## The .cube Binary Format
+## 0. One-line identity
 
-A `.cube` file is a single binary with three contiguous layers:
+HermesCube is the **local deep-memory warehouse and heart** for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — durable, semantic, offline — and the **generator core** that powers [Hermespace](https://github.com/PabloTheThinker/hermespace).
+
+It is **not** a second agent runtime, not a cloud memory SaaS, and not a replacement for Hermes `MEMORY.md`.
+
+---
+
+## 1. Design principles
+
+1. **Append-only is the only safe durable write.** Entries are marked superseded, never silently deleted. Crash recovery stays simple.
+2. **Semantic recall over keyword-only.** HRR + HAR + learned embeddings + graphs — no embedding API required.
+3. **The system improves with use.** Evolve, trust feedback, Cubewave/Engram, growth eras, curator.
+4. **One external MemoryProvider.** Builtin MEMORY.md always coexists; Cube is additive.
+5. **Soft-fail at every integration edge.** Hermespace and fleet hooks never crash the agent loop.
+6. **Solo path first.** Hive / HQ / dream-circles are opt-in.
+7. **User data never lives in git.** Runtime SoT is `$HERMES_HOME/memories/memory.cube`.
+8. **Learn frameworks; remake Cube-native.** Steal algorithms (holographic trust, OMH governance, bio maps) — do not clone foreign stores.
+
+---
+
+## 2. Ecosystem placement
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Hermes Agent (Nous)                                                      │
+│  state.db · skills · gateway · memory tool · MemoryManager               │
+│  MEMORY.md / USER.md     hot doctrine (always-on, char-capped)           │
+│  MemoryProvider socket   ONE external plugin                             │
+│       └── HermesCube     living warehouse + tools + heart                │
+│                                                                          │
+│  Hermespace (optional)   FOA desk · dual decode · pulse                  │
+│       ↑ powered by       center.beat / space_bridge (arteries & veins)   │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Owner | Authority |
+|-------|-------|-----------|
+| `MEMORY.md` / `USER.md` | Hermes builtin | Hot doctrine |
+| `state.db` | Hermes | Canonical sessions / tools |
+| **`memory.cube`** | **HermesCube** | **Durable long-tail SoT** |
+| Hermespace world / desk | Hermespace | Working projections (charged from Cube) |
+| Hive `hive.cube` | Fleet opt-in | Collective distilled memory |
+
+**Nous contract (coding methods we honor):** `initialize` → `sync_turn` → `prefetch` / `queue_prefetch` → tools → `on_memory_write` → `on_session_end` → `on_session_switch` → `shutdown`. Soft-fail. Profile-scoped `hermes_home`. Prefetch caps.
+
+---
+
+## 3. Product architecture (full stack)
+
+Read top-down. Lower layers never depend on upper ones.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ L7  Hermespace center     anatomical beat · supply · return · autonomic │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L6  CubeDream             L1 soul · L2 circle · L3 hive · L4 proposals  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L5  Fleet                 Hive pilgrimage · HQ · peer interviews        │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L4  Living growth         Eden→Elder · CUBE.md · curator · self-evol.   │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L3  Cuboasis              space · wave · connections · progress · gate  │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L2  Provider socket       CubeMemoryProvider · manage peels · tools     │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L1  Warehouse engine      .cube · HRR · HAR · embed · WAL · threats     │
+├─────────────────────────────────────────────────────────────────────────┤
+│ L0  Framework housing     paths · config · lexindex · void              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Job | Primary modules | Detail doc |
+|-------|-----|-----------------|------------|
+| **L0** | Path/config OS inside Cube | `framework/` | [FRAMEWORK.md](FRAMEWORK.md) |
+| **L1** | Binary archive + retrieval | `cube` `hrr` `har` `embed` `threats` `bio_rank` | SPEC · this §8 |
+| **L2** | Hermes ABC adapter | `provider` `manage*` `tools_recall` `session_end` | this §7 |
+| **L3** | Pocket infra + governance | `cuboasis` `cubewave` `memory_gate` | [CUBOASIS.md](CUBOASIS.md) |
+| **L4** | Lifetime growth | `genealogy` `living` `curator` `self_evolution` | [GROWTH.md](GROWTH.md) |
+| **L5** | Multi-agent | `hive` `hq` `interview` | [HIVE](HIVE.md) · [HQ](HQ.md) · [INTERVIEW](INTERVIEW.md) |
+| **L6** | Night cycles | `dream` `dream_circle` | [CUBEDREAM.md](CUBEDREAM.md) |
+| **L7** | Hermespace heart | `space_bridge` `center` | [HERMESPACE](HERMESPACE.md) · [ANATOMY](ANATOMY.md) |
+
+---
+
+## 4. Anatomical view (heart × nervous FOA)
+
+Functional analogues for integration design — not biophysics. Full map: [ANATOMY.md](ANATOMY.md).
+
+```
+                 Hermespace = nervous FOA (PFC / desk)
+              Cowan ≤4 · GWT broadcast · Sweller load · pulse
+                         ▲ arteries              │ veins
+                         │ (diastole supply)     │ (systole seal)
+                 HermesCube = HEART (.cube SoT)
+         hippocampus encode · immune gate · lymph (hive)
+         vascular beds (Cuboasis) · dolphin-USWS dream/idle
+```
+
+| Organ | Cube/Space role | API |
+|-------|-----------------|-----|
+| Heart | Durable pump | `ensure_heart` · `heart_status` |
+| Arteries | FOA strip out | `center.supply` · `build_space_inject` |
+| Veins | Desk seal in | `center.return_flow` · `seal_learning` |
+| Autonomic | Idle rhythm | `autonomic_tick` · Space pulse |
+| Immune | Threat + candidates | `threats` · `memory_gate` |
+| Lymph | Collective | `hive` pilgrimage |
+| Vascular beds | Chambers | Cuboasis `space` |
+
+**Turn beat (recommended for Space):** `center.beat(query, seals=…, load=desk_load)`.
+
+---
+
+## 5. Runtime data layout
+
+### Install layout
+
+| Path | Contents |
+|------|----------|
+| `$HERMES_HOME/plugins/hermescube/` | Plugin code (git checkout preferred) |
+| `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` + plugin config |
+| `$HERMES_HOME/memories/` | **User data only** |
+
+### Memories directory (solo)
+
+```
+$HERMES_HOME/memories/
+├── memory.cube              # durable SoT
+├── memory.embedder          # optional learned projection
+├── candidates.jsonl         # Cuboasis review queue
+├── progress.jsonl           # Cuboasis progress ledger
+├── cuboasis_state.json
+├── cubewave.json
+├── engram_net.json
+├── colony_graph.json
+├── COLONY.md
+├── journey.jsonl / journey.md
+├── CUBE.md                  # living diary
+├── genealogy / living sidecars
+└── dreams/                  # CubeDream L1
+```
+
+Fleet adds hive root (charters, `hive.cube`, dream circles) — see [HIVE.md](HIVE.md) / [CUBEDREAM.md](CUBEDREAM.md).  
+Profile nesting (optional): `memories/profiles/<identity>/<workspace>/` via `framework/paths.py`.
+
+---
+
+## 6. Solo path vs fleet path
+
+```
+Solo (default)                         Fleet (opt-in)
+─────────────────                      ────────────────────────────
+prefetch / sync_turn                   + hive offer → assimilate → draw
+search / manage / feedback             + HQ charter / route / handoff
+Cuboasis space/connect/progress        + peer interview
+dream solo                             + dream circle / auto-circle
+center.beat ↔ Hermespace               (same heart; shared lymph)
+```
+
+New operators learn **solo** first. Fleet compounds on top when hive is configured.
+
+---
+
+## 7. Provider socket & lifecycles
+
+`CubeMemoryProvider` implements Hermes `MemoryProvider`.
+
+### Context awareness
+
+| `agent_context` | Writes? | Purpose |
+|-----------------|---------|---------|
+| `primary` | Yes | Normal sessions |
+| `subagent` | Read-focused | Privilege flows up |
+| `cron` / `flush` | Restricted | Avoid polluting user memory |
+| `skip_memory=True` | No | Explicit opt-out |
+
+### Turn lifecycle
+
+```
+User message
+  │
+  ├─► prefetch(user_msg)           # HAR + graphs → <memory-context> fence
+  │     frozen snapshot (no mid-turn drift)
+  │
+  ├─► [Hermespace] center.beat / inject strip under load (optional)
+  │
+  ├─► LLM call
+  │
+  └─► sync_turn(user, assistant)   # background _SyncQueue
+        ├─ threat scan + sanitize
+        ├─ memory_policy gate (review-first | auto-safe | off)
+        ├─ cube.append (atomic)
+        ├─ β nudge · entities · colony / engram / cubewave touch
+        └─ evolve if interval
+```
+
+### Session lifecycle
+
+```
+initialize(session_id, hermes_home=…)
+  open/create cube → load embedder → frozen snapshot → growth touch
+
+[ turns … ]
+
+on_memory_write(...)     # mirror builtin MEMORY.md writes
+on_pre_compress(...)     # harvest safe user text; never store compressor prose
+on_session_end(...)
+  flush sync queue → auto-extract (policy) → living pulse → dream due? → evolve
+on_session_switch(...)
+  refresh parent/user ids; FIFO after end flush
+
+shutdown()
+  save embedder · flush · close
+```
+
+### Tools (agent-facing)
+
+| Tool | Job |
+|------|-----|
+| `hermescube_search` | Semantic / hybrid recall |
+| `hermescube_manage` | Hub → warehouse / cuboasis / growth / fleet / dream peels |
+| `hermescube_feedback` | Asymmetric trust (+helpful / −unhelpful) |
+| `hermescube_probe` | Entity / associative probe |
+
+Manage peels: `manage_warehouse` · `manage_cuboasis` · `manage_growth` · `manage_fleet` · `manage_dream` — keep `provider.py` thin ([CODEMAP.md](CODEMAP.md)).
+
+### Frozen snapshot + sync queue
+
+- Prefetch reads a **frozen** β/L2 snapshot captured at init / after evolve.  
+- Writes serialize on a single-thread `_SyncQueue` so the agent turn returns fast.  
+- Circuit breaker: repeated evolve failures open a cooldown (no hammer loops).
+
+---
+
+## 8. Warehouse engine (L1 binary)
+
+### Design philosophy (engine)
+
+1. Append-only durable log  
+2. Semantic HRR vectors without network  
+3. Evolve improves centroids + embeddings over time  
+
+### `.cube` layout
 
 ```
 ┌──────────────────────────────────────────┐
 │ HEADER (40 bytes)                        │
 ├──────────────────────────────────────────┤
 │ L1 — Entry Log (append-only)             │
-│   Entry 0: [header 36B | desc | data |   │
-│             parents | vector 2048B]      │
-│   Entry 1: ...                           │
-│   Entry N: ...                           │
 ├──────────────────────────────────────────┤
 │ L2 — Topic Index (rewritten on evolve)   │
-│   bucket_count (4B)                      │
-│   Bucket 0: [centroid 2048B | count 4B | │
-│              entry_ids… | terms…]        │
-│   Bucket 1: ...                          │
 ├──────────────────────────────────────────┤
-│ L3 — β Vector (256 × f64 = 2048B)       │
+│ L3 — β Vector (attention state)          │
 └──────────────────────────────────────────┘
 ```
 
-### Header (40 bytes)
+#### Header (40 bytes)
 
-| Offset | Size | Field | Description |
-|--------|------|-------|-------------|
-| 0 | 4 | magic | `b"CUBE"` |
-| 4 | 4 | version | uint32 LE, currently 1 |
-| 8 | 4 | dim | uint32 LE, vector dimension |
-| 12 | 8 | entry_count | uint64 LE |
-| 20 | 4 | l2_bucket_count | uint32 LE |
-| 24 | 8 | l1_data_size | uint64 LE, bytes of L1 |
-| 32 | 8 | l3_offset | uint64 LE, byte offset to L3 |
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 4 | magic `CUBE` |
+| 4 | 4 | version (uint32 LE) |
+| 8 | 4 | dim |
+| 12 | 8 | entry_count |
+| 20 | 4 | l2_bucket_count |
+| 24 | 8 | l1_data_size |
+| 32 | 8 | l3_offset |
 
-### L1 — Entry Record
-
-Each entry is a fixed-size header (42 bytes) followed by variable-length fields
-and a 256-dim f64 vector:
+#### L1 entry record
 
 ```
-[id: 12B][timestamp: 16B][type: 1B][outcome: 1B]
-[desc_len: 4B][data_len: 4B][causal_count: 4B]
-[description: desc_len bytes UTF-8]
-[data: data_len bytes UTF-8 JSON]
-[causal_parents: causal_count × 12 bytes each]
-[vector: dim × 8 bytes f64 LE]
+[id 12B][timestamp 16B][type 1B][outcome 1B]
+[desc_len 4B][data_len 4B][causal_count 4B]
+[description UTF-8][data JSON][causal_parents…][vector dim×f64]
 ```
 
-Total entry size: `42 + desc_len + data_len + causal_count × 12 + dim × 8`
+#### L2 topic index
 
-### L2 — Topic Index
+Default 64 buckets: centroid + entry ids + terms. Empty until first `evolve()`.
 
-64 buckets by default. Each bucket:
+#### L3 β
 
-```
-[centroid: dim × f64 LE]
-[entry_count: uint32 LE]
-[entry_ids: entry_count × 12 bytes]
-[terms_len: uint16 LE]
-[terms: terms_len bytes UTF-8, comma-separated]
-```
+Agent attention state (`dim × f64`). Bound into queries so recall is contextual.
 
-L2 is empty (all zero centroids) until the first `evolve()`.
+Full binary normative detail: [SPEC.md](SPEC.md).
 
-### L3 — β Vector
+### HRR algebra
 
-```
-[beta: dim × f64 LE]
-```
+Holographic Reduced Representations (Plate 1995) — compositional vectors, local, zero required deps.
 
----
+| Op | Role |
+|----|------|
+| `embed_text` | Deterministic hash bag-of-features (+ bigrams) |
+| `bind` | Circular convolution (association) |
+| `unbind` | Correlation (retrieval) |
+| `superpose` | Bundle; capacity ~O(√dim) |
+| `cosine_sim` | Rank |
 
-## HRR Algebra
+Numpy accelerates FFT paths; pure Python remains correct.
 
-Holographic Reduced Representations (Plate 1995) are a vector symbolic
-architecture. They encode compositional structure into fixed-width
-distributed representations.
-
-### Why HRR?
-
-Alternatives considered:
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| Embedding API (OpenAI, Cohere) | Perfect semantics | Network latency, cost, privacy |
-| Local embedding model | Good semantics, local | 100MB+ model download, GPU recommended |
-| TF-IDF / BM25 | Simple, fast | No semantic understanding |
-| **HRR** | **Zero-deps, compositional, local** | **Approximate semantics** |
-
-HRR gives compositional semantics without a model download. `bind(user, prefers_python)`
-produces a vector dissimilar to both inputs — perfect for associative memory.
-
-### Operations
-
-**`embed_text(text)`** — Deterministic hash embedding:
-- Extract `[a-z0-9_]+` tokens from lowercased text
-- For each token: SHA-256 → uint16 pairs → index ±1 into vector
-- For each bigram: SHA-256 → index +1
-- Normalize to unit length
-
-**`bind(a, b)`** — Circular convolution:
-- With numpy: `ifft(fft(a) * fft(b)).real` — O(dim log dim)
-- Without numpy: nested loops — O(dim²)
-
-**`superpose(vectors)`** — Sum + normalize. Capacity: O(sqrt(dim)) ≈ 16 items
-for dim=256 before similarity degrades.
-
-### Backend Selection
-
-```python
-try:
-    import numpy as _np
-    _HAS_NUMPY = True
-except ImportError:
-    _HAS_NUMPY = False
-```
-
-Every operation checks `has_numpy()` and dispatches to the appropriate
-implementation. The pure-Python path is identical in output but slower.
-
----
-
-## HAR Query Protocol
-
-Holographic Associative Retrieval is the core retrieval algorithm.
-
-### Algorithm
+### HAR query protocol
 
 ```
 query(text, top_k):
-  1. q = embed_text(text)  or  embedder.embed_query(text)
-  2. qβ = bind(q, β)              # bind with attention state
-  3. scored = []
-     for each bucket in L2:
-       score = cosine_sim(qβ, bucket.centroid)
-       if score > min_score:
-         scored.append((score, bucket))
-  4. top_buckets = sort(scored, reverse)[:max(3, top_k/2)]
-  5. results = []
-     for score, bucket in top_buckets:
-       for eid in bucket.entry_ids:
-         entry = read_entry(eid)
-         recency = exp(-age_hours / 48)  # exponential time-decay
-         results.append((entry, score * recency))
-  6. if max(scored) < 0.3:            # low confidence fallback
-     return linear_scan(text, top_k)
-  7. return sort(results, reverse)[:top_k]
+  1. q = embed(text)  [hash or learned]
+  2. qβ = bind(q, β)
+  3. score L2 centroids; take top buckets
+  4. score candidate entries (lex + HRR + bio_rank + trust + engram/cubewave)
+  5. low-confidence → linear scan fallback
+  6. return top_k
 ```
 
-### Why bind with β?
+β updates lightly on append; blends on evolve. Recency uses type-aware half-lives ([bio_rank.py](../hermescube/bio_rank.py) — elephant/dolphin/human maps).
 
-β acts as the agent's "attention state" — it captures what the agent has been
-focusing on. Binding the query with β means the search considers not just
-"what matches the query" but "what matches the query *in the context of what
-the agent cares about*."
+### Learned embeddings
 
-β evolves over time:
-- **On append:** `β = normalize(β + 0.1 × entry_vector)` — light nudge
-- **On evolve:** `β = normalize(0.7 × β + 0.3 × topic_mean) × 0.995` — blend + decay
+TF-IDF + random projection trained on accumulated descriptions during `evolve()`, persisted as `memory.embedder` (atomic write; corrupt → quarantine).
 
-### Recency Weighting
+### Concurrency & crash safety
 
-```python
-weight = exp(-age_hours / 48.0)
-```
-
-Exponential decay with 48-hour half-life. Recent entries get weights near 1.0;
-week-old entries get ~0.2; month-old entries get ~0.02.
+| Mechanism | Role |
+|-----------|------|
+| `threading.RLock` | In-process reentrancy |
+| `fcntl.flock` | Cross-process exclusive open |
+| Atomic rewrite | Write `.tmp` → `fsync` → `os.replace` |
+| L2 rewrite order | Invalidate L3 before truncate |
 
 ---
 
-## K-Means Clustering
+## 9. Cuboasis (pocket infrastructure)
 
-### Initialization
+Cube-native oasis — not a generic “nexus” product.
 
-**k-means++** — selects centroids with probability proportional to squared
-distance from nearest existing centroid. Uses deterministic SHA-256 hashing
-for reproducibility (no process-global RNG dependence).
+| Pillar | Job |
+|--------|-----|
+| **Space** | Vaults + chambers (one store, many rooms) |
+| **Wave** | Cubewave ELM/LMS association field (no torch) |
+| **Connections** | Unified SPO ∪ colony ∪ engram ∪ Cubewave ∪ HAR |
+| **Progress** | Append-only ledger → usefulness → capability |
+| **Governance** | `memory_gate`: capture → review → approve/reject |
 
-### Incremental Refinement
+Policy modes: `review-first` | `auto-safe` | `off`.  
+Evidence states: `prepared_not_observed` · `observed` · `verified` · `superseded` · `refuted` · `rejected`.
 
-When centroids already exist (from a previous evolve), a single refinement
-iteration runs instead of full k-means++ + 3 iterations. This is significantly
-faster for large archives.
-
-```python
-if has_populated and len(existing_centroids) == k:
-    centroids = kmeans_iteration(vecs, existing_centroids, k)
-else:
-    centroids = kmeans_init(vecs, k)
-    for _ in range(3):
-        centroids = kmeans_iteration(vecs, centroids, k)
-```
-
-### When entries < k
-
-If fewer entries than clusters exist, centroids are padded with noise:
-`normalize(existing + randn() × 0.01)`. The seed is deterministic from input
-vectors.
+Detail: [CUBOASIS.md](CUBOASIS.md) · OMH ideas: [IDEAS_FROM_OMH.md](IDEAS_FROM_OMH.md).
 
 ---
 
-## Learned Embeddings
+## 10. Living growth & self-evolution
 
-### Problem
+- Birth at living version `0.0.0`, era **Cube of Eden**  
+- Age = **cycles** + lived wall-clock (not human years)  
+- Eras: Eden → Awakening → Formed → Seasoned → Elder  
+- Diary: `CUBE.md`; curator refines skills with consent  
+- Self-evolution: witness ledger, falsifiable predictions, critic, gardener — no silent theatre  
 
-Hash-based embedding has no notion of semantic similarity. "Python" and
-"programming language" produce unrelated vectors.
-
-### Solution
-
-TF-IDF + random projection trained on accumulated descriptions:
-
-1. Build vocabulary from all descriptions (filter by document frequency)
-2. Compute IDF weights: `log(N / (1 + df))`
-3. Generate random projection matrix: vocab_size × dim
-4. To embed: TF-IDF weight each token, multiply by projection row, average
-
-### Training
-
-Trains during `evolve()`. Needs ≥2 descriptions. With numpy, uses Gaussian
-random projection (better quality). Without, uses sparse binary projection.
-
-### Persistence
-
-Saved atomically to `{cube_dir}/memory.embedder`. Format:
-```
-[HEMB][meta_len: 4B][JSON metadata][projection: vocab × dim × f64 LE]
-```
-
-Corrupt files are quarantined to `{path}.corrupt.{timestamp}`.
+Detail: [GROWTH.md](GROWTH.md) · [SELF_EVOLUTION.md](SELF_EVOLUTION.md).
 
 ---
 
-## Concurrency & Crash Safety
+## 11. Fleet architecture (opt-in)
 
-### In-Process: `threading.RLock()`
+```
+Agent soul cubes (private)          Hive root
+─────────────                       ─────────
+memory.cube                         hive.cube
+soul card                           charters / routes / handoffs
+offer distilled  ──pilgrimage──►    assimilate (threat, dedupe, tag)
+draw focus ◄──────────────────      [HIVE:agent] quarantine labels
+```
 
-All public methods on `CubeFile` acquire the instance RLock. Guards against
-concurrent append/read from multiple threads. The lock is reentrant so
-`read_l1()` called from within `append()` (for the cache) doesn't deadlock.
+- **Hive** — collective memory with provenance  
+- **HQ** — ownership, routing, claims, verify, baselines  
+- **Interview** — peer craft transfer, consent-gated skill drafts  
 
-### Cross-Process: `fcntl.flock(LOCK_EX | LOCK_NB)`
-
-Acquired on `open()`/`create()`, released on `close()`. Non-blocking —
-raises `RuntimeError` if another process holds the lock. The kernel
-automatically releases the lock if the process crashes.
-
-### Atomic Append
-
-The old approach (in-place shift + write + header update) had multiple
-crash windows. The current approach is atomic by construction:
-
-1. Read entire existing file
-2. Write new file content (header + existing L1 + new entry + L2/L3 tail)
-   to `{path}.tmp`
-3. `fsync` the `.tmp` file
-4. Close old fd, `os.replace(.tmp → .cube)`, reopen
-5. On failure, `.tmp` is cleaned up
-
-`os.replace()` is atomic on the same filesystem — the file either exists
-in its old state or its new state, never in between.
-
-### `write_l2` Safety
-
-L2 rewrites (during evolve) use a deliberate ordering:
-1. Write new L2 data
-2. Capture L2 end position
-3. Update header with `l3_offset = 0` (invalidates L3)
-4. `flush`
-5. `truncate` at L2 end (discards old L3)
-6. `fsync`
-
-Step 3-4 before step 5 prevents a crash window where `l3_offset` points
-past the truncated file. Subsequent `write_l3` will re-append β.
+Subagents: read-focused memory tools; work flows upward.
 
 ---
 
-## Provider Architecture
+## 12. CubeDream architecture
 
-`CubeMemoryProvider` implements the HermesAgent `MemoryProvider` ABC.
+```
+L4  Hermes MEMORY.md     proposals only — never auto-applied by Cube
+ ▲
+L3  Hive commit          locked assimilate into hive.cube
+ ▲
+L2  Dream circle         multi-agent signals · reinforce · dialogue · skim
+ ▲
+L1  Soul dream           private Light→Deep→Apply + sleep_replay/crystalize
+```
 
-### Frozen Snapshot Pattern
-
-At `initialize()`, β and L2 centroids are captured as a `_FrozenSnapshot`.
-All `prefetch()` calls use this snapshot — never the live cube state.
-This prevents mid-session drift from background sync tasks and avoids
-races with concurrent writer threads.
-
-### Background Sync Queue
-
-All writes route through `_SyncQueue` — a single-threaded executor that
-serializes mutations. The agent turn returns immediately; the sync task
-runs on a daemon thread.
-
-### Context Awareness
-
-| `agent_context` | Writes? | Purpose |
-|-----------------|---------|---------|
-| `"primary"` | Yes | Normal agent sessions |
-| `"subagent"` | No | Delegated sub-tasks |
-| `"cron"` | No | Scheduled jobs (system prompts would corrupt user memory) |
-| `"flush"` | No | Cleanup-only runs |
-| `skip_memory=True` | No | Explicit opt-out |
-
-### Circuit Breaker
-
-Evolve operations can be expensive. After 3 consecutive failures, the
-circuit breaker opens for 5 minutes. This prevents repeated expensive
-failures from hammering the system.
+**Together ≠ merge later** — agreement across agents is a ranking signal.  
+Detail: [CUBEDREAM.md](CUBEDREAM.md).
 
 ---
 
-## Data Flow
+## 13. Hermespace integration architecture
 
-### Turn Lifecycle
+| API tier | Module | Version |
+|----------|--------|---------|
+| Heart pump | `space_bridge` | `GENERATOR_API_VERSION = 1.0` |
+| Circulatory center | `center` | `CENTER_API_VERSION = 1.1` |
+
+| Call | When |
+|------|------|
+| `ensure_heart` | Install / enter |
+| `beat` / `supply`+`return_flow` | Each material turn |
+| `autonomic_tick` | Space idle / pulse |
+| `heart_status` / `center_status` | Doctor / desktop |
+
+Load-tiered arterial budgets (Sweller-aligned): low 900 · mid 640 · high 420 · protect 280 chars.
+
+Authority rule: **Cube is SoT; Space projects.**  
+Detail: [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md).
+
+---
+
+## 14. Safety & isolation
+
+| Control | Mechanism |
+|---------|-----------|
+| Prompt injection | `threats.scan_text` / `has_blockable_threat` before durable write |
+| Credential-like text | Cuboasis safety gate (assignment-like patterns) |
+| Review-first | Candidates sidecar; not execution evidence |
+| Evidence fencing | Prefetch packets quoted; claim boundary text |
+| Subagent privilege | Read-focused tools; no downward privilege |
+| Dual plugin.yaml | Root + `plugin/` must stay identical (`check_isolation.sh`) |
+| Update hygiene | `hermescube update` never overwrites `memory.cube` |
+
+---
+
+## 15. Module map (edit guide)
+
+Prefer peeling new surfaces into focused modules over growing `provider.py`.
 
 ```
-User message
-  │
-  ├─► prefetch(user_msg)         # HAR recall → inject context
-  │     uses frozen snapshot
-  │
-  ├─► LLM call                   # Agent thinks + responds
-  │
-  └─► sync_turn(user, assistant) # Background write
-        ├─ threat scan
-        ├─ sanitize
-        ├─ classify turn type
-        └─ _SyncQueue.submit
-              ├─ cube.append()       # Atomic write
-              ├─ update_beta_on_append()  # Light β update
-              ├─ entries_since_evolve += 1
-              └─ if threshold: evolve_consolidated()
-                    ├─ engine.evolve()     # k-means + β update
-                    ├─ save embedder
-                    ├─ _deduplicate_entries()
-                    └─ _refresh_snapshot()
+L1 warehouse     cube har hrr embed threats bio_rank dense
+L2 provider      provider tools_recall manage* session_end bootstrap agent_manual
+L3 cuboasis      cuboasis cubewave memory_gate evidence claims relations colony engram_net
+L4 growth        genealogy living curator self_evolution journey wisdom
+L5 fleet         hive hq interview
+L6 dream         dream dream_circle
+L7 heart         space_bridge center
+L0 framework     framework/paths config void lexindex
 ```
 
-### Session Lifecycle
+Full edit table: [CODEMAP.md](CODEMAP.md).
+
+---
+
+## 16. Data-flow summary (end-to-end)
 
 ```
-initialize()
-  ├─ resolve cube path (per-profile)
-  ├─ open or create cube
-  ├─ load embedder from disk
-  └─ capture frozen snapshot
-
-[ turns run... ]
-
-on_session_end()
-  ├─ auto_extract_facts() (if enabled)
-  ├─ evolve_consolidated() (if not breaker-open)
-  ├─ _refresh_snapshot()
-  └─ _sync_queue.flush()
-
-shutdown()
-  ├─ save embedder
-  ├─ _sync_queue.flush()
-  └─ cube.close()
+                    ┌──────────── Hermespace desk ────────────┐
+ order/idle ───────►│ FOA · load · dual decode · pulse        │
+                    └──────────┬──────────────────▲───────────┘
+                     systole   │                  │ diastole
+                               ▼                  │
+┌─ Hermes MemoryManager ──────────────────────────────────────┐
+│  prefetch ← Cube HAR     sync_turn → Cube WAL               │
+│  on_memory_write → mirror   session_end → pulse/dream/evolve│
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+                    memory.cube (SoT) + sidecars
+                               │
+              Cuboasis gate · colony · engram · cubewave
+                               │
+              growth / hive / dream (scheduled or manage)
 ```
+
+---
+
+## 17. Non-goals
+
+- Second agent brain / J-space weights  
+- Cloud memory SaaS  
+- Replacing MEMORY.md or Hermespace FOA desk  
+- Auto-rewriting Hermes MEMORY.md from dream (proposals only)  
+- Porting AgentDrive / Conductor / OMH skill OS wholesale  
+- “HAR always beats scan” marketing — honest benches only  
+
+---
+
+## 18. Version posture & doc index
+
+Ship purpose-aligned increments. Dual `plugin.yaml` identical. Assessment: [ASSESSMENT.md](ASSESSMENT.md).
+
+| Doc | Role |
+|-----|------|
+| [PURPOSE.md](../PURPOSE.md) | North star |
+| [ABOUT.md](../ABOUT.md) | Public pitch |
+| **This blueprint** | Whole-project architecture |
+| [CODEMAP.md](CODEMAP.md) | Where to edit |
+| [SPEC.md](SPEC.md) | Binary normative |
+| [FRAMEWORK.md](FRAMEWORK.md) | Housing / void |
+| [CUBOASIS.md](CUBOASIS.md) | Pocket infra |
+| [ANATOMY.md](ANATOMY.md) | Heart × Space organs |
+| [HERMESPACE.md](HERMESPACE.md) | Generator contract |
+| [CUBEDREAM.md](CUBEDREAM.md) | Night cycles |
+| [HIVE.md](HIVE.md) / [HQ.md](HQ.md) | Fleet |
+| [GROWTH.md](GROWTH.md) | Living eras |
+
+---
+
+*Blueprint version tracks product **0.49** (anatomical center). Update this file when a layer’s contract or authority rule changes.*

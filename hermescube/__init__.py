@@ -1,12 +1,13 @@
-"""HermesCube — local deep-memory warehouse for Hermes Agent.
+"""HermesCube — local deep-memory heart for Hermes Agent (+ Hermespace).
 
 Binary `.cube` archive with holographic associative retrieval (HAR), Cuboasis
-governance, living growth, optional Hive/HQ, and CubeDream (solo + together).
+governance, living growth, optional Hive/HQ, CubeDream (solo + together),
+``space_bridge`` (heart pump), and ``center`` (anatomical circulatory integration).
 
-See ABOUT.md / docs/CODEMAP.md in the repository root for orientation.
+See ABOUT.md / PURPOSE.md / docs/HERMESPACE.md / docs/ANATOMY.md.
 """
 
-__version__ = "0.47.0"
+__version__ = "0.49.0"
 
 from hermescube.hrr import (
     Array,
@@ -30,6 +31,7 @@ from hermescube.events import MemoryEvent, make_event
 from hermescube.claims import Claim, make_claim
 from hermescube import bio_rank
 from hermescube import space_bridge
+from hermescube import center
 from hermescube import hive
 from hermescube import self_evolution
 from hermescube import hq
@@ -79,6 +81,7 @@ __all__ = [
     "make_claim",
     "bio_rank",
     "space_bridge",
+    "center",
     "hive",
     "self_evolution",
     "hq",

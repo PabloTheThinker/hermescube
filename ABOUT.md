@@ -1,9 +1,9 @@
 # About HermesCube
 
-**HermesCube is the local deep-memory warehouse for [Hermes Agent](https://github.com/NousResearch/hermes-agent).**  
-It extends Hermes’s hot notebook (`MEMORY.md`) with a durable, semantic `.cube` archive — private to your `$HERMES_HOME`, offline, and crash-safe.
+**HermesCube is the local deep-memory generator for [Hermes Agent](https://github.com/NousResearch/hermes-agent).**  
+It extends Hermes’s hot notebook (`MEMORY.md`) with a durable, semantic `.cube` archive — private to your `$HERMES_HOME`, offline, and crash-safe — and **powers [Hermespace](https://github.com/PabloTheThinker/hermespace)** as that workbench’s core.
 
-It is **not** a second agent, a cloud memory SaaS, or a replacement for Hermes’s built-in memory tools. One plugin socket. One living warehouse.
+It is **not** a second agent, a cloud memory SaaS, or a replacement for Hermes’s built-in memory tools. One plugin socket. One living warehouse. Hermespace is the FOA desk that runs on Cube power.
 
 ---
 
@@ -24,23 +24,28 @@ Hermes Agent
 ├── MEMORY.md / USER.md     hot doctrine (always-on, char-capped)
 ├── state.db / skills       sessions + procedures
 ├── memory tool             agent-initiated hot writes
-└── MemoryProvider  ──►  HermesCube
-                         ├── memory.cube      deep archive
-                         ├── colony / entities
-                         ├── Cuboasis         governance + space
-                         └── CubeDream        solo + together night cycles
+├── MemoryProvider  ──►  HermesCube          ← generator core
+│                        ├── memory.cube      deep archive (SoT)
+│                        ├── Cuboasis         governance + space
+│                        ├── CubeDream        solo + together night cycles
+│                        └── space_bridge     inject / seal / world charge
+└── Hermespace (optional)   FOA desk powered by Cube generator
 ```
 
 **Solo path (default):** prefetch → sync_turn → search/manage/feedback → optional dream solo.  
 **Fleet path (opt-in):** hive / HQ / interviews / dream circles — only when hive is configured.
 
-## Product layers (current: 0.47)
+## Product layers (current: 0.49)
 
 1. **Warehouse** — `.cube` binary, HAR retrieval, WAL, mirror from MEMORY.md  
 2. **Cuboasis** — review-first memory policy, space, Cubewave, connections, progress  
 3. **Living growth** — Cube of Eden → Elder; cycles; curator skill refine  
 4. **Hive + HQ + interviews** — collective memory, routing, peer craft transfer  
-5. **CubeDream** — L1 soul dream, L2 circle (chorus / conversation), L3 hive commit, L4 MEMORY.md *proposals only* (never auto-applied)
+5. **CubeDream** — L1 soul dream, L2 circle (chorus / conversation), L3 hive commit, L4 MEMORY.md *proposals only* (never auto-applied)  
+6. **Hermespace heart (0.48)** — `ensure_heart` / inject / seal / pulse charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))  
+7. **Anatomical center (0.49)** — circulatory `beat` + organ map ([docs/ANATOMY.md](docs/ANATOMY.md))
+
+Full stack map: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (Architecture Blueprint).
 
 ## Non-goals
 
@@ -55,8 +60,11 @@ Hermes Agent
 |-----|----------|
 | [README.md](README.md) | Install, quick start, features |
 | [PURPOSE.md](PURPOSE.md) | North star + version posture (agents / maintainers) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **Full Architecture Blueprint** (entire project) |
 | [docs/README.md](docs/README.md) | Full documentation index |
 | [docs/CUBEDREAM.md](docs/CUBEDREAM.md) | Dreaming alone and together |
+| [docs/HERMESPACE.md](docs/HERMESPACE.md) | Cube as Hermespace generator core |
+| [docs/ANATOMY.md](docs/ANATOMY.md) | Circulatory center — heart × nervous FOA |
 | [docs/ASSESSMENT.md](docs/ASSESSMENT.md) | Honest ship grades |
 
 **License:** MIT — [LICENSE](LICENSE)  
