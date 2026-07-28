@@ -9,7 +9,7 @@ Maintainers: [PURPOSE.md](../PURPOSE.md) · [CODEMAP.md](CODEMAP.md) · [ASSESSM
 |-----|------|
 | Install & daily use | [USER_GUIDE.md](USER_GUIDE.md) · [DAY_TO_DAY.md](DAY_TO_DAY.md) |
 | How the warehouse works | [ARCHITECTURE.md](ARCHITECTURE.md) · [SPEC.md](SPEC.md) · [API_REFERENCE.md](API_REFERENCE.md) |
-| Fit next to Hermes Agent | [FRAMEWORK.md](FRAMEWORK.md) · [HERMESPACE.md](HERMESPACE.md) (Cube **generator** for Space) |
+| Fit next to Hermes Agent | [FRAMEWORK.md](FRAMEWORK.md) · [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md) (circulatory center) |
 | Governance & space | [CUBOASIS.md](CUBOASIS.md) · [IDEAS_FROM_OMH.md](IDEAS_FROM_OMH.md) |
 | Self-improve under rules | [SELF_EVOLUTION.md](SELF_EVOLUTION.md) · [GROWTH.md](GROWTH.md) |
 | Multi-agent | [HIVE.md](HIVE.md) · [HQ.md](HQ.md) · [INTERVIEW.md](INTERVIEW.md) |

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.49.0] - 2026-07-28
+
+### Anatomical center — stronger Cube × Hermespace heart integration
+- Research merge: Nous MemoryProvider lifecycle/caps/soft-fail + Hermespace Baddeley/Cowan/GWT/Sweller/pulse + Cube bio-rank / species maps
+- New `hermescube/center.py` (`CENTER_API_VERSION = "1.1"`): organ map, `beat`, `supply`/`return_flow` (diastole/systole), `autonomic_tick`, load-tiered strip budgets
+- Docs: [docs/ANATOMY.md](docs/ANATOMY.md) — circulatory architecture + Space turn/idle wiring
+- Tests: `tests/test_center.py`
+
 ## [0.48.0] - 2026-07-28
 
 ### Hermespace heart API — Cube ready as Space's core

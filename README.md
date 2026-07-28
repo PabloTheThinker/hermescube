@@ -13,7 +13,7 @@
   <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-34D058?style=for-the-badge" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=for-the-badge" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/version-0.48.0-informational?style=for-the-badge" alt="0.48.0">
+  <img src="https://img.shields.io/badge/version-0.49.0-informational?style=for-the-badge" alt="0.49.0">
 </p>
 
 **HermesCube plugs into [Hermes Agent](https://github.com/NousResearch/hermes-agent) as the one external `MemoryProvider`.** Hermes keeps the hot notebook (`MEMORY.md`); Cube keeps the long tail — a crash-safe `.cube` archive with holographic associative retrieval, Cuboasis governance, living growth, and optional multi-agent Hive / CubeDream.

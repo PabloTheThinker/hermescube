@@ -67,56 +67,46 @@ from hermescube.space_bridge import (
 
 ## Hermespace integration checklist
 
-Wire these on the Space side (soft-import; never hard-fail):
+Wire these on the Space side (soft-import; never hard-fail). Prefer the
+**anatomical center** when available (`hermescube.center`, API `1.1+`); fall
+back to heart primitives (`space_bridge`, API `1.0`).
 
 1. **Install / enter** — `ensure_heart()` once so `memory.cube` exists  
-2. **Feature detect** — `heart_status()["api_version"]` starts with `"1."`  
-3. **Inject** — keep `build_space_inject` in `hermes_bridge` under high load  
-4. **Seal** — prefer `seal_learning` (id + ok); keep `seal_to_cube` as fallback  
-5. **Pulse** — call `pulse_charge(agent_id=…)` from idle/pulse so World Beliefs stay charged  
-6. **Doctor** — surface `heart_ready`, `entries`, `growth.era_label` on desktop/status  
-7. **Do not** grow a second durable archive in Space — project from Cube  
+2. **Feature detect** — `center_status()` or `heart_status()["api_version"]` starts with `"1."`  
+3. **Turn beat** — `center.beat(query, seals=…, load=desk_load)` *or* inject+seal separately  
+4. **Inject** — keep arterial supply in `hermes_bridge` under high load (model context only)  
+5. **Seal** — prefer `seal_learning` / `return_flow`; keep `seal_to_cube` as fallback  
+6. **Pulse** — `autonomic_tick(agent_id=…)` / `pulse_charge` from idle so World Beliefs stay charged  
+7. **Doctor** — surface `heart_ready`, organ map, `entries`, `growth.era_label`  
+8. **Do not** grow a second durable archive in Space — project from Cube  
 
-### Recommended `cube_module.py` shape (Space)
+Full organ map: [ANATOMY.md](ANATOMY.md).
+
+### Recommended Space adapter shape
 
 ```python
-def cube_ensure():
+def cube_beat(query, *, seals=None, load=0.5, agent_id="hermes-agent"):
     try:
-        from hermescube.space_bridge import ensure_heart
-        return ensure_heart()
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-def cube_status():
-    try:
-        from hermescube.space_bridge import heart_status
-        return heart_status()
-    except Exception as e:
-        return {"available": False, "heart_ready": False, "error": str(e)}
-
-def cube_inject(query, *, high_load=False, max_chars=None):
-    try:
-        from hermescube.space_bridge import build_space_inject
-        return build_space_inject(query, high_load=high_load, max_chars=max_chars) or ""
+        from hermescube.center import beat
+        return beat(query, seals=seals, load=load, agent_id=agent_id)
     except Exception:
-        return ""
-
-def cube_seal(content, **kwargs):
-    try:
-        from hermescube.space_bridge import seal_learning, seal_to_cube
-        if kwargs.pop("structured", False):
-            return seal_learning(content, **kwargs)
-        return bool(seal_to_cube(content, **kwargs))
-    except Exception:
-        return False
+        # fall back to heart 1.0
+        from hermescube.space_bridge import build_space_inject, seal_to_cube, ensure_heart
+        ensure_heart()
+        if seals:
+            seal_to_cube(seals if isinstance(seals, str) else "\n".join(seals))
+        return {"block": build_space_inject(query, high_load=float(load) >= 0.65), "ok": True}
 
 def cube_pulse(*, agent_id="hermes-agent"):
     try:
+        from hermescube.center import autonomic_tick
+        return autonomic_tick(agent_id=agent_id)
+    except Exception:
         from hermescube.space_bridge import pulse_charge
         return pulse_charge(agent_id=agent_id)
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
 ```
+
+Legacy `cube_inject` / `cube_seal` / `cube_status` remain valid (heart 1.0).
 
 ## High load
 

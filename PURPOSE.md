@@ -71,6 +71,7 @@ Hermespace is orthogonal: a turn workbench that can sit on either path.
 | Hive / HQ / interviews | pilgrimage, charters, peer craft | HIVE · HQ · INTERVIEW |
 | **CubeDream (0.47)** | L1 solo · L2 circle · auto-circle · skim · L4 proposals | CUBEDREAM |
 | **Hermespace heart (0.48)** | `ensure_heart` · inject · seal · pulse charge (`space_bridge` 1.0) | HERMESPACE |
+| **Anatomical center (0.49)** | Circulatory `beat` / supply / return / autonomic + organ map | ANATOMY |
 
 **First connect:** empty warehouse → optional auto-bootstrap from MEMORY.md/USER.md + operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
 

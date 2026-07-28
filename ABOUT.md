@@ -42,7 +42,8 @@ Hermes Agent
 3. **Living growth** — Cube of Eden → Elder; cycles; curator skill refine  
 4. **Hive + HQ + interviews** — collective memory, routing, peer craft transfer  
 5. **CubeDream** — L1 soul dream, L2 circle (chorus / conversation), L3 hive commit, L4 MEMORY.md *proposals only* (never auto-applied)  
-6. **Hermespace heart (0.48)** — `ensure_heart` / inject / seal / pulse charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))
+6. **Hermespace heart (0.48)** — `ensure_heart` / inject / seal / pulse charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))  
+7. **Anatomical center (0.49)** — circulatory `beat` + organ map ([docs/ANATOMY.md](docs/ANATOMY.md))
 
 ## Non-goals
 
@@ -60,6 +61,7 @@ Hermes Agent
 | [docs/README.md](docs/README.md) | Full documentation index |
 | [docs/CUBEDREAM.md](docs/CUBEDREAM.md) | Dreaming alone and together |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) | Cube as Hermespace generator core |
+| [docs/ANATOMY.md](docs/ANATOMY.md) | Circulatory center — heart × nervous FOA |
 | [docs/ASSESSMENT.md](docs/ASSESSMENT.md) | Honest ship grades |
 
 **License:** MIT — [LICENSE](LICENSE)  
