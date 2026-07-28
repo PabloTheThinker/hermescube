@@ -200,17 +200,43 @@ class _SyncQueue:
             logger.warning("sync submit failed (executor shut down?): %s", e)
 
     def flush(self, timeout: float = 5.0) -> None:
-        """Drain background work.
+        """Drain background work without hanging forever.
 
-        ``timeout`` is honored approximately: we shut down the executor
-        with ``wait=True`` after cancelling futures that have not started.
+        Honors ``timeout``: waits up to that many seconds for in-flight
+        work, then abandons the wait (daemon workers may still finish).
+        Never cancels pending futures — dropping them silently lost
+        memories (see TestSyncQueueRegression).
         """
         with self._lock:
-            if self._executor is not None:
-                try:
-                    self._executor.shutdown(wait=True, cancel_futures=False)
-                finally:
-                    self._executor = None
+            if self._executor is None:
+                return
+            executor = self._executor
+            self._executor = None
+
+        done = threading.Event()
+
+        def _shutdown() -> None:
+            try:
+                executor.shutdown(wait=True, cancel_futures=False)
+            except Exception as e:
+                logger.warning("sync queue shutdown error: %s", e)
+            finally:
+                done.set()
+
+        t = threading.Thread(
+            target=_shutdown, name="hermescube_flush", daemon=True
+        )
+        t.start()
+        if not done.wait(timeout=max(0.1, float(timeout))):
+            logger.warning(
+                "sync queue flush timed out after %.1fs — abandoning wait "
+                "(in-flight work may still finish on daemon threads)",
+                timeout,
+            )
+            try:
+                executor.shutdown(wait=False, cancel_futures=False)
+            except Exception:
+                pass
 
 
 # ── Provider ─────────────────────────────────────────────────────────

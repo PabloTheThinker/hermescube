@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.41.1] - 2026-07-27
+
+### Sync queue flush honors timeout
+- `_SyncQueue.flush(timeout)` no longer hangs forever on a wedged worker (ported from draft PR #6 stress work)
+- Regression: `test_flush_honors_timeout_against_stuck_worker`
+
 ## [0.41.0] - 2026-07-27
 
 ### Cuboasis governance — review-first memory oasis
