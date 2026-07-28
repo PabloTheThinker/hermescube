@@ -35,7 +35,7 @@ Hermes Agent
 **Solo path (default):** prefetch → sync_turn → search/manage/feedback → optional dream solo.  
 **Fleet path (opt-in):** hive / HQ / interviews / dream circles — only when hive is configured.
 
-## Product layers (current: 0.47)
+## Product layers (current: 0.49)
 
 1. **Warehouse** — `.cube` binary, HAR retrieval, WAL, mirror from MEMORY.md  
 2. **Cuboasis** — review-first memory policy, space, Cubewave, connections, progress  
@@ -44,6 +44,8 @@ Hermes Agent
 5. **CubeDream** — L1 soul dream, L2 circle (chorus / conversation), L3 hive commit, L4 MEMORY.md *proposals only* (never auto-applied)  
 6. **Hermespace heart (0.48)** — `ensure_heart` / inject / seal / pulse charge ([docs/HERMESPACE.md](docs/HERMESPACE.md))  
 7. **Anatomical center (0.49)** — circulatory `beat` + organ map ([docs/ANATOMY.md](docs/ANATOMY.md))
+
+Full stack map: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** (Architecture Blueprint).
 
 ## Non-goals
 
@@ -58,6 +60,7 @@ Hermes Agent
 |-----|----------|
 | [README.md](README.md) | Install, quick start, features |
 | [PURPOSE.md](PURPOSE.md) | North star + version posture (agents / maintainers) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **Full Architecture Blueprint** (entire project) |
 | [docs/README.md](docs/README.md) | Full documentation index |
 | [docs/CUBEDREAM.md](docs/CUBEDREAM.md) | Dreaming alone and together |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) | Cube as Hermespace generator core |

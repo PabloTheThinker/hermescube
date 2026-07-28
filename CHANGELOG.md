@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Architecture Blueprint — whole-project map
+- Rewrite [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) as the full HermesCube Architecture Blueprint (ecosystem, L0–L7 stack, anatomy, lifecycles, Cuboasis/Hive/Dream/Hermespace, safety, module map)
+- Refresh [docs/CODEMAP.md](docs/CODEMAP.md) + docs index / ABOUT / PURPOSE pointers
+
 ## [0.49.0] - 2026-07-28
 
 ### Anatomical center — stronger Cube × Hermespace heart integration

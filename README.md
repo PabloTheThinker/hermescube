@@ -26,7 +26,7 @@ No cloud memory APIs. No pruning tax. Your data stays under `$HERMES_HOME/memori
 <tr><td><b>Safe under load</b></td><td>Atomic writes, cross-process lock, threat scan, Cuboasis review-first candidates.</td></tr>
 <tr><td><b>Grows with the agent</b></td><td>Cube of Eden → Elder living version, diary, curator skill refine, grounded self-evolution harness.</td></tr>
 <tr><td><b>Dream alone or together</b></td><td><a href="docs/CUBEDREAM.md">CubeDream</a>: soul solo cycles, dream circles (chorus / conversation), hive commit, MEMORY.md proposals only — never auto-applied.</td></tr>
-<tr><td><b>Powers Hermespace</b></td><td><a href="docs/HERMESPACE.md">Generator core</a> for the Hermespace FOA desk — dense inject strips, seals, world-belief charge. Space focuses the turn; Cube holds the floor.</td></tr>
+<tr><td><b>Powers Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">anatomical center</a> — circulatory beat (systole/diastole), load-tiered FOA blood, autonomic pulse charge. Space focuses the turn; Cube holds the floor.</td></tr>
 <tr><td><b>Fleet when you need it</b></td><td>Optional Hive pilgrimage, Fleet HQ routing/handoffs, peer interviews. Solo path is enough for day one.</td></tr>
 </table>
 

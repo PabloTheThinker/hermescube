@@ -2,7 +2,9 @@
 
 **One line:** HermesCube is the **local deep-memory generator** for Hermes Agent — the durable warehouse that **powers Hermespace**, working *with* hot MEMORY.md, not instead of it.
 
-Public pitch: **[ABOUT.md](ABOUT.md)**. Docs index: **[docs/README.md](docs/README.md)**. Code layout: **[docs/CODEMAP.md](docs/CODEMAP.md)**. Hermespace contract: **[docs/HERMESPACE.md](docs/HERMESPACE.md)**.
+Public pitch: **[ABOUT.md](ABOUT.md)**. Docs index: **[docs/README.md](docs/README.md)**.  
+**Architecture Blueprint:** **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. Code layout: **[docs/CODEMAP.md](docs/CODEMAP.md)**.  
+Hermespace contract: **[docs/HERMESPACE.md](docs/HERMESPACE.md)** · Anatomy: **[docs/ANATOMY.md](docs/ANATOMY.md)**.
 
 ---
 
