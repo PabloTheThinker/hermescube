@@ -253,7 +253,7 @@ def capture_candidate(
         f"{summary}|{record_type}|{source}".encode()
     ).hexdigest()[:16]
     # Dedupe pending identical candidate_id
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
@@ -378,7 +378,7 @@ def approve_candidate(
     nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Promote a candidate into durable cube memory."""
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
@@ -632,7 +632,7 @@ def oasis_doctor_card(
     """Structured Cuboasis readiness — not execution evidence."""
     from hermescube.framework.paths import resolve_cube_paths
 
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,

@@ -472,7 +472,7 @@ def progress_status(
     nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Rollup: recent ledger + growth snapshot + functional loop health."""
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
@@ -553,7 +553,7 @@ def apply_triage(
     """Execute a triage plan — make queues *do* work, not only advise."""
     from hermescube.triage import load_plan, run_triage
 
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
@@ -603,10 +603,13 @@ def apply_triage(
                 if str(c.get("item_id") or c.get("id") or c.get("entry_id") or "") in by_id
             ]
             if len(subset) >= 2:
-                conflicts = find_conflicts(subset) or []
+                anchor = subset[0]
+                conflicts = find_conflicts(
+                    getattr(anchor, "description", "") or "", subset[1:]
+                ) or []
                 n = 0
                 if conflicts and subset:
-                    n = annotate_conflicts(cube, subset[0], conflicts)
+                    n = annotate_conflicts(cube, anchor, conflicts)
                 report["annotated"] = int(n or 0)
                 report["actions"].append(
                     {
@@ -651,7 +654,7 @@ def cuboasis_status(
     nest_profiles: bool = False,
 ) -> dict[str, Any]:
     """Single pane: space + wave + connections density + progress."""
-    pkw = dict(
+    pkw: dict[str, Any] = dict(
         agent_identity=agent_identity,
         agent_workspace=agent_workspace,
         nest_profiles=nest_profiles,
