@@ -51,4 +51,5 @@ How memory **operates inside** the cube — Hermes only provides the socket
 
 ## Version
 
-Introduced as structured housing in **0.5.0** (review fixes + framework package).
+Framework housing introduced in **0.5.0**.  
+Whole-project Architecture Blueprint: [ARCHITECTURE.md](ARCHITECTURE.md).
