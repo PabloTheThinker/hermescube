@@ -152,9 +152,11 @@ for entry, score in engine.query("what theme does the user like?"):
 | | |
 |---|---|
 | **[About](ABOUT.md)** | What HermesCube is (and is not) |
+| **[Architecture Blueprint](docs/ARCHITECTURE.md)** | **Whole-project architecture map** |
 | **[Docs index](docs/README.md)** | Full map of guides |
 | **[User Guide](docs/USER_GUIDE.md)** | Install, store, search, evolve |
 | **[Day-to-day](docs/DAY_TO_DAY.md)** | Operator usefulness |
+| **[Hermespace](docs/HERMESPACE.md)** · **[Anatomy](docs/ANATOMY.md)** | Heart / circulatory center |
 | **[CubeDream](docs/CUBEDREAM.md)** | Solo + together dreaming |
 | **[Cuboasis](docs/CUBOASIS.md)** | Space, Cubewave, policy |
 | **[Hive](docs/HIVE.md)** · **[HQ](docs/HQ.md)** · **[Interviews](docs/INTERVIEW.md)** | Multi-agent |
@@ -177,10 +179,11 @@ hermescube/
 │   ├── manage*.py           # manage hub peels
 │   ├── dream.py · dream_circle.py
 │   ├── cuboasis.py · hive.py · hq.py · interview.py
+│   ├── space_bridge.py · center.py   # Hermespace heart / anatomy
 │   └── …                    # see docs/CODEMAP.md
 ├── plugin/                  # Hermes plugin register + CLI
 ├── skills/                  # hermescube-operate · import · interview-me
-├── docs/                    # Guides + assets/
+├── docs/                    # ARCHITECTURE blueprint + guides + assets/
 ├── tests/                   # pytest (466+)
 ├── scripts/                 # install · update · isolation check
 └── benchmarks/              # HAR / real-use (results outside repo)
