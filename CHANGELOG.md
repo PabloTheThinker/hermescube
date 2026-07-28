@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.45.0] - 2026-07-27
+
+### Peel manage hub — code health + fleet CLI coverage
+- Extract ~1.5k LOC of `hermescube_manage` handlers from `provider.py` into domain modules:
+  `manage.py` (dispatch) · `manage_warehouse` · `manage_cuboasis` · `manage_growth` · `manage_fleet`
+- Provider hub now ~2480 LOC (was ~4020); `_handle_manage` is a thin dispatcher
+- CLI tests for `hermescube hive` / `hq` (init, status, charter, route, verify) + dispatch smoke
+- Research note: OMH high-priority governance already shipped; remaining medium items are TTL/typed records + dreaming/eviction *proposals* (not silent mutate)
+- Tests: `test_cli_hive_hq.py` (455 total)
+
 ## [0.44.0] - 2026-07-27
 
 ### Lift remaining sub-A grades — modularity, CLI, entities, density

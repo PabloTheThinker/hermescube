@@ -1,9 +1,9 @@
 # HermesCube project assessment & audit
 
 **Date:** 2026-07-27  
-**Version:** 0.44.0  
+**Version:** 0.45.0  
 **Repo:** https://github.com/PabloTheThinker/hermescube  
-**Basis:** Sub-A lift (provider modularization, CLI doctor/dense, entity mine-on-pulse) + onboarding + Hermes contract
+**Basis:** Manage-hub peel + fleet CLI coverage + prior onboarding / A− lifts
 
 ---
 
@@ -11,27 +11,51 @@
 
 | Dimension | Grade | Note |
 |-----------|:-----:|------|
-| Ship readiness (public) | **A** | Clean `main`, isolation check, 451 tests, no open PRs |
-| Agent onboarding | **A** | Instant prompt manual + auto-bootstrap MEMORY.md + bundled skills |
-| Hermes Agent integration | **A** | Native MemoryProvider; profile/workspace/`user_id`; session-end flush |
-| Day-to-day no-loss | **A** | WAL sync_turn; MEMORY.md mirror; compaction-safe extract |
-| Recall quality + speed | **A** | IR/assoc + mine-on-pulse entity landmarks + expanded infra allowlist |
+| Ship readiness (public) | **A** | Clean `main`, isolation check, 455 tests |
+| Agent onboarding | **A** | Instant prompt manual + auto-bootstrap + skills |
+| Hermes Agent integration | **A** | Native MemoryProvider; profile/workspace/`user_id` |
+| Day-to-day no-loss | **A** | WAL sync_turn; MEMORY.md mirror; compaction-safe |
+| Recall quality + speed | **A** | IR/assoc + entity landmarks + infra allowlist |
 | Compounding usefulness | **A** | Triage→crystalize→merge→relations agent-visible |
-| Cuboasis / governance | **A** | Review-first wired into sync extract; prompt queue + redact blocked candidates |
-| Multi-project / gateway isolation | **A** | Nested sidecars + vault/`user_id`/`user_id_alt`; prefetch cache keyed; peer_card nests |
-| Night-job / session-end cost | **A** | Pipeline in `session_end.py`; timers; observe capped; idle skip evolve |
-| Fleet / hive / growth stack | **A** | Solo-path first in manual; hive gated; assimilate/draw safety |
-| Install / update UX | **A** | Doctor density+bootstrap; `hermescube dense`; install seeds skills |
-| Security baseline | **A** | JWT/Slack/ghp gates; doctrine-override threats; blocked candidate redaction |
-| Docs honesty | **A** | ASSESSMENT aligned to 0.44 |
-| Code health | **A−** | Prompt + session-end extracted; manage handlers still concentrated |
-| CLI coverage | **A−** | Doctor/dense/bootstrap covered; hive/hq CLI still lighter |
+| Cuboasis / governance | **A** | Review-first; candidate capture/approve/reject |
+| Multi-project / gateway isolation | **A** | Nested sidecars + vault/`user_id`/`user_id_alt` |
+| Night-job / session-end cost | **A** | Timed pipeline in `session_end.py` |
+| Fleet / hive / growth stack | **A** | Solo-first; hive gated; CLI + manage covered |
+| Install / update UX | **A** | Doctor density+bootstrap; `hermescube dense` |
+| Security baseline | **A** | Threat/JWT/Slack gates; blocked candidate redaction |
+| Docs honesty | **A** | ASSESSMENT aligned to 0.45 |
+| Code health | **A** | Manage handlers peeled by domain; hub ~2480 LOC |
+| CLI coverage | **A** | Doctor/dense/bootstrap + hive/HQ CLI tests |
 
-**Verdict: Ship and run.** Suitable as the deep memory layer for Hermes-based company agents. Next polish: keep peeling manage handlers from `provider.py`.
+**Verdict: Ship and run.** Sub-A grades from 0.44 are closed. Remaining research backlog is medium-priority OMH ports (TTL/typed records, dreaming/eviction *proposals*), not ship blockers.
 
 ---
 
-## 2. What the product is
+## 2. Research notes (0.45)
+
+### What was concentrated
+- `provider.py` held **31** manage actions (~1483 LOC): warehouse, Cuboasis spine, growth/living, fleet.
+- Fleet library tests (`test_hive.py`, `test_hq.py`) were solid; **CLI** `hermescube hive|hq` had no coverage.
+- OMH high-priority governance (candidates, safety, evidence_state, review-first) already landed in 0.41–0.42.
+
+### Extraction map
+
+| Module | Actions |
+|--------|---------|
+| `manage_warehouse` | bootstrap · add · remove · relations · hygiene · prune · crystalize · replay · journey |
+| `manage_cuboasis` | triage · merge · space · connect · progress · cuboasis · nexus |
+| `manage_growth` | growth · curate · promote · reject · drafts · pulse · forge · intents · observe · peer · witness · harness |
+| `manage_fleet` | hive · hq · interview |
+| `manage` | `dispatch_manage` + `known_actions` |
+
+### Still optional (not blockers)
+- In-place f16 vector rewrite (dense export remains the portable companion)
+- OMH medium: typed TTL / staleness, dreaming & eviction *proposals* (never silent delete)
+- Further peel of search/probe/feedback if the hub grows again
+
+---
+
+## 3. What the product is
 
 HermesCube is a **Hermes Agent memory provider plugin** plus a **binary `.cube` archive**:
 
@@ -40,40 +64,25 @@ HermesCube is a **Hermes Agent memory provider plugin** plus a **binary `.cube` 
 - Hot `MEMORY.md` / `USER.md` stay Hermes-native; Cube is the **warehouse**
 - **Cuboasis** is the pocket-dimension spine: space · wave · connections · progress · governance
 
-Borrowed from official Hermes holographic / MemoryManager: trust-weighted IR, consolidate nudge pattern, session-boundary flush, merge-delimiter harvest — **algorithms only**, not cloud SDKs or a second SQLite fact store (relations.sqlite3 is a local SPO index beside the cube).
-
 ---
 
-## 3. Audit checklist
+## 4. Audit checklist
 
 | Check | Result |
 |-------|--------|
-| Tests | **451 passed** |
+| Tests | **455 passed** |
 | Versions aligned | `plugin.yaml` / `pyproject` / `__init__` via `check_isolation.sh` |
 | Tracked `.cube` / user data in git | **none** |
 | Public remote | PabloTheThinker/hermescube · `main` only |
 
-### Strengths (0.44)
-- `agent_manual.py` + `session_end.py` peeled from the provider hub
-- Entity mine-on-pulse persists `[ENTITY]` landmarks for assoc recall
-- `hermescube dense` portable text companion; doctor surfaces density + bootstrap
-- Instant onboarding (0.43) + A− closure (0.42) still hold
+### Strengths (0.45)
+- Manage domain modules; provider is orchestration + Hermes contract
+- Hive/HQ CLI exercised end-to-end
+- Instant onboarding (0.43) + entity/dense (0.44) still hold
 
 ### Remaining gaps
-- Manage handlers still live mostly in `provider.py`
-- In-place f16 vector rewrite remains a future format bump (dense export covers ship/backup)
-- Hive/HQ CLI paths still lighter on tests
-
----
-
-## 4. How it works for a company agent
-
-1. Agent starts → Hermes loads SOUL + MEMORY.md + Cube operating manual (+ Cuboasis / Living strips)  
-2. Empty warehouse → auto-bootstrap imports hot markdown + installs operate/import skills  
-3. Each turn → prefetch + sync_turn (policy-gated extracts)  
-4. Session end → triage → conflicts → crystalize → pulse/entity-mine → growth merge (timed + flushed)  
-
-See [DAY_TO_DAY.md](DAY_TO_DAY.md) and [CUBOASIS.md](CUBOASIS.md).
+- f16 format bump deferred (honest; dense CLI covers backup/ship)
+- Medium OMH ports above — design before code
 
 ---
 

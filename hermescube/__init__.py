@@ -1,6 +1,6 @@
 """HermesCube — binary columnar archive with holographic associative retrieval."""
 
-__version__ = "0.44.0"
+__version__ = "0.45.0"
 
 from hermescube.hrr import (
     Array,
@@ -36,6 +36,11 @@ from hermescube import memory_gate
 from hermescube import bootstrap
 from hermescube import agent_manual
 from hermescube import session_end
+from hermescube import manage
+from hermescube import manage_warehouse
+from hermescube import manage_cuboasis
+from hermescube import manage_growth
+from hermescube import manage_fleet
 from hermescube import nexus  # backward-compat shim → cuboasis
 
 __all__ = [
@@ -76,6 +81,11 @@ __all__ = [
     "bootstrap",
     "agent_manual",
     "session_end",
+    "manage",
+    "manage_warehouse",
+    "manage_cuboasis",
+    "manage_growth",
+    "manage_fleet",
     "nexus",
     "__version__",
 ]

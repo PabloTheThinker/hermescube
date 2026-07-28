@@ -33,7 +33,7 @@ def test_doctor_shows_bootstrap_and_density(tmp_path: Path, capsys):
     plugin.mkdir(parents=True)
     (plugin / "__init__.py").write_text("# stub\n", encoding="utf-8")
     (plugin / "plugin.yaml").write_text(
-        'name: hermescube\nversion: "0.44.0"\n',
+        'name: hermescube\nversion: "0.45.0"\n',
         encoding="utf-8",
     )
 
