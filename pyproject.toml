@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermescube"
 version = "0.50.0"
-description = "Binary columnar archive with holographic associative retrieval for persistent agent memory"
+description = "Library under Hermes — local deep-memory book + CLI for any Hermes agent home"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 

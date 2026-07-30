@@ -65,12 +65,16 @@ hermes config set memory.provider hermescube
 **Day-one library open:**
 
 ```bash
-hermescube doctor
+hermescube setup              # any Hermes user — wire THIS HERMES_HOME
+hermescube connect            # idempotent attach
+hermescube status
 hermes memory status
 hermescube query "what do we know about…"
 hermescube blackbox capture --latest
 hermescube blackbox prove --claim "tests pass" --latest
 ```
+
+Full terminal guide: **[docs/CLI.md](docs/CLI.md)**.
 
 | Path | Who owns it |
 |------|-------------|

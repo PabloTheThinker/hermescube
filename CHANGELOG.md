@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Terminal connect layer (any Hermes agent → own cube)
+- `hermescube setup` · `connect` · `status` — dial a HERMES_HOME into its own library book
+- Module `hermescube.connect`: ensure dirs, plugin link, create cube, set `memory.provider=hermescube`
+- Docs: [docs/CLI.md](docs/CLI.md)
+
 ### Identity ark — safe-lock checkpoints
 - `hermescube checkpoint create|list|restore` — flash clone of `memory.cube` + SOUL/MEMORY/USER (+ optional config)
 - Never packs `.env` / auth secrets; restore backs up live files as `*.pre-restore-*`

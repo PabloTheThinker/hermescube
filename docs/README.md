@@ -9,7 +9,7 @@ Maintainers: [PURPOSE.md](../PURPOSE.md) · **[ARCHITECTURE.md](ARCHITECTURE.md)
 |-----|------|
 | **What Cube is (library / chapters)** | **[ABOUT.md](../ABOUT.md)** · [PURPOSE.md](../PURPOSE.md) |
 | **Whole-project blueprint** | **[ARCHITECTURE.md](ARCHITECTURE.md)** |
-| Install & daily use | [USER_GUIDE.md](USER_GUIDE.md) · [DAY_TO_DAY.md](DAY_TO_DAY.md) |
+| Install & daily use | [USER_GUIDE.md](USER_GUIDE.md) · [DAY_TO_DAY.md](DAY_TO_DAY.md) · **[CLI.md](CLI.md)** |
 | **Prove runs (blackbox heart)** | **[BLACKBOX.md](BLACKBOX.md)** |
 | **Safe locks (identity ark)** | **[CHECKPOINT.md](CHECKPOINT.md)** |
 | How the warehouse works | [SPEC.md](SPEC.md) · [API_REFERENCE.md](API_REFERENCE.md) · [FRAMEWORK.md](FRAMEWORK.md) |

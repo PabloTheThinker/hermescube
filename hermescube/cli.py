@@ -298,11 +298,42 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="hermescube",
         description=(
-            "Binary columnar archive with holographic associative retrieval. "
-            f"Default path: $HERMES_HOME/memories/memory.cube ({default_path})"
+            "HermesCube — the library under Hermes. "
+            "Each HERMES_HOME owns its own book at memories/memory.cube. "
+            f"Default: {default_path}"
         ),
+        epilog=(
+            "Day one:  hermescube setup | connect | status | query \"…\" | "
+            "blackbox prove --claim \"tests pass\" --latest | checkpoint create --name first"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_setup = sub.add_parser(
+        "setup",
+        help="Install/wire HermesCube for this HERMES_HOME (any Hermes agent user)",
+    )
+    p_setup.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_setup.add_argument(
+        "--no-install-script",
+        action="store_true",
+        help="Skip scripts/install_hermes.sh (only connect)",
+    )
+
+    p_conn = sub.add_parser(
+        "connect",
+        help="Attach this HERMES_HOME to its own cube (provider + book + plugin link)",
+    )
+    p_conn.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_conn.add_argument("--no-plugin", action="store_true", help="Do not ensure plugin dir")
+
+    p_stat = sub.add_parser(
+        "status",
+        help="Human library status for this HERMES_HOME (terminal-friendly)",
+    )
+    p_stat.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_stat.add_argument("--json", action="store_true", help="JSON output")
 
     def add_path(p: argparse.ArgumentParser, *, required_create: bool = False) -> None:
         p.add_argument(
@@ -696,6 +727,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    if args.command == "setup":
+        return cmd_setup(args)
+    if args.command == "connect":
+        return cmd_connect(args)
+    if args.command == "status":
+        return cmd_status(args)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "update":
@@ -1555,6 +1592,46 @@ def cmd_dense(args: argparse.Namespace) -> int:
         return 0
     print(f"unknown dense command: {cmd}", file=sys.stderr)
     return 1
+
+
+def cmd_setup(args: argparse.Namespace) -> int:
+    from hermescube import connect as cx
+
+    r = cx.setup(
+        hermes_home_override=args.hermes_home,
+        run_install_script=not bool(args.no_install_script),
+    )
+    print(cx.format_connect(r.get("connect") or {}))
+    if r.get("install") and not r["install"].get("skipped"):
+        print("\ninstall:", "ok" if r["install"].get("ok") else "issues")
+        tail = (r["install"].get("log_tail") or "")[-500:]
+        if tail and not r["install"].get("ok"):
+            print(tail)
+    return 0 if r.get("ok") else 1
+
+
+def cmd_connect(args: argparse.Namespace) -> int:
+    from hermescube import connect as cx
+
+    r = cx.connect(
+        hermes_home_override=args.hermes_home,
+        ensure_plugin=not bool(args.no_plugin),
+    )
+    print(cx.format_connect(r))
+    return 0 if r.get("ok") else 1
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    import json
+
+    from hermescube import connect as cx
+
+    s = cx.status_report(args.hermes_home)
+    if args.json:
+        print(json.dumps(s, indent=2, default=str))
+    else:
+        print(cx.format_status(s))
+    return 0 if s.get("ok") else 1
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
