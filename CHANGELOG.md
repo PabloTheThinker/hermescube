@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Identity ark — safe-lock checkpoints
+- `hermescube checkpoint create|list|restore` — flash clone of `memory.cube` + SOUL/MEMORY/USER (+ optional config)
+- Never packs `.env` / auth secrets; restore backs up live files as `*.pre-restore-*`
+- Docs: [docs/CHECKPOINT.md](docs/CHECKPOINT.md); center organ `ark`
+- Mental model: offline identity arc mark so a fresh restart can restore the librarian + library
+
 ## [0.50.0] - 2026-07-30
 
 ### Library under Hermes — Hermes-base core direction

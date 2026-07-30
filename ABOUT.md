@@ -31,6 +31,7 @@ A cube is a **bound book**: append pages, index by meaning, bind chapters over m
 | Memories that survive context compression | Append-only `.cube` + WAL under `$HERMES_HOME/memories/` |
 | Recall by *meaning*, not only grep | HAR + learned embeddings + entity/relation graphs (no embedding API) |
 | Proof that work happened | [Blackbox](docs/BLACKBOX.md) capture / prove / breathe |
+| Safe lock if disaster | [Checkpoint ark](docs/CHECKPOINT.md) — clone book + core identity |
 | Safe writes under load | Cuboasis review-first gates, threat scan, atomic replace |
 | Growth over months | Living version, diary (`CUBE.md`), maturity eras, curator |
 | Optional multi-agent life | Hive pilgrimage, Fleet HQ, peer interviews, CubeDream circles |

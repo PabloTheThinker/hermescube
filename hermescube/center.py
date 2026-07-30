@@ -104,6 +104,11 @@ ANATOMY: dict[str, dict[str, str]] = {
         "job": "Capture redacted trajectories · integrity hash · prove claims — agents show the work",
         "api": "blackbox.capture_session · prove_claim · center.flight_capture · center.flight_prove",
     },
+    "ark": {
+        "organ": "Safe-lock checkpoints (identity arc)",
+        "job": "Flash clone of cube book + SOUL/MEMORY/USER — restore after fresh restart or corruption",
+        "api": "checkpoint.create_checkpoint · restore_checkpoint · hermescube checkpoint",
+    },
 }
 
 

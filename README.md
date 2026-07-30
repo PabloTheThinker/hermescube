@@ -27,7 +27,8 @@ Hermes Agent is the librarian on duty (tools, chat, skills).
 | **Chapter / arc** | crystals, growth eras, dream consolidations, project spines |
 | **Page** | a landmark, belief, trait, or relationship entry |
 | **Card catalog** | hot MEMORY.md + journey |
-| **Heart / provenance** | [blackbox](docs/BLACKBOX.md) flight records — prove work was done |
+| Heart / provenance | [blackbox](docs/BLACKBOX.md) flight records — prove work was done |
+| **Safe lock / ark** | [checkpoint](docs/CHECKPOINT.md) — flash clone of book + core identity |
 | **Inter-library loan** | optional Hive (multi-agent), not required day one |
 
 No cloud memory APIs. Your data stays under `$HERMES_HOME/memories/`. Updates never wipe the book.
@@ -96,6 +97,8 @@ hermescube query "…"              # find passages by meaning
 hermescube blackbox capture --latest
 hermescube blackbox prove --claim "tests pass" --latest
 hermescube blackbox breathe --latest   # advanced: prove + seal + relations
+hermescube checkpoint create --name "pre-risk" --label "Safe lock before change"
+hermescube checkpoint list
 hermescube dream status           # chapter-binding night cycle
 hermescube dense                  # portable text backup (vectors stay local)
 ```
@@ -119,6 +122,7 @@ Agent tools (when provider is on):
 | [PURPOSE.md](PURPOSE.md) | North star (Hermes-base core) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full blueprint |
 | [docs/BLACKBOX.md](docs/BLACKBOX.md) | Flight recorder / prove |
+| [docs/CHECKPOINT.md](docs/CHECKPOINT.md) | Safe locks — identity ark + cube clone |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) | Heart ↔ desk |
 | [docs/ANATOMY.md](docs/ANATOMY.md) | Center organs (incl. blackbox) |
 | [docs/README.md](docs/README.md) | Full index |

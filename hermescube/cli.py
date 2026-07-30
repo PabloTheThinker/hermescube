@@ -675,6 +675,25 @@ def main(argv: list[str] | None = None) -> int:
     p_bb.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
     p_bb.add_argument("--no-redact", action="store_true", help="Disable redaction (local debug only)")
 
+    p_ck = sub.add_parser(
+        "checkpoint",
+        help="Safe-lock identity ark: snapshot cube book + core identity (SOUL/MEMORY/USER)",
+    )
+    p_ck.add_argument(
+        "ck_command",
+        choices=["create", "list", "restore"],
+        help="create · list · restore",
+    )
+    p_ck.add_argument("--name", default=None, help="Checkpoint slug / name")
+    p_ck.add_argument("--label", default="", help="Human label for this arc mark")
+    p_ck.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_ck.add_argument("--dense", action="store_true", help="Also export dense text archive into checkpoint")
+    p_ck.add_argument("--no-tar", action="store_true", help="Skip .tar.gz pack")
+    p_ck.add_argument("--with-config", action="store_true", help="On restore: also restore config.yaml")
+    p_ck.add_argument("--dry-run", action="store_true", help="Restore: show plan only")
+    p_ck.add_argument("--identity-only", action="store_true", help="Restore: SOUL/MEMORY/USER only")
+    p_ck.add_argument("--cube-only", action="store_true", help="Restore: cube book only")
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -687,6 +706,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_harness(args)
     if args.command == "blackbox":
         return cmd_blackbox(args)
+    if args.command == "checkpoint":
+        return cmd_checkpoint(args)
     if args.command == "hq":
         return cmd_hq(args)
     if args.command == "interview":
@@ -1147,6 +1168,57 @@ def cmd_blackbox(args: argparse.Namespace) -> int:
         return 0 if out.get("ok") else 1
 
     print(f"Error: unknown blackbox command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_checkpoint(args: argparse.Namespace) -> int:
+    """Safe-lock ark — flash clone of cube book + core identity."""
+    import json
+    from pathlib import Path
+
+    from hermescube import checkpoint as ck
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cmd = args.ck_command
+
+    if cmd == "list":
+        rows = ck.list_checkpoints(home)
+        print(json.dumps({"ok": True, "checkpoints": rows}, indent=2))
+        return 0
+
+    if cmd == "create":
+        out = ck.create_checkpoint(
+            args.name,
+            hermes_home=home,
+            label=args.label or "",
+            include_dense=bool(args.dense),
+            pack_tar=not bool(args.no_tar),
+        )
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+
+    if cmd == "restore":
+        if not args.name:
+            print("Error: --name SLUG required for restore", file=sys.stderr)
+            return 1
+        identity = True
+        cube = True
+        if args.identity_only:
+            cube = False
+        if args.cube_only:
+            identity = False
+        out = ck.restore_checkpoint(
+            args.name,
+            hermes_home=home,
+            restore_identity=identity,
+            restore_cube=cube,
+            restore_config=bool(args.with_config),
+            dry_run=bool(args.dry_run),
+        )
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+
+    print(f"Error: unknown checkpoint command {cmd}", file=sys.stderr)
     return 1
 
 
