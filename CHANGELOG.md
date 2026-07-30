@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Security suite — sealed homes (no leakage)
+- `hermescube security audit|harden` — path containment, secret scan, permission vault
+- Checkpoint create/restore refuse path escape, `.env`, secret-like files
+- `connect` hardens modes after attach; docs [SECURITY.md](docs/SECURITY.md)
+- Generator rule: one HERMES_HOME → one book → no cross-profile population
+
 ### Terminal connect layer (any Hermes agent → own cube)
 - `hermescube setup` · `connect` · `status` — dial a HERMES_HOME into its own library book
 - Module `hermescube.connect`: ensure dirs, plugin link, create cube, set `memory.provider=hermescube`

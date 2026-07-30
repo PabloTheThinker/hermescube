@@ -56,12 +56,13 @@ def _run(cmd: list[str], *, env: dict[str, str] | None = None) -> tuple[int, str
 
 
 def find_hermes_bin() -> str | None:
-    for c in (
+    candidates = [
         shutil.which("hermes"),
         str(Path.home() / "hermes-agent" / "venv" / "bin" / "hermes"),
         str(Path.home() / ".local" / "bin" / "hermes"),
-        "/home/ilo/hermes-agent/venv/bin/hermes",
-    ):
+    ]
+    # optional: dirname(hermes)/python sibling installs
+    for c in candidates:
         if c and Path(c).is_file() and os.access(c, os.X_OK):
             return c
     return None
@@ -260,11 +261,18 @@ def connect(
         and report["steps"]["provider"].get("ok")
         and (not ensure_plugin or report["steps"]["plugin"].get("ok"))
     )
+    # seal the vault modes after connect
+    try:
+        from hermescube.security import harden_home_permissions
+
+        report["steps"]["harden"] = harden_home_permissions(home)
+    except Exception as e:
+        report["steps"]["harden"] = {"ok": False, "error": str(e)}
     report["next"] = [
         "Restart Hermes gateway / Desktop / agent session so memory.provider loads",
         "hermescube status",
+        "hermescube security audit",
         "hermescube query \"what should I remember?\"",
-        "hermescube blackbox capture --latest",
         "hermescube checkpoint create --name first-lock",
     ]
     return report

@@ -335,6 +335,18 @@ def main(argv: list[str] | None = None) -> int:
     p_stat.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
     p_stat.add_argument("--json", action="store_true", help="JSON output")
 
+    p_sec = sub.add_parser(
+        "security",
+        help="Home security suite: audit · harden · (no cross-profile leakage)",
+    )
+    p_sec.add_argument(
+        "sec_command",
+        choices=["audit", "harden"],
+        help="audit findings · harden file modes",
+    )
+    p_sec.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_sec.add_argument("--json", action="store_true", help="JSON output")
+
     def add_path(p: argparse.ArgumentParser, *, required_create: bool = False) -> None:
         p.add_argument(
             "path",
@@ -733,6 +745,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_connect(args)
     if args.command == "status":
         return cmd_status(args)
+    if args.command == "security":
+        return cmd_security(args)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "update":
@@ -1632,6 +1646,28 @@ def cmd_status(args: argparse.Namespace) -> int:
     else:
         print(cx.format_status(s))
     return 0 if s.get("ok") else 1
+
+
+def cmd_security(args: argparse.Namespace) -> int:
+    import json
+
+    from hermescube import security as sec
+
+    home = args.hermes_home
+    if args.sec_command == "harden":
+        r = sec.harden_home_permissions(home)
+        print(json.dumps(r, indent=2) if args.json else f"hardened ok={r.get('ok')} changed={r.get('changed_n')}")
+        if not args.json:
+            for c in (r.get("changed") or [])[:20]:
+                print(f"  {c}")
+        return 0 if r.get("ok") else 1
+    # audit
+    r = sec.audit_home(home)
+    if args.json:
+        print(json.dumps(r, indent=2, default=str))
+    else:
+        print(sec.format_audit(r))
+    return 0 if r.get("ok") else 2
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

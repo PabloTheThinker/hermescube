@@ -94,24 +94,72 @@ def create_checkpoint(
     pack_tar: bool = True,
 ) -> dict[str, Any]:
     """Create a safe-lock checkpoint (identity arc + cube book)."""
-    home = _hermes_home(hermes_home)
+    from hermescube.security import (
+        SecurityError,
+        assert_under_home,
+        harden_home_permissions,
+        is_forbidden_rel,
+        resolve_hermes_home,
+        scan_file_for_secrets,
+        validate_checkpoint_sources,
+    )
+
+    home = resolve_hermes_home(hermes_home)
     stamp = _utc_stamp()
     slug = (name or f"ark-{stamp}").strip().replace(" ", "-")
+    # slug must be a single path segment
+    if "/" in slug or "\\" in slug or slug in (".", "..") or ".." in slug:
+        return {"ok": False, "error": "invalid checkpoint name"}
     root = checkpoints_root(home)
+    assert_under_home(root, home, label="checkpoints_root")
     dest = root / slug
     if dest.exists():
         dest = root / f"{slug}-{stamp}"
         slug = dest.name
     dest.mkdir(parents=True, exist_ok=False)
+    assert_under_home(dest, home, label="checkpoint_dest")
     files_meta: list[dict[str, Any]] = []
 
+    candidates: list[str] = list(DEFAULT_INCLUDE_IDENTITY) + list(DEFAULT_INCLUDE_CUBE)
+    if include_config:
+        candidates.append("config.yaml")
+    for rel in OPTIONAL_FILES:
+        if rel == "config.yaml":
+            continue
+        candidates.append(rel)
+
+    rejected = validate_checkpoint_sources(home, candidates)
+    # only hard-fail forbidden; secret-in-config.yaml → skip that file
+    hard = [r for r in rejected if r.startswith("forbidden") or "escapes" in r]
+    if hard:
+        return {"ok": False, "error": "security rejected sources", "reasons": hard}
+
+    skip_rels = set()
+    for r in rejected:
+        if "secret-pattern in " in r:
+            skip_rels.add(r.split("secret-pattern in ", 1)[1].split(":", 1)[0].strip())
+
     def take(rel: str) -> None:
+        if is_forbidden_rel(rel) or rel in skip_rels:
+            return
         src = home / rel
         if not src.is_file():
             return
+        try:
+            assert_under_home(src, home, label=rel)
+        except SecurityError:
+            return
+        # extra scan
+        if scan_file_for_secrets(src):
+            return
         out = dest / rel
+        assert_under_home(out, home, label=f"ckpt:{rel}")
         out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, out)
+        try:
+            out.chmod(0o600)
+        except OSError:
+            pass
         files_meta.append(
             {
                 "rel": rel,
@@ -120,15 +168,7 @@ def create_checkpoint(
             }
         )
 
-    for rel in DEFAULT_INCLUDE_IDENTITY:
-        take(rel)
-    for rel in DEFAULT_INCLUDE_CUBE:
-        take(rel)
-    if include_config:
-        take("config.yaml")
-    for rel in OPTIONAL_FILES:
-        if rel == "config.yaml":
-            continue
+    for rel in candidates:
         take(rel)
 
     if include_dense:
@@ -140,6 +180,10 @@ def create_checkpoint(
                 dense_out = dest / "memories" / "memory.dense.jsonl.gz"
                 dense_out.parent.mkdir(parents=True, exist_ok=True)
                 export_dense(cube, dense_out)
+                try:
+                    dense_out.chmod(0o600)
+                except OSError:
+                    pass
                 files_meta.append(
                     {
                         "rel": "memories/memory.dense.jsonl.gz",
@@ -157,15 +201,25 @@ def create_checkpoint(
         "label": label or slug,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "hermes_home": str(home),
+        "security": {
+            "no_env": True,
+            "path_contained": True,
+            "secret_scan": True,
+            "skipped": sorted(skip_rels),
+        },
         "note": (
             "Safe lock: flash clone of cube book + core identity. "
-            "Does not include .env secrets. Restore only onto a trusted HERMES_HOME."
+            "Does not include .env secrets. Restore only onto the same logical home."
         ),
         "files": files_meta,
         "excludes": [".env", "auth.json", "*.pem", "credentials"],
     }
     man_path = dest / MANIFEST_NAME
     man_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    try:
+        man_path.chmod(0o600)
+    except OSError:
+        pass
     manifest["manifest_sha256"] = _sha256_file(man_path)
 
     tar_path = None
@@ -173,13 +227,18 @@ def create_checkpoint(
         tar_path = root / f"{slug}.tar.gz"
         with tarfile.open(tar_path, "w:gz") as tar:
             tar.add(dest, arcname=slug)
+        try:
+            tar_path.chmod(0o600)
+        except OSError:
+            pass
         manifest["archive"] = {
             "path": str(tar_path),
             "bytes": tar_path.stat().st_size,
             "sha256": _sha256_file(tar_path),
         }
-        # refresh manifest with archive info
         man_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+    harden_home_permissions(home)
 
     return {
         "ok": True,
@@ -189,6 +248,7 @@ def create_checkpoint(
         "files": len(files_meta),
         "label": manifest["label"],
         "created_at": manifest["created_at"],
+        "skipped_sensitive": sorted(skip_rels),
     }
 
 
@@ -228,28 +288,50 @@ def restore_checkpoint(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """Restore a safe-lock onto HERMES_HOME (destructive to live book/identity)."""
-    home = _hermes_home(hermes_home)
+    from hermescube.security import (
+        SecurityError,
+        assert_under_home,
+        harden_home_permissions,
+        is_forbidden_rel,
+        resolve_hermes_home,
+        scan_file_for_secrets,
+    )
+
+    home = resolve_hermes_home(hermes_home)
     root = checkpoints_root(home)
+    assert_under_home(root, home, label="checkpoints_root")
+    if "/" in slug or "\\" in slug or ".." in slug:
+        return {"ok": False, "error": "invalid slug"}
     src = root / slug
     if not src.is_dir():
-        # try without path
-        candidates = [p for p in root.glob("*") if p.name == slug or p.name.startswith(slug)]
+        candidates = [p for p in root.glob("*") if p.is_dir() and (p.name == slug or p.name.startswith(slug))]
         if not candidates:
             return {"ok": False, "error": f"checkpoint not found: {slug}"}
-        src = candidates[0] if candidates[0].is_dir() else src
+        src = candidates[0]
+    try:
+        assert_under_home(src, home, label="checkpoint_src")
+    except SecurityError as e:
+        return {"ok": False, "error": str(e)}
+
     man_path = src / MANIFEST_NAME
     if not man_path.is_file():
         return {"ok": False, "error": "missing ark-manifest.json"}
 
     man = json.loads(man_path.read_text())
+    # refuse restore if manifest claims a different home host path *and* cube missing? 
+    # Allow restore onto current home always (user intent) but never read files outside src.
     planned: list[str] = []
     restored: list[str] = []
+    blocked: list[str] = []
 
     for f in man.get("files") or []:
         rel = f.get("rel") or ""
-        if not rel:
+        if not rel or is_forbidden_rel(rel):
+            if rel:
+                blocked.append(rel)
             continue
-        if rel.endswith(".env") or "auth.json" in rel:
+        if ".." in Path(rel).parts:
+            blocked.append(rel)
             continue
         is_id = rel in DEFAULT_INCLUDE_IDENTITY or rel.endswith("SOUL.md")
         is_cube = "memory.cube" in rel or rel.endswith(".cubelog") or rel.endswith(".wal")
@@ -261,24 +343,42 @@ def restore_checkpoint(
         if is_cfg and not restore_config:
             continue
         if not is_id and not is_cube and not is_cfg and "relations" not in rel:
-            # optional extras only with config flag bundle
             if not restore_config:
                 continue
 
         s = src / rel
         d = home / rel
+        try:
+            assert_under_home(s, home, label=f"src:{rel}")
+            assert_under_home(d, home, label=f"dst:{rel}")
+        except SecurityError:
+            blocked.append(rel)
+            continue
+        if scan_file_for_secrets(s):
+            blocked.append(f"{rel}:secret")
+            continue
         planned.append(rel)
         if dry_run:
             continue
         if not s.is_file():
             continue
         d.parent.mkdir(parents=True, exist_ok=True)
-        # safety backup of live target
         if d.is_file():
             bak = d.with_suffix(d.suffix + f".pre-restore-{_utc_stamp()}")
             shutil.copy2(d, bak)
+            try:
+                bak.chmod(0o600)
+            except OSError:
+                pass
         shutil.copy2(s, d)
+        try:
+            d.chmod(0o600)
+        except OSError:
+            pass
         restored.append(rel)
+
+    if not dry_run:
+        harden_home_permissions(home)
 
     return {
         "ok": True,
@@ -286,5 +386,6 @@ def restore_checkpoint(
         "dry_run": dry_run,
         "planned": planned,
         "restored": restored,
+        "blocked": blocked,
         "warning": "Restart Hermes gateway/desktop after restore so identity + provider reload.",
     }

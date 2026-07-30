@@ -127,6 +127,7 @@ Agent tools (when provider is on):
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full blueprint |
 | [docs/BLACKBOX.md](docs/BLACKBOX.md) | Flight recorder / prove |
 | [docs/CHECKPOINT.md](docs/CHECKPOINT.md) | Safe locks — identity ark + cube clone |
+| [docs/SECURITY.md](docs/SECURITY.md) | No leakage · profile isolation · harden |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) | Heart ↔ desk |
 | [docs/ANATOMY.md](docs/ANATOMY.md) | Center organs (incl. blackbox) |
 | [docs/README.md](docs/README.md) | Full index |
