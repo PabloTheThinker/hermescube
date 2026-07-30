@@ -1,6 +1,6 @@
 name: hermescube
 manifest_version: 1
-version: "0.49.0"
+version: "0.50.0"
 description: >-
   Local deep-memory warehouse for Hermes Agent — HAR retrieval, Cuboasis
   governance, living growth, auto-bootstrap + operate/import skills, optional

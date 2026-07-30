@@ -658,6 +658,23 @@ def main(argv: list[str] | None = None) -> int:
         help="For witness: friction severity",
     )
 
+    p_bb = sub.add_parser(
+        "blackbox",
+        help="Flight recorder core: capture / prove / verify (center blackbox organ)",
+    )
+    p_bb.add_argument(
+        "bb_command",
+        choices=["capture", "prove", "verify", "status", "breathe"],
+        help="capture · prove · verify · status · breathe (full pulmonary cycle)",
+    )
+    p_bb.add_argument("--session", default=None, help="Session id or prefix")
+    p_bb.add_argument("--latest", action="store_true", help="Latest session (default for capture)")
+    p_bb.add_argument("--claim", default="", help="For prove: natural language claim")
+    p_bb.add_argument("--record", default=None, help="Flight record JSON path")
+    p_bb.add_argument("--out", default=None, help="Write capture/prove output path")
+    p_bb.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
+    p_bb.add_argument("--no-redact", action="store_true", help="Disable redaction (local debug only)")
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -668,6 +685,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_hive(args)
     if args.command == "harness":
         return cmd_harness(args)
+    if args.command == "blackbox":
+        return cmd_blackbox(args)
     if args.command == "hq":
         return cmd_hq(args)
     if args.command == "interview":
@@ -1038,6 +1057,96 @@ def cmd_hq(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Error: unknown hq command {cmd}", file=sys.stderr)
+    return 1
+
+
+def cmd_blackbox(args: argparse.Namespace) -> int:
+    """Flight recorder — Cube center blackbox organ (capture / prove / verify)."""
+    import json
+    from pathlib import Path
+
+    from hermescube import center
+    from hermescube.blackbox import load_record, verify_integrity
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cmd = args.bb_command
+
+    if cmd == "status":
+        st = center.center_status(hermes_home=home)
+        bb = (st.get("organs") or {}).get("blackbox") or {}
+        print(f"Center API {st.get('api_version')} · blackbox organ")
+        print(f"  {bb.get('organ')}: {bb.get('job')}")
+        print(f"  api: {bb.get('api')}")
+        print(f"  heart_ready: {(st.get('heart') or {}).get('heart_ready')}")
+        return 0
+
+    if cmd == "capture":
+        out = center.flight_capture(
+            session_id=args.session,
+            latest=bool(args.latest or not args.session),
+            hermes_home=home,
+            redact=not args.no_redact,
+            out_path=args.out,
+        )
+        print(json.dumps(out, indent=2, default=str))
+        return 0 if out.get("ok") else 1
+
+    if cmd == "prove":
+        if not args.claim:
+            print("Error: --claim required", file=sys.stderr)
+            return 1
+        out = center.flight_prove(
+            args.claim,
+            record_path=args.record,
+            hermes_home=home,
+            session_id=args.session,
+            latest=bool(args.latest or not args.session),
+        )
+        print(json.dumps(out, indent=2, default=str))
+        if args.out:
+            Path(args.out).write_text(json.dumps(out, indent=2, default=str) + "\n")
+        return int(out.get("exit_code_hint", 1 if not out.get("ok") else 0))
+
+    if cmd == "verify":
+        if not args.record:
+            print("Error: --record PATH required", file=sys.stderr)
+            return 1
+        rec = load_record(args.record)
+        ok = verify_integrity(rec)
+        print(json.dumps({"ok": ok, "record_id": rec.id, "events": len(rec.events)}, indent=2))
+        return 0 if ok else 2
+
+    if cmd == "breathe":
+        out = center.breathe(
+            hermes_home=home,
+            session_id=args.session,
+            latest=bool(args.latest or not args.session),
+        )
+        # drop huge nested sealed payloads for CLI readability
+        slim = {
+            "ok": out.get("ok"),
+            "elapsed_ms": out.get("elapsed_ms"),
+            "idea": out.get("idea"),
+            "inhale": out.get("phases", {}).get("inhale"),
+            "gas_exchange": {
+                k: v
+                for k, v in (out.get("phases", {}).get("gas_exchange") or {}).items()
+                if k != "claims"
+            },
+            "claims": (out.get("phases", {}).get("gas_exchange") or {}).get("claims"),
+            "exhale": {
+                "sealed_ok": (out.get("phases", {}).get("exhale") or {}).get("sealed_ok"),
+                "relations": (out.get("phases", {}).get("exhale") or {}).get("relations"),
+                "breath_note": (out.get("phases", {}).get("exhale") or {}).get("breath_note"),
+            },
+            "error": out.get("error"),
+        }
+        print(json.dumps(slim, indent=2, default=str))
+        if args.out:
+            Path(args.out).write_text(json.dumps(out, indent=2, default=str) + "\n")
+        return 0 if out.get("ok") else 1
+
+    print(f"Error: unknown blackbox command {cmd}", file=sys.stderr)
     return 1
 
 

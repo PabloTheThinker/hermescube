@@ -42,7 +42,7 @@ from hermescube.space_bridge import GENERATOR_API_VERSION
 logger = logging.getLogger(__name__)
 
 # Additive within 1.x — Space feature-detects via center_status()["api_version"].
-CENTER_API_VERSION = "1.1"
+CENTER_API_VERSION = "1.2"
 
 # Sweller-style load → arterial strip budget (chars). Matches Hermespace cognition levels.
 LOAD_STRIP_CHARS: dict[str, int] = {
@@ -98,6 +98,11 @@ ANATOMY: dict[str, dict[str, str]] = {
         "organ": "Cuboasis chambers",
         "job": "Local tissue rooms without forking stores",
         "api": "cuboasis space/connect/progress",
+    },
+    "blackbox": {
+        "organ": "Flight recorder (inner core)",
+        "job": "Capture redacted trajectories · integrity hash · prove claims — agents show the work",
+        "api": "blackbox.capture_session · prove_claim · center.flight_capture · center.flight_prove",
     },
 }
 
@@ -335,6 +340,129 @@ def beat(
         out["ok"] = True
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 3)
     return out
+
+
+def flight_capture(
+    session_id: str | None = None,
+    *,
+    latest: bool = True,
+    hermes_home: str | None = None,
+    redact: bool = True,
+    out_path: str | None = None,
+) -> dict[str, Any]:
+    """Blackbox organ — capture a Hermes session as a redacted flight record."""
+    from pathlib import Path
+
+    from hermescube.blackbox import capture_session, save_record, verify_integrity
+
+    db = None
+    if hermes_home:
+        db = str(Path(hermes_home) / "state.db")
+    try:
+        rec = capture_session(
+            session_id=session_id,
+            latest=latest if not session_id else False,
+            db_path=db,
+            redact=redact,
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e), "api_version": CENTER_API_VERSION}
+
+    path = None
+    if out_path:
+        path = str(save_record(rec, out_path))
+    else:
+        # default under HERMES_HOME/memories/blackbox/
+        home = Path(hermes_home or Path.home() / ".hermes")
+        dest = home / "memories" / "blackbox" / f"{rec.id}.json"
+        path = str(save_record(rec, dest))
+
+    return {
+        "ok": True,
+        "organ": "blackbox",
+        "record_id": rec.id,
+        "session_id": (rec.session or {}).get("id"),
+        "events": len(rec.events),
+        "redactions": rec.redactions_count,
+        "integrity_ok": verify_integrity(rec),
+        "path": path,
+        "api_version": CENTER_API_VERSION,
+    }
+
+
+def flight_prove(
+    claim: str,
+    *,
+    record_path: str | None = None,
+    record: dict | None = None,
+    hermes_home: str | None = None,
+    session_id: str | None = None,
+    latest: bool = True,
+) -> dict[str, Any]:
+    """Blackbox organ — prove a natural-language claim against a flight record."""
+    from hermescube.blackbox import capture_session, load_record, prove_claim, verify_integrity
+
+    try:
+        if record is not None:
+            rec = record
+        elif record_path:
+            rec = load_record(record_path)
+        else:
+            db = None
+            if hermes_home:
+                from pathlib import Path
+
+                db = str(Path(hermes_home) / "state.db")
+            rec = capture_session(
+                session_id=session_id,
+                latest=latest if not session_id else False,
+                db_path=db,
+                redact=True,
+            )
+        result = prove_claim(rec, claim)
+        ok_int = verify_integrity(rec)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "api_version": CENTER_API_VERSION}
+
+    d = result.to_dict()
+    exit_hint = {"pass": 0, "fail": 2, "inconclusive": 3}.get(result.verdict, 1)
+    return {
+        "ok": result.verdict == "pass",
+        "organ": "blackbox",
+        "integrity_ok": ok_int,
+        "exit_code_hint": exit_hint,
+        "result": d,
+        "api_version": CENTER_API_VERSION,
+    }
+
+
+def breathe(
+    *,
+    hermes_home: str | None = None,
+    session_id: str | None = None,
+    latest: bool = True,
+    claims: list[str] | None = None,
+    seal: bool = True,
+    relations: bool = True,
+) -> dict[str, Any]:
+    """Pulmonary cycle — blackbox × heart × relations (evidence-oriented programming).
+
+    Fills gaps the cardiac ``beat`` alone does not: empty relation graph,
+    unproven "done" claims, flight evidence not sealed into the warehouse.
+    """
+    from hermescube.blackbox.inspire import breathe as _breathe
+
+    report = _breathe(
+        hermes_home=hermes_home,
+        session_id=session_id,
+        latest=latest,
+        claims=claims,
+        seal=seal,
+        relations=relations,
+    )
+    report["api_version"] = CENTER_API_VERSION
+    report["organ"] = "blackbox+heart+relations"
+    return report
 
 
 # Friendly aliases matching anatomy language Space docs can cite.

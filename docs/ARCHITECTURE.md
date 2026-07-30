@@ -1,16 +1,18 @@
 # Architecture Blueprint — HermesCube
 
-**Status:** living blueprint for the whole project (v0.49)  
+**Status:** living blueprint (v0.50 — library / Hermes-base core)  
 **Audience:** maintainers, agents, and Hermespace integrators  
-**Companions:** [PURPOSE.md](../PURPOSE.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md)
+**Companions:** [PURPOSE.md](../PURPOSE.md) · [ABOUT.md](../ABOUT.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md) · [BLACKBOX.md](BLACKBOX.md)
 
-This document is the **single architecture map** for HermesCube: where it sits in the Hermes ecosystem, how every product layer fits, how data flows on a turn, and how the binary warehouse works underneath.
+This document is the **single architecture map** for HermesCube: where it sits as the **library under Hermes**, how every product layer fits, how data flows on a turn, and how the binary warehouse works underneath.
 
 ---
 
 ## 0. One-line identity
 
-HermesCube is the **local deep-memory warehouse and heart** for [Hermes Agent](https://github.com/NousResearch/hermes-agent) — durable, semantic, offline — and the **generator core** that powers [Hermespace](https://github.com/PabloTheThinker/hermespace).
+HermesCube is the **library under Hermes** — local deep-memory **book** and **heart** for [Hermes Agent](https://github.com/NousResearch/hermes-agent), and the **generator core** that powers [Hermespace](https://github.com/PabloTheThinker/hermespace).
+
+**Metaphor:** `memory.cube` is a **book**; crystals/growth/dreams bind **chapters (arcs)**; blackbox is **provenance in the heart**; MEMORY.md is the desk **card catalog**. Multi-agent readers share one library; Hive is optional inter-library loan.
 
 It is **not** a second agent runtime, not a cloud memory SaaS, and not a replacement for Hermes `MEMORY.md`.
 
@@ -20,12 +22,14 @@ It is **not** a second agent runtime, not a cloud memory SaaS, and not a replace
 
 1. **Append-only is the only safe durable write.** Entries are marked superseded, never silently deleted. Crash recovery stays simple.
 2. **Semantic recall over keyword-only.** HRR + HAR + learned embeddings + graphs — no embedding API required.
-3. **The system improves with use.** Evolve, trust feedback, Cubewave/Engram, growth eras, curator.
-4. **One external MemoryProvider.** Builtin MEMORY.md always coexists; Cube is additive.
-5. **Soft-fail at every integration edge.** Hermespace and fleet hooks never crash the agent loop.
-6. **Solo path first.** Hive / HQ / dream-circles are opt-in.
-7. **User data never lives in git.** Runtime SoT is `$HERMES_HOME/memories/memory.cube`.
-8. **Learn frameworks; remake Cube-native.** Steal algorithms (holographic trust, OMH governance, bio maps) — do not clone foreign stores.
+3. **Compress into chapters over time.** Crystalize, merge, dream — not infinite CCTV tape in the context window.
+4. **The system improves with use.** Evolve, trust feedback, Cubewave/Engram, growth eras, curator.
+5. **One external MemoryProvider.** Builtin MEMORY.md always coexists; Cube is the deep core of a Hermes base.
+6. **Soft-fail at every integration edge.** Hermespace and fleet hooks never crash the agent loop.
+7. **Solo library first.** Hive / HQ / dream-circles are opt-in consortium features.
+8. **User data never lives in git.** Runtime SoT is `$HERMES_HOME/memories/memory.cube`.
+9. **Prove when it matters.** Blackbox flights stamp runs; “done” needs evidence.
+10. **Learn frameworks; remake Cube-native.** Steal algorithms — do not clone foreign stores.
 
 ---
 

@@ -5,38 +5,47 @@
 # HermesCube
 
 <p align="center">
-  <em>Local deep-memory warehouse for Hermes Agent — durable, semantic, offline.</em>
+  <em>The library under Hermes — long memory as a book of chapters, offline, under your home.</em>
 </p>
 
 <p align="center">
-  <a href="ABOUT.md"><img src="https://img.shields.io/badge/About-what%20%26%20why-0A7A6A?style=for-the-badge" alt="About"></a>
+  <a href="ABOUT.md"><img src="https://img.shields.io/badge/About-library%20under%20Hermes-0A7A6A?style=for-the-badge" alt="About"></a>
   <a href="https://github.com/PabloTheThinker/hermescube/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-34D058?style=for-the-badge" alt="CI"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-blue?style=for-the-badge" alt="Python 3.11+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <img src="https://img.shields.io/badge/version-0.49.0-informational?style=for-the-badge" alt="0.49.0">
+  <img src="https://img.shields.io/badge/version-0.50.0-informational?style=for-the-badge" alt="0.50.0">
 </p>
 
-**HermesCube plugs into [Hermes Agent](https://github.com/NousResearch/hermes-agent) as the one external `MemoryProvider`.** Hermes keeps the hot notebook (`MEMORY.md`); Cube keeps the long tail — a crash-safe `.cube` archive with holographic associative retrieval, Cuboasis governance, living growth, and optional multi-agent Hive / CubeDream.
+**HermesCube is the core deep-memory of a Hermes base** — a local **library** that keeps years of agent life and compresses it into **chapters (arcs)**, not a second chatbot and not a cloud memory SaaS.
 
-No cloud memory APIs. No pruning tax. Your data stays under `$HERMES_HOME/memories/`.
+Hermes Agent is the librarian on duty (tools, chat, skills).  
+**HermesCube is the stacks.** Hot `MEMORY.md` is the desk card catalog. The bound volume is `$HERMES_HOME/memories/memory.cube`.
+
+| Library idea | In the product |
+|--------------|----------------|
+| **Book** | one `memory.cube` per Hermes home / profile |
+| **Chapter / arc** | crystals, growth eras, dream consolidations, project spines |
+| **Page** | a landmark, belief, trait, or relationship entry |
+| **Card catalog** | hot MEMORY.md + journey |
+| **Heart / provenance** | [blackbox](docs/BLACKBOX.md) flight records — prove work was done |
+| **Inter-library loan** | optional Hive (multi-agent), not required day one |
+
+No cloud memory APIs. Your data stays under `$HERMES_HOME/memories/`. Updates never wipe the book.
 
 <table>
-<tr><td><b>Works with Hermes, not instead of it</b></td><td>Hot MEMORY.md stays always-on. Cube mirrors writes, WAL-syncs turns, and injects a small deep strip when useful.</td></tr>
-<tr><td><b>Semantic recall, local</b></td><td>HAR + learned embeddings + entity/colony graphs — meaning over keywords, no embedding SaaS.</td></tr>
-<tr><td><b>Safe under load</b></td><td>Atomic writes, cross-process lock, threat scan, Cuboasis review-first candidates.</td></tr>
-<tr><td><b>Grows with the agent</b></td><td>Cube of Eden → Elder living version, diary, curator skill refine, grounded self-evolution harness.</td></tr>
-<tr><td><b>Dream alone or together</b></td><td><a href="docs/CUBEDREAM.md">CubeDream</a>: soul solo cycles, dream circles (chorus / conversation), hive commit, MEMORY.md proposals only — never auto-applied.</td></tr>
-<tr><td><b>Powers Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">anatomical center</a> — circulatory beat (systole/diastole), load-tiered FOA blood, autonomic pulse charge. Space focuses the turn; Cube holds the floor.</td></tr>
-<tr><td><b>Fleet when you need it</b></td><td>Optional Hive pilgrimage, Fleet HQ routing/handoffs, peer interviews. Solo path is enough for day one.</td></tr>
+<tr><td><b>Works with Hermes, not instead of it</b></td><td>Hot MEMORY.md stays always-on. Cube is the long library Hermes loads through <code>memory.provider</code>.</td></tr>
+<tr><td><b>Semantic shelves, local</b></td><td>HAR + learned embeddings + entity graphs — meaning over grepping CCTV logs. No embedding SaaS.</td></tr>
+<tr><td><b>Compress over years</b></td><td>Append pages, then bind chapters (crystalize, merge, dream). Context windows are not the archive.</td></tr>
+<tr><td><b>Prove, don’t vibe</b></td><td><a href="docs/BLACKBOX.md">Blackbox</a> captures redacted trajectories and proves claims (“tests pass”) against evidence.</td></tr>
+<tr><td><b>Heart for Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">center</a> — Cube generates FOA blood; Space focuses the turn.</td></tr>
+<tr><td><b>Solo library first</b></td><td>Hive / HQ / dream-circles are inter-library loan. Open the building before the consortium.</td></tr>
 </table>
 
-Read the product pitch in **[ABOUT.md](ABOUT.md)**. North star for maintainers: **[PURPOSE.md](PURPOSE.md)**.
+Pitch: **[ABOUT.md](ABOUT.md)**. North star: **[PURPOSE.md](PURPOSE.md)**. Full map: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ---
 
 ## Install into Hermes Agent
-
-Your cube lives under **your** Hermes home — never inside the git tree.
 
 ```bash
 # Option A — Hermes plugin installer (recommended)
@@ -52,157 +61,79 @@ cd hermescube
 hermes config set memory.provider hermescube
 ```
 
-Verify:
+**Day-one library open:**
 
 ```bash
 hermescube doctor
-hermescube info          # defaults to $HERMES_HOME/memories/memory.cube
 hermes memory status
+hermescube query "what do we know about…"
+hermescube blackbox capture --latest
+hermescube blackbox prove --claim "tests pass" --latest
 ```
 
 | Path | Who owns it |
 |------|-------------|
 | `$HERMES_HOME/plugins/hermescube/` | Plugin code |
-| `$HERMES_HOME/memories/memory.cube` | **Your** memory data |
+| `$HERMES_HOME/memories/memory.cube` | **Your** book |
 | `$HERMES_HOME/config.yaml` | `memory.provider: hermescube` |
 
 ### Update
 
 ```bash
 hermescube update
-# or: hermes plugins update hermescube   then   hermescube update
 ```
 
-`hermes update` updates Hermes Agent core only. Cube is a plugin — use `hermescube update`.  
-User memory is **never** overwritten by update.
+`hermes update` updates Hermes Agent only. Cube is a plugin. **The book is never overwritten by update.**
 
 ---
 
 ## Getting started
 
 ```bash
-hermescube doctor              # wiring + density / bootstrap hints
-hermescube info                # warehouse stats
-hermescube query "…"           # semantic search
-hermescube dream status        # CubeDream due reasons
-hermescube dream solo          # private night cycle (add --apply to commit)
-hermescube dense               # dense export for backup / density view
+hermescube doctor                 # is the library healthy?
+hermescube info                   # volume stats
+hermescube query "…"              # find passages by meaning
+hermescube blackbox capture --latest
+hermescube blackbox prove --claim "tests pass" --latest
+hermescube blackbox breathe --latest   # advanced: prove + seal + relations
+hermescube dream status           # chapter-binding night cycle
+hermescube dense                  # portable text backup (vectors stay local)
 ```
 
-After `memory.provider: hermescube`, the agent gets four tools:
+Agent tools (when provider is on):
 
 | Tool | Purpose |
 |------|---------|
-| `hermescube_search` | Semantic search over the warehouse |
-| `hermescube_manage` | Hub: warehouse · Cuboasis · growth · fleet · dream |
-| `hermescube_feedback` | Rate memories helpful / unhelpful (yield gradient) |
-| `hermescube_probe` | Diagnostic probe / density peeks |
-
-First connect on an empty warehouse auto-imports MEMORY.md / USER.md (when enabled) and installs operate/import skills. Manual: `hermescube_manage action=bootstrap mode=all`.
-
----
-
-## How the `.cube` works
-
-Three layers inside the file:
-
-| | | |
-|---|---|---|
-| **L1** | Entry log | Append-only records + 256-d HRR vectors |
-| **L2** | Topic index | Centroids rebuilt on `evolve()` — O(log n) buckets |
-| **L3** | β attention | Bind with the query to bias toward what matters now |
-
-```
-query("what theme?")
-  → embed → bind(q, β) → match L2 centroids → rank sim × recency
-  → low confidence falls back to linear scan
-```
-
-Full algebra and on-disk layout: [docs/SPEC.md](docs/SPEC.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
----
-
-## Library quick start
-
-Prefer Hermes install above for real agent use. For a scratch cube:
-
-```bash
-pip install -e .                 # from a clone; optional: numpy
-hermescube init ./scratch.cube
-hermescube append ./scratch.cube -t belief -d "User prefers dark mode"
-hermescube evolve ./scratch.cube
-hermescube query ./scratch.cube "what does the user prefer?"
-```
-
-```python
-from hermescube import CubeFile, HARQueryEngine
-
-cube = CubeFile.create("memory.cube")
-cube.append("belief", "User prefers dark mode in all editors")
-engine = HARQueryEngine(cube)
-engine.evolve()
-for entry, score in engine.query("what theme does the user like?"):
-    print(entry.entry_type, entry.description, f"{score:.4f}")
-```
+| `hermescube_search` | Find passages in the book |
+| `hermescube_manage` | Warehouse · Cuboasis · growth · fleet · dream |
+| `hermescube_feedback` | Mark recalls helpful / unhelpful |
+| `hermescube_probe` | Entity focus / diagnostics |
 
 ---
 
 ## Documentation
 
-| | |
-|---|---|
-| **[About](ABOUT.md)** | What HermesCube is (and is not) |
-| **[Architecture Blueprint](docs/ARCHITECTURE.md)** | **Whole-project architecture map** |
-| **[Docs index](docs/README.md)** | Full map of guides |
-| **[User Guide](docs/USER_GUIDE.md)** | Install, store, search, evolve |
-| **[Day-to-day](docs/DAY_TO_DAY.md)** | Operator usefulness |
-| **[Hermespace](docs/HERMESPACE.md)** · **[Anatomy](docs/ANATOMY.md)** | Heart / circulatory center |
-| **[CubeDream](docs/CUBEDREAM.md)** | Solo + together dreaming |
-| **[Cuboasis](docs/CUBOASIS.md)** | Space, Cubewave, policy |
-| **[Hive](docs/HIVE.md)** · **[HQ](docs/HQ.md)** · **[Interviews](docs/INTERVIEW.md)** | Multi-agent |
-| **[Code map](docs/CODEMAP.md)** | Where to edit in the package |
-| **[Assessment](docs/ASSESSMENT.md)** | Honest ship grades |
-| **[Contributing](CONTRIBUTING.md)** | Dev setup, tests, PRs |
+| Doc | Read when |
+|-----|-----------|
+| [ABOUT.md](ABOUT.md) | Library metaphor + what/why |
+| [PURPOSE.md](PURPOSE.md) | North star (Hermes-base core) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full blueprint |
+| [docs/BLACKBOX.md](docs/BLACKBOX.md) | Flight recorder / prove |
+| [docs/HERMESPACE.md](docs/HERMESPACE.md) | Heart ↔ desk |
+| [docs/ANATOMY.md](docs/ANATOMY.md) | Center organs (incl. blackbox) |
+| [docs/README.md](docs/README.md) | Full index |
 
 ---
 
-## Project structure
+## Community pitch (one line)
 
-```
-hermescube/
-├── ABOUT.md                 # Product about
-├── PURPOSE.md               # North star (maintainers / agents)
-├── hermescube/              # Library + CLI + MemoryProvider
-│   ├── cube.py · har.py · hrr.py · embed.py
-│   ├── provider.py          # Hermes MemoryProvider socket
-│   ├── tools_recall.py      # search / probe / feedback
-│   ├── manage*.py           # manage hub peels
-│   ├── dream.py · dream_circle.py
-│   ├── cuboasis.py · hive.py · hq.py · interview.py
-│   ├── space_bridge.py · center.py   # Hermespace heart / anatomy
-│   └── …                    # see docs/CODEMAP.md
-├── plugin/                  # Hermes plugin register + CLI
-├── skills/                  # hermescube-operate · import · interview-me
-├── docs/                    # ARCHITECTURE blueprint + guides + assets/
-├── tests/                   # pytest (466+)
-├── scripts/                 # install · update · isolation check
-└── benchmarks/              # HAR / real-use (results outside repo)
-```
+**HermesCube is the library under Hermes: a local book of long memory that compresses life into chapters, with a heart that can prove what was actually done.**
 
----
-
-## Real-use bench
-
-```bash
-# Results land in ~/.hermes/hermescube-lab/results/ — not the repo
-PYTHONPATH=. python3 benchmarks/real_use_bench.py
-```
-
-Gates: durable facts beat noise, warm prefetch stays ms-class, questions don't bury facts.
+Day-one surface: **remember · prove · doctor**. Advanced organs stay documented, not forced.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE).  
-Built to sit beside [Nous Research Hermes Agent](https://github.com/NousResearch/hermes-agent); not affiliated as an official Nous product.
+MIT — [LICENSE](LICENSE)  
+**Home:** https://github.com/PabloTheThinker/hermescube

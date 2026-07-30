@@ -76,7 +76,7 @@ L0 framework        framework/paths.py  config.py  void.py  lexindex.py
 | Module | Role |
 |--------|------|
 | `space_bridge.py` | Heart pump API `1.0` — ensure / inject / seal / pulse |
-| `center.py` | Anatomical center `1.1` — beat / supply / return / autonomic |
+| `center.py` | Anatomical center `1.2` (blackbox + breathe) — beat / supply / return / autonomic |
 
 ## Plugin & skills
 

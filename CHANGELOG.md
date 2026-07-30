@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.50.0] - 2026-07-30
+
+### Library under Hermes — Hermes-base core direction
+- **Product language:** HermesCube is the **library under Hermes**; `memory.cube` is a **book**; crystals/growth/dream bind **chapters (arcs)**; MEMORY.md is the desk **card catalog**
+- **North star refresh:** [PURPOSE.md](PURPOSE.md) · [ABOUT.md](ABOUT.md) · [README.md](README.md) lead with *remember + prove + doctor*
+- **Architecture / docs:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/HERMESPACE.md](docs/HERMESPACE.md) · [docs/README.md](docs/README.md) · [docs/BLACKBOX.md](docs/BLACKBOX.md) · [docs/ANATOMY.md](docs/ANATOMY.md)
+- Community one-liner: *local book of long memory that compresses life into chapters, with a heart that can prove what was done*
+
+### Blackbox organ — flight recorder in the Cube heart
+- First-class `hermescube.blackbox` (concepts inspired by [asimons81/hermes-blackbox](https://github.com/asimons81/hermes-blackbox))
+- Capture Hermes `state.db` → redacted FlightRecord + SHA-256 integrity; claim `prove`; CLI `hermescube blackbox`
+- `center.py` API **1.2**: organ `blackbox`, `flight_capture` / `flight_prove` / **`breathe`**
+- **Breathe cycle** (`blackbox.inspire`): evidence-oriented programming — inhale → prove → exhale seals + relation weave
+- Tests: `tests/test_blackbox.py`
+
 ## [Unreleased]
 
 ### Architecture Blueprint — whole-project map

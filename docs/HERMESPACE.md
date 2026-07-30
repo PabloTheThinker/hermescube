@@ -1,44 +1,44 @@
 # HermesCube × Hermespace — heart / generator contract
 
-**HermesCube is the heart.** Hermespace is the pocket workbench that **runs on Cube power**.
+**HermesCube is the library and the heart.** Hermespace is the pocket workbench that **runs on Cube power**.
 
 Companion: [PabloTheThinker/hermespace](https://github.com/PabloTheThinker/hermespace)  
-North star: [PURPOSE.md](../PURPOSE.md)  
-Contract version: `GENERATOR_API_VERSION = "1.0"` (additive fields OK within `1.x`)
+North star: [PURPOSE.md](../PURPOSE.md) · Library pitch: [ABOUT.md](../ABOUT.md) · Provenance: [BLACKBOX.md](BLACKBOX.md)  
+Contract version: `GENERATOR_API_VERSION = "1.0"` (additive fields OK within `1.x`); center `1.2+` adds blackbox / breathe
 
 ```
 Hermes Agent
   ├── Hermespace     FOA desk · dual decode · inject budget · pulse/idle
-  │     ↑ powered by heart
-  └── HermesCube     .cube SoT · Cuboasis · Hive · CubeDream · growth
+  │     ↑ powered by heart / library generator
+  └── HermesCube     .cube book · blackbox · Cuboasis · Hive · CubeDream · growth
            │
-           └─ space_bridge  (ensure · status · inject · seal · charge · pulse)
+           └─ space_bridge + center  (ensure · beat · inject · seal · charge · flight · breathe)
 ```
 
-## Why “heart”
+## Why “heart” (and library)
 
-Hermespace alone can keep a turn-focused desk and a JSONL world projection.
-Under load those surfaces either **bloat context** or **starve memory**.
+Cube is the heart **and** the stacks:
 
-Cube is the heart:
+1. **Stores** durable long-tail memory (the book)  
+2. **Bootstraps** via `ensure_heart` so Space never depends on a missing file  
+3. **Pumps** FOA blood under load budgets  
+4. **Returns** desk seals into the volume  
+5. **Stamps** provenance via blackbox flights  
 
-1. **Stores** the long tail in `memory.cube` (no prune-as-policy)
-2. **Bootstraps** via `ensure_heart` so Space never depends on a missing file
-3. **Generates** a dense FOA strip when Space asks (`build_space_inject`)
-4. **Intakes** sealed desk decisions into the archive (`seal_learning`)
-5. **Charges** Space’s WorldModel on idle/pulse (`pulse_charge` / `sync_world_beliefs`)
-
-Space remains the workbench. Cube remains the warehouse. The heart is the
-cable between them — not a second brain inside Space.
+Space remains the workbench. Cube remains the warehouse/library. The heart is the
+contract between them — not a second brain inside Space. Under load, Space either
+**bloats context** or **starves memory**; Cube supplies a dense FOA strip so monotropic
+turns still have *memory*, not bulk.
 
 ## Authority
 
 | Surface | Authority |
 |---------|-----------|
-| `$HERMES_HOME/memories/memory.cube` | **Durable memory SoT** |
+| `$HERMES_HOME/memories/memory.cube` | **Durable memory SoT (the book)** |
+| Blackbox flights under `memories/blackbox/` | Provenance receipts for runs |
 | Hermespace world JSONL / `world.json` | Working projection — recharge from Cube |
 | Hermespace ACTIVE desk | Turn FOA only — seal important decisions into Cube |
-| MEMORY.md | Hot doctrine — Cube mirrors; dream paths only *propose* edits |
+| MEMORY.md | Hot doctrine / card catalog — Cube mirrors; dream paths only *propose* edits |
 
 ## Stable APIs (Cube `hermescube.space_bridge`)
 
@@ -68,7 +68,7 @@ from hermescube.space_bridge import (
 ## Hermespace integration checklist
 
 Wire these on the Space side (soft-import; never hard-fail). Prefer the
-**anatomical center** when available (`hermescube.center`, API `1.1+`); fall
+**anatomical center** when available (`hermescube.center`, API `1.2+`); fall
 back to heart primitives (`space_bridge`, API `1.0`).
 
 1. **Install / enter** — `ensure_heart()` once so `memory.cube` exists  

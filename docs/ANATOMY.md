@@ -35,6 +35,7 @@ Functional anatomy for agent memory (not biophysics). Merges:
 | **Immune** | Pathogen defense | Cube | threats, memory_gate |
 | **Lymph** | Collective fluid | Cube Hive | pilgrimage |
 | **Vascular beds** | Local tissue rooms | Cuboasis | chambers / vaults |
+| **Blackbox** | Flight provenance / prove | Cube | `flight_capture`, `flight_prove`, `breathe` |
 
 ## Species lessons (already in bio_rank + center)
 
