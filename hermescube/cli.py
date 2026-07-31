@@ -727,8 +727,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_bb.add_argument(
         "bb_command",
-        choices=["capture", "prove", "verify", "status", "breathe"],
-        help="capture · prove · verify · status · breathe (full pulmonary cycle)",
+        choices=["capture", "prove", "verify", "status", "breathe", "hold"],
+        help="capture · prove · verify · status · breathe · hold (unified line)",
     )
     p_bb.add_argument("--session", default=None, help="Session id or prefix")
     p_bb.add_argument("--latest", action="store_true", help="Latest session (default for capture)")
@@ -1239,6 +1239,20 @@ def cmd_blackbox(args: argparse.Namespace) -> int:
         if args.out:
             Path(args.out).write_text(json.dumps(out, indent=2, default=str) + "\n")
         return 0 if out.get("ok") else 1
+
+    if cmd == "hold":
+        from hermescube.blackbox import hold_line as hl
+
+        home = home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+        # optional: --claim used as organ filter when set? use session as organ
+        organ = args.session  # reuse flag lightly
+        if args.claim and args.claim.startswith("organ:"):
+            organ = args.claim.split(":", 1)[1]
+        st = hl.status(home)
+        tail = hl.tail(home, organ=organ if organ and not organ.startswith("20") else None, limit=25)
+        out = {"ok": True, "status": st, "tail": tail}
+        print(json.dumps(out, indent=2, default=str))
+        return 0
 
     print(f"Error: unknown blackbox command {cmd}", file=sys.stderr)
     return 1

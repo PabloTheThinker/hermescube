@@ -10,6 +10,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterator
 
 from hermescube import hrr
@@ -722,6 +723,29 @@ class CubeFile:
 
         # Invalidate the merged L1 cache so next read picks up the new entry
         self._entries_cache = None
+
+        # Hold-the-line: critical durable types dual-write to blackbox rail
+        try:
+            from hermescube.blackbox.hold_line import seal_cube_entry
+
+            home = None
+            try:
+                p = Path(getattr(self, "path", None) or getattr(self, "_path", "") or "")
+                if p.name == "memory.cube" and p.parent.name == "memories":
+                    home = p.parent.parent
+            except Exception:
+                home = None
+            if home is not None:
+                seal_cube_entry(
+                    home,
+                    entry_type=entry.entry_type,
+                    description=entry.description,
+                    entry_id=entry.id,
+                    data=entry.data if isinstance(entry.data, dict) else {},
+                    outcome=entry.outcome or "",
+                )
+        except Exception:
+            pass
 
         return entry
 

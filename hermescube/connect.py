@@ -268,10 +268,30 @@ def connect(
         report["steps"]["harden"] = harden_home_permissions(home)
     except Exception as e:
         report["steps"]["harden"] = {"ok": False, "error": str(e)}
+
+    try:
+        from hermescube.blackbox.hold_line import record as hold_record
+
+        report["steps"]["hold_line"] = hold_record(
+            hermes_home=home,
+            organ="connect",
+            event="attach",
+            summary=f"HermesCube connected provider={report.get('provider')}",
+            payload={
+                "ok": report.get("ok"),
+                "cube": report.get("cube"),
+                "provider": report.get("provider"),
+            },
+            severity="high",
+        )
+    except Exception as e:
+        report["steps"]["hold_line"] = {"ok": False, "error": str(e)}
+
     report["next"] = [
         "Restart Hermes gateway / Desktop / agent session so memory.provider loads",
         "hermescube status",
         "hermescube security audit",
+        "hermescube blackbox hold",
         "hermescube query \"what should I remember?\"",
         "hermescube checkpoint create --name first-lock",
     ]

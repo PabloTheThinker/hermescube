@@ -129,6 +129,28 @@ def run_session_end_work(
         meta_stages["handoff_auto_error"] = str(e)
     stages["handoff_auto_ms"] = (time.perf_counter() - t_ho) * 1000.0
 
+    try:
+        from hermescube.blackbox.hold_line import record as hold_record
+
+        if hermes_home and not skip:
+            hold_record(
+                hermes_home=hermes_home,
+                organ="session",
+                event="end",
+                summary=f"session_end sid={session_id} msgs={len(messages_snap)}",
+                payload={
+                    "session_id": session_id,
+                    "messages": len(messages_snap),
+                    "flush": meta_stages.get("flush_pending"),
+                    "handoff_auto": meta_stages.get("handoff_auto"),
+                },
+                session_id=session_id or "",
+                agent_id=agent_identity or "",
+                severity="normal",
+            )
+    except Exception as e:
+        meta_stages["hold_line_error"] = str(e)
+
     if ctx.auto_extract and not skip:
         prev = provider._session_id
         try:

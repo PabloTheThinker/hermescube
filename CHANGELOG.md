@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Hold the line — unified blackbox rail (whole Cube)
+- `hermescube.blackbox.hold_line` — one `hold-the-line.jsonl` for all organs
+- Wired: cube critical appends, handoff, checkpoint, connect, security, flight, breathe, provider flush, session end
+- CLI: `hermescube blackbox hold` · docs [HOLD_THE_LINE.md](docs/HOLD_THE_LINE.md)
+
 ### Handoff → blackbox line (hold the line)
 - Every handoff open/take/complete sealed into `blackbox/handoff-line.jsonl` + flight JSON
 - Independent of `memory.cube` — recover with `hermescube handoff line|recover`

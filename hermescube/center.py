@@ -382,7 +382,7 @@ def flight_capture(
         dest = home / "memories" / "blackbox" / f"{rec.id}.json"
         path = str(save_record(rec, dest))
 
-    return {
+    result = {
         "ok": True,
         "organ": "blackbox",
         "record_id": rec.id,
@@ -393,6 +393,28 @@ def flight_capture(
         "path": path,
         "api_version": CENTER_API_VERSION,
     }
+    try:
+        from hermescube.blackbox.hold_line import record as hold_record
+
+        home = Path(hermes_home or Path.home() / ".hermes")
+        result["hold_line"] = hold_record(
+            hermes_home=home,
+            organ="flight",
+            event="capture",
+            summary=f"flight {rec.id} events={len(rec.events)}",
+            payload={
+                "record_id": rec.id,
+                "events": len(rec.events),
+                "path": path,
+                "integrity_ok": result["integrity_ok"],
+            },
+            session_id=str((rec.session or {}).get("id") or ""),
+            ref_id=rec.id,
+            severity="normal",
+        )
+    except Exception as e:
+        result["hold_line"] = {"ok": False, "error": str(e)}
+    return result
 
 
 def flight_prove(

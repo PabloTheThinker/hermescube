@@ -240,6 +240,28 @@ def create_checkpoint(
 
     harden_home_permissions(home)
 
+    # Hold the line — ark exists even if cube later breaks
+    try:
+        from hermescube.blackbox.hold_line import record as hold_record
+
+        bb = hold_record(
+            hermes_home=home,
+            organ="checkpoint",
+            event="create",
+            summary=f"ark {slug}: {manifest.get('label') or slug}",
+            payload={
+                "slug": slug,
+                "path": str(dest),
+                "files": len(files_meta),
+                "archive": str(tar_path) if tar_path else None,
+                "label": manifest.get("label"),
+            },
+            ref_id=slug,
+            severity="high",
+        )
+    except Exception as e:
+        bb = {"ok": False, "error": str(e)}
+
     return {
         "ok": True,
         "slug": slug,
@@ -249,6 +271,7 @@ def create_checkpoint(
         "label": manifest["label"],
         "created_at": manifest["created_at"],
         "skipped_sensitive": sorted(skip_rels),
+        "blackbox": bb,
     }
 
 

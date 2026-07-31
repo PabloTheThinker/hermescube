@@ -286,7 +286,7 @@ def audit_home(home: str | Path | None = None) -> dict[str, Any]:
     if h.parent.name == "profiles":
         find("info", "profile_home", f"Profile-scoped home (good isolation): {h.name}")
 
-    return {
+    report = {
         "ok": ok,
         "hermes_home": str(h),
         "findings": findings,
@@ -298,6 +298,27 @@ def audit_home(home: str | Path | None = None) -> dict[str, Any]:
             "info": sum(1 for f in findings if f["severity"] == "info"),
         },
     }
+    _seal_audit(h, report)
+    return report
+
+
+def _seal_audit(home: Path, report: dict[str, Any]) -> None:
+    try:
+        from hermescube.blackbox.hold_line import record as hold_record
+
+        hold_record(
+            hermes_home=home,
+            organ="security",
+            event="audit",
+            summary=f"security audit ok={report.get('ok')} summary={report.get('summary')}",
+            payload={
+                "summary": report.get("summary"),
+                "findings_n": len(report.get("findings") or []),
+            },
+            severity="critical" if not report.get("ok") else "normal",
+        )
+    except Exception:
+        pass
 
 
 def validate_checkpoint_sources(

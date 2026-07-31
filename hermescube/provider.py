@@ -1687,6 +1687,22 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     logger.warning("auto-evolve failed: %s", e)
 
             self._sync_queue.submit(_bg_evolve)
+        try:
+            from hermescube.blackbox.hold_line import record as hold_record
+
+            if self._hermes_home and n_ok:
+                hold_record(
+                    hermes_home=self._hermes_home,
+                    organ="provider",
+                    event="flush_turns",
+                    summary=f"flushed {n_ok}/{len(batch)} durable turns to cube",
+                    payload={"flushed": n_ok, "batched": len(batch)},
+                    session_id=self._session_id or "",
+                    agent_id=self._agent_identity or "",
+                    severity="normal",
+                )
+        except Exception:
+            pass
         return {"ok": True, "flushed": n_ok, "batched": len(batch)}
 
     def _commit_turn_payload(self, item: dict[str, Any]) -> bool:

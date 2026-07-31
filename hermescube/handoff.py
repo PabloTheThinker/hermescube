@@ -60,11 +60,11 @@ def _slug(text: str, n: int = 40) -> str:
 
 
 def _blackbox_seal(home: Path, packet: dict[str, Any], event: str, agent_id: str = "") -> dict[str, Any]:
-    """Record handoff into blackbox line — holds if cube is damaged."""
+    """Record handoff into unified blackbox hold-the-line rail."""
     try:
-        from hermescube.blackbox.handoff_line import record_handoff_event
+        from hermescube.blackbox.hold_line import seal_from_handoff_packet
 
-        bb = record_handoff_event(
+        bb = seal_from_handoff_packet(
             packet,
             event=event,
             hermes_home=home,
@@ -74,13 +74,21 @@ def _blackbox_seal(home: Path, packet: dict[str, Any], event: str, agent_id: str
             packet["flight_id"] = bb["flight_id"]
             packet["blackbox"] = {
                 "flight_id": bb.get("flight_id"),
-                "flight_path": bb.get("flight_path"),
+                "flight_path": bb.get("seal_path") or bb.get("flight_path"),
                 "events_hash": bb.get("events_hash"),
                 "line_path": bb.get("line_path"),
             }
         return bb
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        # fallback to legacy handoff_line
+        try:
+            from hermescube.blackbox.handoff_line import record_handoff_event
+
+            return record_handoff_event(
+                packet, event=event, hermes_home=home, agent_id=agent_id
+            )
+        except Exception as e2:
+            return {"ok": False, "error": f"{e}; fallback {e2}"}
 
 
 def open_handoff(

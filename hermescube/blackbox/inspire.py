@@ -265,6 +265,31 @@ def breathe(
             inn, ex, hermes_home=hermes_home, seal=seal, relations=relations
         )
         out["ok"] = bool(inn.get("ok")) and bool(ex.get("ok"))
+        # unified hold-the-line seal for whole Cube breath
+        try:
+            from hermescube.blackbox.hold_line import record as hold_record
+            from hermescube.security import resolve_hermes_home
+
+            home = resolve_hermes_home(hermes_home)
+            out["hold_line"] = hold_record(
+                hermes_home=home,
+                organ="breathe",
+                event="cycle",
+                summary=f"breathe ok={out['ok']} claims_pass={(ex.get('passed') if isinstance(ex, dict) else None)}",
+                payload={
+                    "ok": out.get("ok"),
+                    "inhale": {k: inn.get(k) for k in ("ok", "record_id", "events", "path") if k in inn},
+                    "gas_exchange": {
+                        k: ex.get(k)
+                        for k in ("ok", "passed", "failed", "total")
+                        if isinstance(ex, dict) and k in ex
+                    },
+                },
+                session_id=session_id or "",
+                severity="high",
+            )
+        except Exception as e:
+            out["hold_line"] = {"ok": False, "error": str(e)}
     except Exception as e:
         out["error"] = str(e)
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 3)
