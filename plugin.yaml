@@ -55,6 +55,16 @@ config:
     description: Remind agent to review memory every N turns (0 to disable)
     type: int
     default: 10
+  sync_turn_interval:
+    description: >-
+      Upload durable turns to the cube every N assistant messages (default 10).
+      0 = every turn. Always flushes on session end / dream / shutdown.
+    type: int
+    default: 10
+  sync_buffer_max:
+    description: Max buffered turns before forced flush
+    type: int
+    default: 25
   peer_card_cadence_s:
     description: Minimum seconds between peer card rebuilds (default 3600 = hourly)
     type: int

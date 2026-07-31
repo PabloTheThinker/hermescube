@@ -55,8 +55,11 @@ DEFAULT_L2_BUCKETS = 64
 DEFAULT_CHAR_LIMIT = 2200
 DEFAULT_PREFETCH_TOP_K = 10
 DEFAULT_EVOLVE_INTERVAL = 50
-DEFAULT_SYNC_WORKERS = 1
 DEFAULT_MEMORY_NUDGE_INTERVAL = 10
+# Batch cube writes — every N assistant turns (0 = every turn, legacy hot path)
+DEFAULT_SYNC_TURN_INTERVAL = 10
+DEFAULT_SYNC_BUFFER_MAX = 25
+DEFAULT_SYNC_WORKERS = 1
 CONSOLIDATION_SIMILARITY_THRESHOLD = 0.85
 
 # Asymmetric trust deltas: penalty outweights reward (holographic pattern)
@@ -259,6 +262,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         evolve_interval: int = DEFAULT_EVOLVE_INTERVAL,
         memory_nudge_interval: int = DEFAULT_MEMORY_NUDGE_INTERVAL,
         auto_extract: bool = False,
+        sync_turn_interval: int = DEFAULT_SYNC_TURN_INTERVAL,
     ) -> None:
         self._dim = dim
         self._l2_buckets = l2_buckets
@@ -266,6 +270,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._evolve_interval = evolve_interval
         self._memory_nudge_interval = memory_nudge_interval
         self._auto_extract = auto_extract
+        self._sync_turn_interval = max(0, int(sync_turn_interval))
+        self._sync_buffer_max = DEFAULT_SYNC_BUFFER_MAX
+        self._pending_turns: list[dict[str, Any]] = []
+        self._assistant_sync_count = 0
         self._memory_policy = "auto-safe"  # review-first | auto-safe | off
         self._auto_bootstrap = True  # seed MEMORY.md + skills on empty warehouse
         self._last_bootstrap: dict[str, Any] | None = None
@@ -409,6 +417,18 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             )
             self._memory_nudge_interval = int(
                 plugin_config.get("memory_nudge_interval", self._memory_nudge_interval)
+            )
+            self._sync_turn_interval = max(
+                0,
+                int(
+                    plugin_config.get(
+                        "sync_turn_interval", self._sync_turn_interval
+                    )
+                ),
+            )
+            self._sync_buffer_max = max(
+                1,
+                int(plugin_config.get("sync_buffer_max", self._sync_buffer_max)),
             )
             self._char_limit = int(
                 plugin_config.get("char_limit", self._char_limit)
@@ -697,6 +717,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         Idempotent — safe to call multiple times. Does not break
         sibling instances of the same provider (no shared state).
         """
+        # Drain pending durable turns first (batched LTM)
+        try:
+            self.flush_pending_turns()
+        except Exception as e:
+            logger.debug("shutdown pending turn flush failed: %s", e)
+
         # Save embedder before shutdown (once)
         if (self._engine and self._engine._embedder
                 and self._engine._embedder.is_trained
@@ -805,6 +831,22 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 ),
                 "required": False,
                 "default": "10",
+            },
+            {
+                "key": "sync_turn_interval",
+                "description": (
+                    "Upload durable turns to the cube every N assistant "
+                    "messages (default 10). 0=every turn. Always flushes on "
+                    "session end / dream. Saves context burn and write churn."
+                ),
+                "required": False,
+                "default": "10",
+            },
+            {
+                "key": "sync_buffer_max",
+                "description": "Max buffered turns before forced flush (default 25)",
+                "required": False,
+                "default": "25",
             },
             {
                 "key": "peer_card_cadence_s",
@@ -1333,13 +1375,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         session_id: str = "",
         messages: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Persist a completed turn (idempotent event + optional tool trajectory).
+        """Queue a completed turn; flush to cube on interval / session / force.
 
-        When called directly, the cubelog append is synchronous. Under Hermes
-        Agent, ``MemoryManager`` may invoke this on a background worker after
-        the user-visible turn returns — Hermes ``state.db`` remains the
-        primary transcript durability; Cube ingestion is idempotent and
-        reconciles via content hashes.
+        Default ``sync_turn_interval=10``: durable turns buffer until every
+        Nth assistant message, then batch-upload. Always flushes on
+        ``flush_pending_turns`` (session_end, dream). Set interval ``0`` for
+        legacy every-turn writes.
+
+        Immediate flush when: user says remember, high-severity witness,
+        or buffer hits ``sync_buffer_max``.
         """
         if not self._cube or self._should_skip_writes():
             return
@@ -1350,6 +1394,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         if not user_clean and not assistant_clean:
             return
 
+        force = False
         # Witness detection: real friction feeds the grounded-evolution gate
         if self._witness_detect and self._hermes_home:
             try:
@@ -1365,6 +1410,8 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         session_id=session_id or self._session_id,
                         source="sync_turn",
                     )
+                    if str(friction.get("severity") or "") in ("high", "critical"):
+                        force = True
             except Exception:
                 pass
 
@@ -1382,6 +1429,20 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             threats = scan_text(text)
             if any(t.severity == "block" for t in threats):
                 return
+
+        u_low = (user_clean or "").lower()
+        if any(
+            p in u_low
+            for p in (
+                "remember this",
+                "remember that",
+                "save this",
+                "don't forget",
+                "put this in memory",
+                "store this",
+            )
+        ):
+            force = True
 
         entry_type = self._classify_turn(user_clean, assistant_clean)
         desc = user_clean[:200] if user_clean else "(empty turn)"
@@ -1413,16 +1474,110 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         outcome = "none"
         if assistant_clean:
             lower = assistant_clean.lower()
-            if any(w in lower for w in ["done", "completed", "fixed", "resolved", "implemented"]):
+            if any(
+                w in lower
+                for w in ["done", "completed", "fixed", "resolved", "implemented"]
+            ):
                 outcome = "success"
             elif any(w in lower for w in ["failed", "error", "couldn't", "unable"]):
                 outcome = "failure"
+                force = True
 
         try:
             from hermescube import bio_rank as _br
+
             fact_lines = _br.extract_fact_lines(aq or assistant_clean or "")
         except Exception:
             fact_lines = []
+
+        payload = {
+            "user_clean": user_clean,
+            "assistant_clean": assistant_clean,
+            "session_id": session_id or self._session_id,
+            "messages": messages,
+            "entry_type": entry_type,
+            "outcome": outcome,
+            "description": desc,
+            "extra": extra,
+            "fact_lines": fact_lines,
+            "turn": self._turn_count,
+        }
+
+        with self._state_lock:
+            self._pending_turns.append(payload)
+            if assistant_clean:
+                self._assistant_sync_count += 1
+            pending_n = len(self._pending_turns)
+            asst_n = self._assistant_sync_count
+            interval = int(self._sync_turn_interval or 0)
+            buf_max = int(self._sync_buffer_max or DEFAULT_SYNC_BUFFER_MAX)
+
+        # interval 0 = every durable turn (legacy)
+        if interval <= 0:
+            force = True
+        elif asst_n > 0 and asst_n % interval == 0:
+            force = True
+        if pending_n >= buf_max:
+            force = True
+
+        if force:
+            self.flush_pending_turns()
+
+    def flush_pending_turns(self) -> dict[str, Any]:
+        """Flush buffered durable turns into the cube (session_end / dream / interval)."""
+        with self._state_lock:
+            batch = list(self._pending_turns)
+            self._pending_turns.clear()
+        if not batch:
+            return {"ok": True, "flushed": 0}
+        if not self._cube or self._should_skip_writes():
+            return {"ok": False, "flushed": 0, "reason": "no_cube_or_skip"}
+        n_ok = 0
+        for item in batch:
+            try:
+                if self._commit_turn_payload(item):
+                    n_ok += 1
+            except Exception as e:
+                logger.error("flush turn failed: %s", e)
+        # Background evolve cadence still counts flushes
+        self._entries_since_evolve += n_ok
+        evolve_interval = self._evolve_interval
+        if (
+            evolve_interval > 0
+            and self._entries_since_evolve >= evolve_interval
+            and not self._is_evolve_breaker_open()
+        ):
+
+            def _bg_evolve() -> None:
+                try:
+                    from hermescube.consolidate import run_branched_evolve
+
+                    run_branched_evolve(self, label="auto_evolve")
+                    self._entries_since_evolve = 0
+                    self._record_evolve_success()
+                except Exception as e:
+                    self._record_evolve_failure()
+                    logger.warning("auto-evolve failed: %s", e)
+
+            self._sync_queue.submit(_bg_evolve)
+        return {"ok": True, "flushed": n_ok, "batched": len(batch)}
+
+    def _commit_turn_payload(self, item: dict[str, Any]) -> bool:
+        """Write one buffered turn (+ extracted facts) to the cube."""
+        if not self._cube:
+            return False
+        user_clean = item.get("user_clean") or ""
+        assistant_clean = item.get("assistant_clean") or ""
+        session_id = item.get("session_id") or self._session_id
+        messages = item.get("messages")
+        entry_type = item.get("entry_type") or "landmark"
+        outcome = item.get("outcome") or "none"
+        desc = item.get("description") or "(empty turn)"
+        extra = dict(item.get("extra") or {})
+        fact_lines = item.get("fact_lines") or []
+        turn = int(item.get("turn") or self._turn_count)
+        vault = extra.get("vault") or ""
+        uid = extra.get("user_id") or ""
 
         try:
             from hermescube.ingest import ingest_turn
@@ -1431,14 +1586,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 self._cube,
                 user_content=user_clean,
                 assistant_content=assistant_clean,
-                session_id=session_id or self._session_id,
+                session_id=session_id,
                 hermes_home=self._hermes_home or None,
                 platform=self._platform,
                 agent_context=self._agent_context,
                 agent_identity=self._agent_identity,
                 parent_session_id=self._parent_session_id,
                 branch_id=self._branch_id,
-                turn=self._turn_count,
+                turn=turn,
                 messages=messages,
                 char_limit=self._char_limit,
                 entry_type=entry_type,
@@ -1447,13 +1602,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 extra_data=extra,
             )
             if result.get("skipped") == "duplicate":
-                return
+                return False
             if not result.get("ok"):
                 if result.get("skipped") == "threat":
-                    return
+                    return False
                 logger.error("sync_turn ingest failed: %s", result)
-                return
-            # Keep β attention warm on durable appends
+                return False
             if self._engine and result.get("entry_id"):
                 try:
                     ents = self._cube.read_l1() or []
@@ -1492,14 +1646,14 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                             record_type=fet or "fact",
                             source="sync_extract",
                             entry_type=fet or "belief",
-                            session_id=session_id or self._session_id,
+                            session_id=session_id,
                             tags=[vault] if vault else None,
                             **self._path_kw(),
                         )
                         continue
                     fev = make_event(
                         "claim",
-                        session_id=session_id or self._session_id,
+                        session_id=session_id,
                         platform=self._platform,
                         agent_context=self._agent_context,
                         agent_identity=self._agent_identity,
@@ -1515,7 +1669,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                         source="extract",
                         trust=0.7,
                         durable=True,
-                        session_id=session_id or self._session_id,
+                        session_id=session_id,
                     )
                     if vault:
                         fdata["vault"] = vault
@@ -1539,30 +1693,10 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     pass
             with self._state_lock:
                 self._prefetch_cache.clear()
+            return True
         except Exception as e:
             logger.error("sync_turn durable write failed: %s", e)
-            return
-
-        # Background: evolve only (never block the agent turn)
-        self._entries_since_evolve += 1
-        evolve_interval = self._evolve_interval
-        if (
-            evolve_interval > 0
-            and self._entries_since_evolve >= evolve_interval
-            and not self._is_evolve_breaker_open()
-        ):
-            def _bg_evolve() -> None:
-                try:
-                    from hermescube.consolidate import run_branched_evolve
-
-                    run_branched_evolve(self, label="auto_evolve")
-                    self._entries_since_evolve = 0
-                    self._record_evolve_success()
-                except Exception as e:
-                    self._record_evolve_failure()
-                    logger.warning("auto-evolve failed: %s", e)
-
-            self._sync_queue.submit(_bg_evolve)
+            return False
 
     # ── MemoryProvider ABC: lifecycle hooks ───────────────────────
 

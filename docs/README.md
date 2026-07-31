@@ -13,6 +13,7 @@ Maintainers: [PURPOSE.md](../PURPOSE.md) · **[ARCHITECTURE.md](ARCHITECTURE.md)
 | **Prove runs (blackbox heart)** | **[BLACKBOX.md](BLACKBOX.md)** |
 | **Safe locks (identity ark)** | **[CHECKPOINT.md](CHECKPOINT.md)** |
 | **Security / isolation** | **[SECURITY.md](SECURITY.md)** |
+| **Batched LTM cadence** | **[BATCHED_LTM.md](BATCHED_LTM.md)** |
 | How the warehouse works | [SPEC.md](SPEC.md) · [API_REFERENCE.md](API_REFERENCE.md) · [FRAMEWORK.md](FRAMEWORK.md) |
 | Fit next to Hermes / Hermespace | [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md) · [CUBE_VS_HERMES_AGENT.md](CUBE_VS_HERMES_AGENT.md) |
 | Governance & space | [CUBOASIS.md](CUBOASIS.md) · [IDEAS_FROM_OMH.md](IDEAS_FROM_OMH.md) |

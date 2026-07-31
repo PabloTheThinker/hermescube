@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Batched LTM uploads (every 10 assistant turns + session/dream flush)
+- `sync_turn_interval` default **10** — buffer durable turns; batch write to cube
+- Always flush on session_end, shutdown, “remember”, high witness, failures
+- Config: `plugins.hermescube.sync_turn_interval` / `sync_buffer_max`
+- Docs: [docs/BATCHED_LTM.md](docs/BATCHED_LTM.md)
+
 ### Security suite — sealed homes (no leakage)
 - `hermescube security audit|harden` — path containment, secret scan, permission vault
 - Checkpoint create/restore refuse path escape, `.env`, secret-like files

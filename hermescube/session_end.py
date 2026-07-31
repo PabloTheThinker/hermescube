@@ -96,6 +96,17 @@ def run_session_end_work(
     t0 = time.perf_counter()
     stages: dict[str, float] = {}
     start_count = int(getattr(cube, "entry_count", 0) or 0)
+    meta_stages: dict[str, Any] = {}
+
+    # Flush batched durable turns before any session-end consolidation
+    t_flush = time.perf_counter()
+    try:
+        if hasattr(provider, "flush_pending_turns"):
+            fr = provider.flush_pending_turns()
+            meta_stages["flush_pending"] = fr
+    except Exception as e:
+        meta_stages["flush_pending_error"] = str(e)
+    stages["flush_pending_ms"] = (time.perf_counter() - t_flush) * 1000.0
 
     if ctx.auto_extract and not skip:
         prev = provider._session_id
