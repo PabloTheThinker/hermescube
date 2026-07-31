@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Handoff → blackbox line (hold the line)
+- Every handoff open/take/complete sealed into `blackbox/handoff-line.jsonl` + flight JSON
+- Independent of `memory.cube` — recover with `hermescube handoff line|recover`
+- Module: `hermescube.blackbox.handoff_line`
+
 ### Agent continuity handoff (3am page)
 - `hermescube handoff` + tool `hermescube_handoff` — open/list/take/complete
 - Auto-snapshot unfinished sessions on session_end

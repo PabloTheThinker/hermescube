@@ -353,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_ho.add_argument(
         "ho_command",
-        choices=["open", "list", "take", "complete", "abandon", "status"],
+        choices=["open", "list", "take", "complete", "abandon", "status", "recover", "line"],
     )
     p_ho.add_argument("--goal", default="", help="For open")
     p_ho.add_argument("--id", dest="handoff_id", default="", help="Handoff id")
@@ -1694,6 +1694,7 @@ def cmd_security(args: argparse.Namespace) -> int:
 
 def cmd_handoff(args: argparse.Namespace) -> int:
     import json
+    from pathlib import Path
 
     from hermescube import handoff as ho
 
@@ -1753,6 +1754,22 @@ def cmd_handoff(args: argparse.Namespace) -> int:
             hermes_home=home,
             abandon=cmd == "abandon",
         )
+        print(json.dumps(r, indent=2, default=str))
+        return 0 if r.get("ok") else 1
+    if cmd == "line":
+        from hermescube.blackbox.handoff_line import recover_handoffs_from_blackbox
+
+        r = recover_handoffs_from_blackbox(
+            home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes"),
+            handoff_id=args.handoff_id or None,
+        )
+        print(json.dumps(r, indent=2, default=str))
+        return 0
+    if cmd == "recover":
+        from hermescube.blackbox.handoff_line import rebuild_open_from_blackbox
+
+        hh = home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+        r = rebuild_open_from_blackbox(hh)
         print(json.dumps(r, indent=2, default=str))
         return 0 if r.get("ok") else 1
     return 1

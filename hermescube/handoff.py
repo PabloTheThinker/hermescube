@@ -59,6 +59,30 @@ def _slug(text: str, n: int = 40) -> str:
     return (s[:n] or "work").rstrip("-")
 
 
+def _blackbox_seal(home: Path, packet: dict[str, Any], event: str, agent_id: str = "") -> dict[str, Any]:
+    """Record handoff into blackbox line — holds if cube is damaged."""
+    try:
+        from hermescube.blackbox.handoff_line import record_handoff_event
+
+        bb = record_handoff_event(
+            packet,
+            event=event,
+            hermes_home=home,
+            agent_id=agent_id,
+        )
+        if bb.get("flight_id"):
+            packet["flight_id"] = bb["flight_id"]
+            packet["blackbox"] = {
+                "flight_id": bb.get("flight_id"),
+                "flight_path": bb.get("flight_path"),
+                "events_hash": bb.get("events_hash"),
+                "line_path": bb.get("line_path"),
+            }
+        return bb
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def open_handoff(
     *,
     goal: str,
@@ -112,6 +136,10 @@ def open_handoff(
         home,
         {"ts": _utc(), "event": "open", "id": hid, "goal": goal_s[:200], "agent": packet["opened_by"]},
     )
+    # Blackbox holds the line (independent of memory.cube)
+    bb = _blackbox_seal(home, packet, "open", agent_id=packet["opened_by"])
+    if packet.get("blackbox"):
+        path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
     # landmark in cube if available
     try:
         from hermescube.cube import CubeFile
@@ -127,12 +155,13 @@ def open_handoff(
                         "kind": "agent_continuity",
                         "status": "open",
                         "session_id": session_id,
+                        "flight_id": packet.get("flight_id") or "",
                     },
                     outcome="pending",
                 )
     except Exception:
         pass
-    return {"ok": True, "id": hid, "path": str(path), "packet": packet}
+    return {"ok": True, "id": hid, "path": str(path), "packet": packet, "blackbox": bb}
 
 
 def list_open(hermes_home: str | Path | None = None) -> list[dict[str, Any]]:
@@ -177,12 +206,13 @@ def take_handoff(
     packet["taken_by"] = agent_id or "agent"
     packet["taken_at"] = _utc()
     packet["updated_at"] = _utc()
+    bb = _blackbox_seal(home, packet, "take", agent_id=packet["taken_by"])
     path.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
     _ledger_append(
         home,
-        {"ts": _utc(), "event": "take", "id": handoff_id, "agent": packet["taken_by"]},
+        {"ts": _utc(), "event": "take", "id": handoff_id, "agent": packet["taken_by"], "flight_id": packet.get("flight_id")},
     )
-    return {"ok": True, "packet": packet, "prompt": format_prompt_strip([packet])}
+    return {"ok": True, "packet": packet, "prompt": format_prompt_strip([packet]), "blackbox": bb}
 
 
 def complete_handoff(
@@ -204,6 +234,12 @@ def complete_handoff(
     packet["completion_note"] = (note or "")[:2000]
     if agent_id:
         packet["closed_by"] = agent_id
+    bb = _blackbox_seal(
+        home,
+        packet,
+        "abandon" if abandon else "complete",
+        agent_id=agent_id or packet.get("taken_by") or "",
+    )
     dest = handoffs_root(home) / "archive" / f"{handoff_id}.json"
     dest.write_text(json.dumps(packet, indent=2) + "\n", encoding="utf-8")
     try:
@@ -219,6 +255,7 @@ def complete_handoff(
             "id": handoff_id,
             "agent": agent_id or packet.get("taken_by") or "",
             "note": (note or "")[:200],
+            "flight_id": packet.get("flight_id"),
         },
     )
     try:
@@ -230,12 +267,17 @@ def complete_handoff(
                 cube.append(
                     entry_type="resolve",
                     description=f"[HANDOFF {packet['status'].upper()}] {packet.get('goal', '')[:160]}",
-                    data={"handoff_id": handoff_id, "kind": "agent_continuity", "status": packet["status"]},
+                    data={
+                        "handoff_id": handoff_id,
+                        "kind": "agent_continuity",
+                        "status": packet["status"],
+                        "flight_id": packet.get("flight_id") or "",
+                    },
                     outcome="success" if not abandon else "none",
                 )
     except Exception:
         pass
-    return {"ok": True, "packet": packet}
+    return {"ok": True, "packet": packet, "blackbox": bb}
 
 
 def format_prompt_strip(packets: list[dict[str, Any]], *, limit: int = 5) -> str:

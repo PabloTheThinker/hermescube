@@ -14,6 +14,25 @@ $HERMES_HOME/memories/handoffs/
   ledger.jsonl
 ```
 
+## Blackbox holds the line
+
+Every open / take / complete is **also sealed into the blackbox**:
+
+```text
+$HERMES_HOME/memories/blackbox/
+  handoff-line.jsonl          # append-only stream (no cube needed)
+  handoffs/<id>-<event>-*.json  # integrity-hashed flight records
+```
+
+If `memory.cube` is damaged:
+
+```bash
+hermescube handoff line              # read the hold-the-line stream
+hermescube handoff recover           # rebuild open/*.json from blackbox
+```
+
+Cube landmarks still record handoffs when healthy — blackbox is the **independent** continuity rail.
+
 ## Terminal
 
 ```bash
