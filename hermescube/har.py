@@ -550,8 +550,9 @@ class HARQueryEngine:
                 pass
         # Lex floor: strong query coverage must not lose to engram/prestige hubs
         scored = self._lex_identity_guard(scored, text)
-        primary = bio_rank.diversify_by_layer(scored, max(top_k, 3))
-        out = self._associative_finish(primary, top_k)
+        # Over-fetch then surface-filter (drops superseded / DOT / test debris)
+        primary = bio_rank.diversify_by_layer(scored, max(top_k * 3, 12))
+        out = self._associative_finish(primary, max(top_k * 3, 12))
         # weak Hebbian co-activation on retrieved set (shadow learn) — skip empty net cold path already handled inside
         try:
             net = getattr(self, "_engram_net", None)
@@ -584,6 +585,14 @@ class HARQueryEngine:
                     )
         except Exception:
             pass
+        try:
+            from hermescube.surface import filter_scored
+
+            # Fetch a little fat, strip debris, re-rank doctrine-first
+            fat = out if len(out) >= top_k else out
+            out = filter_scored(fat, top_k=top_k, re_rank=True)
+        except Exception:
+            out = out[:top_k]
         return out
 
 

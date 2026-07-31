@@ -1480,6 +1480,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 for r in store.query(str(ent), limit=3):
                     if r.relation_id in seen:
                         continue
+                    # skip DOT-looking subjects
+                    subj = str(getattr(r, "subject", "") or "")
+                    pred = str(getattr(r, "predicate", "") or "")
+                    if subj.startswith("[") or "DOT" in pred.upper():
+                        continue
                     seen.add(r.relation_id)
                     hits.append(r)
                 if len(hits) >= 6:

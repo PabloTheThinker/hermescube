@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Low-friction recall + flow
+- `surface.py` filter on HAR query/prefetch (no DOT/superseded/test handoffs)
+- Doctrine-first re-rank; `hermescube hygiene` capped; docs/FLOW.md
+
+
 ### Hold the line — unified blackbox rail (whole Cube)
 - `hermescube.blackbox.hold_line` — one `hold-the-line.jsonl` for all organs
 - Wired: cube critical appends, handoff, checkpoint, connect, security, flight, breathe, provider flush, session end
@@ -58,6 +63,11 @@
 
 ## [Unreleased]
 
+### Low-friction recall + flow
+- `surface.py` filter on HAR query/prefetch (no DOT/superseded/test handoffs)
+- Doctrine-first re-rank; `hermescube hygiene` capped; docs/FLOW.md
+
+
 ### Architecture Blueprint — whole-project map
 - Rewrite [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) as the full HermesCube Architecture Blueprint (ecosystem, L0–L7 stack, anatomy, lifecycles, Cuboasis/Hive/Dream/Hermespace, safety, module map)
 - Refresh [docs/CODEMAP.md](docs/CODEMAP.md) + docs index / ABOUT / PURPOSE pointers
@@ -81,6 +91,11 @@
 - PURPOSE/ABOUT: Cube as Hermespace generator/heart (from prior purpose PR commits)
 
 ## [Unreleased]
+
+### Low-friction recall + flow
+- `surface.py` filter on HAR query/prefetch (no DOT/superseded/test handoffs)
+- Doctrine-first re-rank; `hermescube hygiene` capped; docs/FLOW.md
+
 
 ## [0.47.0] - 2026-07-27
 

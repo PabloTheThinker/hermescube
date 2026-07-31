@@ -236,7 +236,13 @@ def cmd_query(args: argparse.Namespace) -> None:
     text = args.text or sys.stdin.read().strip()
     with CubeFile.open(args.path) as cube:
         engine = HARQueryEngine(cube)
-        results = engine.query(text, top_k=args.top)
+        results = engine.query(text, top_k=max(args.top * 3, 15))
+        try:
+            from hermescube.surface import filter_scored
+
+            results = filter_scored(results, top_k=args.top, re_rank=True)
+        except Exception:
+            results = results[: args.top]
 
         if not results:
             print("No results.")
@@ -449,6 +455,14 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Agent workspace for nested profile sidecars",
     )
+
+    p_hyg = sub.add_parser(
+        "hygiene",
+        help="Supersede dogfood/DOT/test noise still active (cleaner recall)",
+    )
+    p_hyg.add_argument("--hermes-home", default=None)
+    p_hyg.add_argument("--dry-run", action="store_true")
+    p_hyg.add_argument("--json", action="store_true")
 
     # update — pull + reinstall into user Hermes home (like hermes plugins update)
     p_up = sub.add_parser(
@@ -771,6 +785,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_handoff(args)
     if args.command == "doctor":
         return cmd_doctor(args)
+    if args.command == "hygiene":
+        return cmd_hygiene(args)
     if args.command == "update":
         return cmd_update(args)
     if args.command == "hive":
@@ -1787,6 +1803,34 @@ def cmd_handoff(args: argparse.Namespace) -> int:
         print(json.dumps(r, indent=2, default=str))
         return 0 if r.get("ok") else 1
     return 1
+
+
+def cmd_hygiene(args: argparse.Namespace) -> int:
+    import json
+    from pathlib import Path
+
+    from hermescube.cube import CubeFile
+    from hermescube.journey import hygiene_cube_noise, prune_events
+
+    home = args.hermes_home or os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    cube_path = Path(home) / "memories" / "memory.cube"
+    out: dict = {"ok": False, "hermes_home": home}
+    if not cube_path.is_file():
+        out["error"] = "no memory.cube"
+        print(json.dumps(out, indent=2) if args.json else out["error"])
+        return 1
+    with CubeFile.open(str(cube_path)) as cube:
+        cube_r = hygiene_cube_noise(cube, dry_run=bool(args.dry_run))
+    jour = prune_events(home, drop_noise=True)
+    out.update({"ok": True, "cube": cube_r, "journey": jour, "dry_run": bool(args.dry_run)})
+    if args.json:
+        print(json.dumps(out, indent=2, default=str))
+    else:
+        print(
+            f"hygiene dry_run={args.dry_run} "
+            f"cube={cube_r} journey_removed={jour.get('removed')}"
+        )
+    return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

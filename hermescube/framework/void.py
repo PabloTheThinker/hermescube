@@ -67,10 +67,16 @@ class CubeVoid:
         # Prefer engine hyper path (resident cache)
         results = self.engine.query(
             query,
-            top_k=max(top_k, 5),
+            top_k=max(top_k * 3, 15),
             beta=beta,
             centroids=centroids,
         )
+        try:
+            from hermescube.surface import filter_scored
+
+            results = filter_scored(results, top_k=top_k, re_rank=True)
+        except Exception:
+            results = results[:top_k]
         # Trail maintenance
         if self.colony is not None and results:
             try:
@@ -89,6 +95,14 @@ class CubeVoid:
         return results[:top_k]
 
     def format_prefetch(self, results: list[tuple[CubeEntry, float]]) -> str:
+        if not results:
+            return ""
+        try:
+            from hermescube.surface import filter_scored
+
+            results = filter_scored(results, top_k=8, re_rank=True)
+        except Exception:
+            pass
         if not results:
             return ""
         try:

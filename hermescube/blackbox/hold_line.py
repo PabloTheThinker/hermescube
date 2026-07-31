@@ -26,6 +26,7 @@ from hermescube.blackbox.flight import (
     utc_now,
 )
 from hermescube.blackbox.redact import redact_obj
+from hermescube.journey import is_noise_text
 
 _LOCK = threading.RLock()
 
@@ -251,9 +252,12 @@ def seal_cube_entry(
 ) -> dict[str, Any] | None:
     """Seal critical durable cube writes only (skip chitchat landmarks)."""
     et = (entry_type or "").lower()
+    desc = description or ""
+    if desc.startswith("[HYGIENE]") or is_noise_text(desc):
+        return None
     if et not in CRITICAL_ENTRY_TYPES:
         # always seal handoff-tagged descriptions
-        if not (description or "").startswith("[HANDOFF"):
+        if not desc.startswith("[HANDOFF"):
             return None
         et = "handoff"
     return record(

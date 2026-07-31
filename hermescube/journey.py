@@ -176,10 +176,13 @@ def write_markdown(
 _NOISE_RE = __import__("re").compile(
     r"(?i)("
     r"PERSIST-PROOF|ADHOC-|DURABILITY-MARKER|SUBPROCESS-|hermes-verify|"
-    r"\[CRYSTALIZED\]|\[SUPERSEDED\]|"
+    r"\[CRYSTALIZED\]|\[SUPERSEDED\]|\[HYGIENE\]|\[DOT\]|\[ENTITY\]|"
+    r"\[CONFLICT\] numeric|"
+    r"REAL-TEST-|HOLD-LINE-WHOLE|dogfood-bench|Isolated journey|"
+    r"Bench gates: durable hit|"
     r"^session ended$|"
     r"firsthand Cube session|"
-    r"test_token|dogfood-bench|Isolated journey"
+    r"test_token"
     r")"
 )
 
@@ -199,6 +202,13 @@ def is_noise_text(text: str) -> bool:
     if t.startswith("Confirm Cube") or t.startswith("Confirm cube"):
         return True
     if t.startswith("[HYGIENE]"):
+        return True
+    if t.startswith("[DOT]"):
+        return True
+    if t.startswith("[HANDOFF OPEN]") or t.startswith("[HANDOFF COMPLETED]"):
+        # completed/open handoff landmarks are ops debris in general recall
+        return True
+    if t.startswith("[ENTITY]"):
         return True
     return False
 
@@ -293,6 +303,7 @@ def hygiene_cube_noise(
     cube,
     *,
     dry_run: bool = False,
+    limit: int = 200,
 ) -> dict[str, Any]:
     """Supersede dogfood/test noise entries still marked active in the cube."""
     ents = list(cube.read_l1() or [])
@@ -303,14 +314,16 @@ def hygiene_cube_noise(
         desc = e.description or ""
         if is_noise_text(desc):
             targets.append(e)
+        if len(targets) >= limit:
+            break
     if dry_run:
-        return {"would_supersede": len(targets), "ids": [e.id for e in targets[:20]]}
+        return {"would_supersede": len(targets), "ids": [e.id for e in targets[:20]], "limit": limit}
     n = 0
     for e in targets:
         try:
             cube.append(
-                entry_type=e.entry_type or "landmark",
-                description=f"[HYGIENE] {(desc := (e.description or ''))[:150]}",
+                entry_type="landmark",
+                description=f"[HYGIENE] {(e.description or '')[:150]}",
                 data={
                     "supersedes": e.id,
                     "source": "journey_hygiene",
@@ -321,7 +334,7 @@ def hygiene_cube_noise(
             n += 1
         except Exception:
             continue
-    return {"superseded": n, "scanned": len(ents)}
+    return {"superseded": n, "scanned": len(ents), "limit": limit}
 
 
 def hygiene_world_beliefs(
