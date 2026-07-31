@@ -347,6 +347,26 @@ def main(argv: list[str] | None = None) -> int:
     p_sec.add_argument("--hermes-home", default=None, help="Override HERMES_HOME")
     p_sec.add_argument("--json", action="store_true", help="JSON output")
 
+    p_ho = sub.add_parser(
+        "handoff",
+        help="Agent continuity packets — open/list/take/complete (3am handoff)",
+    )
+    p_ho.add_argument(
+        "ho_command",
+        choices=["open", "list", "take", "complete", "abandon", "status"],
+    )
+    p_ho.add_argument("--goal", default="", help="For open")
+    p_ho.add_argument("--id", dest="handoff_id", default="", help="Handoff id")
+    p_ho.add_argument("--next", dest="next_steps", default="", help="Next steps (; separated)")
+    p_ho.add_argument("--blockers", default="", help="Blockers (; separated)")
+    p_ho.add_argument("--files", default="", help="Files (comma separated)")
+    p_ho.add_argument("--context", default="", help="Short context")
+    p_ho.add_argument("--note", default="", help="Complete/abandon note")
+    p_ho.add_argument("--agent", default="", help="Agent id")
+    p_ho.add_argument("--severity", default="normal", choices=["low", "normal", "high", "critical"])
+    p_ho.add_argument("--hermes-home", default=None)
+    p_ho.add_argument("--json", action="store_true")
+
     def add_path(p: argparse.ArgumentParser, *, required_create: bool = False) -> None:
         p.add_argument(
             "path",
@@ -747,6 +767,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_status(args)
     if args.command == "security":
         return cmd_security(args)
+    if args.command == "handoff":
+        return cmd_handoff(args)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "update":
@@ -1668,6 +1690,72 @@ def cmd_security(args: argparse.Namespace) -> int:
     else:
         print(sec.format_audit(r))
     return 0 if r.get("ok") else 2
+
+
+def cmd_handoff(args: argparse.Namespace) -> int:
+    import json
+
+    from hermescube import handoff as ho
+
+    home = args.hermes_home
+    cmd = args.ho_command
+    agent = args.agent or "cli"
+
+    def _split(s: str, sep: str = ";") -> list[str]:
+        if not s:
+            return []
+        return [x.strip() for x in s.replace("\n", sep).split(sep) if x.strip()]
+
+    if cmd == "status" or cmd == "list":
+        r = ho.status_report(home)
+        if args.json:
+            print(json.dumps(r, indent=2, default=str))
+        else:
+            print(f"Open handoffs: {r.get('open')}")
+            for p in r.get("packets") or []:
+                print(f"  · {p.get('id')} [{p.get('severity')}] {p.get('goal')}")
+            if r.get("stuck"):
+                print(f"Stuck: {r['stuck']}")
+            if r.get("prompt") and not args.json:
+                print("\n" + (r.get("prompt") or ""))
+        return 0
+    if cmd == "open":
+        if not args.goal:
+            print("Error: --goal required", file=sys.stderr)
+            return 1
+        r = ho.open_handoff(
+            goal=args.goal,
+            hermes_home=home,
+            next_steps=_split(args.next_steps),
+            blockers=_split(args.blockers),
+            files=[x.strip() for x in (args.files or "").split(",") if x.strip()],
+            context=args.context or "",
+            agent_id=agent,
+            severity=args.severity,
+        )
+        print(json.dumps(r, indent=2, default=str))
+        return 0 if r.get("ok") else 1
+    if cmd == "take":
+        if not args.handoff_id:
+            print("Error: --id required", file=sys.stderr)
+            return 1
+        r = ho.take_handoff(args.handoff_id, agent_id=agent, hermes_home=home)
+        print(json.dumps(r, indent=2, default=str) if args.json else r.get("prompt") or json.dumps(r, indent=2))
+        return 0 if r.get("ok") else 1
+    if cmd in ("complete", "abandon"):
+        if not args.handoff_id:
+            print("Error: --id required", file=sys.stderr)
+            return 1
+        r = ho.complete_handoff(
+            args.handoff_id,
+            note=args.note or "",
+            agent_id=agent,
+            hermes_home=home,
+            abandon=cmd == "abandon",
+        )
+        print(json.dumps(r, indent=2, default=str))
+        return 0 if r.get("ok") else 1
+    return 1
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:

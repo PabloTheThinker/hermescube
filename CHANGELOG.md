@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Agent continuity handoff (3am page)
+- `hermescube handoff` + tool `hermescube_handoff` — open/list/take/complete
+- Auto-snapshot unfinished sessions on session_end
+- System prompt injects open packets for any connecting agent
+- Docs: [docs/HANDOFF.md](docs/HANDOFF.md) — addresses handoff-as-bottleneck
+
 ### Batched LTM uploads (every 10 assistant turns + session/dream flush)
 - `sync_turn_interval` default **10** — buffer durable turns; batch write to cube
 - Always flush on session_end, shutdown, “remember”, high witness, failures

@@ -48,6 +48,29 @@ def build_system_prompt_block(provider: Any) -> str:
         "fleet (hive/HQ/interview) only if connected.",
     ]
 
+    # Continuity handoffs — 3am page when the prior agent broke
+    try:
+        from hermescube import handoff as _ho
+
+        st = _ho.status_report(hermes_home)
+        if st.get("open", 0) > 0:
+            lines.extend(
+                [
+                    "",
+                    "## Open agent handoffs (continuity)",
+                    f"Open packets: {st.get('open')} — the model is not the bottleneck; the handoff is.",
+                    "Use `hermescube_handoff` action=list|take|complete|open.",
+                ]
+            )
+            if st.get("stuck"):
+                lines.append(f"Stuck (>48h): {len(st['stuck'])} — take or abandon.")
+            brief = (st.get("prompt") or "").strip()
+            if brief:
+                lines.append("")
+                lines.append(brief)
+    except Exception:
+        pass
+
     if type_counts:
         top_types = sorted(type_counts.items(), key=lambda x: -x[1])[:5]
         type_str = ", ".join(f"{t}:{c}" for t, c in top_types)

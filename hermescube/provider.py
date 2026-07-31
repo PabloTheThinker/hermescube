@@ -932,7 +932,12 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         """
         schemas = self._all_tool_schemas()
         if self._agent_context == "subagent":
-            allowed = {"hermescube_search", "hermescube_probe", "hermescube_feedback"}
+            allowed = {
+                "hermescube_search",
+                "hermescube_probe",
+                "hermescube_feedback",
+                "hermescube_handoff",
+            }
             return [s for s in schemas if s.get("name") in allowed]
         return schemas
 
@@ -1186,6 +1191,63 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                     "required": ["action", "entity"],
                 },
             },
+            {
+                "name": "hermescube_handoff",
+                "description": (
+                    "Agent continuity handoff via HermesCube. When work must "
+                    "survive a crash or session break: open a packet; next "
+                    "agent list/take/complete. Solves handoff-as-bottleneck."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "open",
+                                "list",
+                                "take",
+                                "complete",
+                                "abandon",
+                                "status",
+                            ],
+                        },
+                        "goal": {
+                            "type": "string",
+                            "description": "For open: what must continue",
+                        },
+                        "handoff_id": {
+                            "type": "string",
+                            "description": "For take/complete/abandon",
+                        },
+                        "next_steps": {
+                            "type": "string",
+                            "description": "For open: newline or ; separated next steps",
+                        },
+                        "blockers": {
+                            "type": "string",
+                            "description": "For open: blockers text",
+                        },
+                        "files": {
+                            "type": "string",
+                            "description": "For open: comma-separated paths",
+                        },
+                        "context": {
+                            "type": "string",
+                            "description": "For open: short context brief",
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": "For complete/abandon: closing note",
+                        },
+                        "severity": {
+                            "type": "string",
+                            "enum": ["low", "normal", "high", "critical"],
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
         ]
 
     def handle_tool_call(
@@ -1207,7 +1269,72 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             return self._handle_feedback(args)
         elif tool_name == "hermescube_probe":
             return self._handle_probe(args)
+        elif tool_name == "hermescube_handoff":
+            return self._handle_handoff(args)
         return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    def _handle_handoff(self, args: dict[str, Any]) -> str:
+        from hermescube import handoff as ho
+
+        action = (args.get("action") or "").strip().lower()
+        home = self._hermes_home or None
+        agent = self._agent_identity or "hermes"
+
+        def _split_list(raw: str | None) -> list[str]:
+            if not raw:
+                return []
+            if "\n" in raw:
+                return [x.strip() for x in raw.splitlines() if x.strip()]
+            if ";" in raw:
+                return [x.strip() for x in raw.split(";") if x.strip()]
+            if "," in raw:
+                return [x.strip() for x in raw.split(",") if x.strip()]
+            return [raw.strip()] if raw.strip() else []
+
+        try:
+            if action == "status" or action == "list":
+                return json.dumps(ho.status_report(home), default=str)
+            if action == "open":
+                goal = (args.get("goal") or args.get("content") or "").strip()
+                if not goal:
+                    return json.dumps({"ok": False, "error": "goal required"})
+                r = ho.open_handoff(
+                    goal=goal,
+                    hermes_home=home,
+                    next_steps=_split_list(args.get("next_steps")),
+                    blockers=_split_list(args.get("blockers")),
+                    files=_split_list(args.get("files")),
+                    context=str(args.get("context") or ""),
+                    agent_id=agent,
+                    session_id=self._session_id or "",
+                    severity=str(args.get("severity") or "normal"),
+                )
+                return json.dumps(r, default=str)
+            if action == "take":
+                hid = (args.get("handoff_id") or args.get("entry_id") or "").strip()
+                if not hid:
+                    return json.dumps({"ok": False, "error": "handoff_id required"})
+                return json.dumps(
+                    ho.take_handoff(hid, agent_id=agent, hermes_home=home),
+                    default=str,
+                )
+            if action in ("complete", "abandon"):
+                hid = (args.get("handoff_id") or args.get("entry_id") or "").strip()
+                if not hid:
+                    return json.dumps({"ok": False, "error": "handoff_id required"})
+                return json.dumps(
+                    ho.complete_handoff(
+                        hid,
+                        note=str(args.get("note") or ""),
+                        agent_id=agent,
+                        hermes_home=home,
+                        abandon=action == "abandon",
+                    ),
+                    default=str,
+                )
+            return json.dumps({"ok": False, "error": f"unknown action {action}"})
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)})
 
     # ── MemoryProvider ABC: system prompt ──────────────────────────
 

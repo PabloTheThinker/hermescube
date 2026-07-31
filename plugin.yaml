@@ -111,6 +111,7 @@ tools:
   - hermescube_manage
   - hermescube_feedback
   - hermescube_probe
+  - hermescube_handoff
 
 setup:
   type: pip

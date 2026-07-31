@@ -108,6 +108,27 @@ def run_session_end_work(
         meta_stages["flush_pending_error"] = str(e)
     stages["flush_pending_ms"] = (time.perf_counter() - t_flush) * 1000.0
 
+    # Auto continuity handoff if session looks unfinished (agent break insurance)
+    t_ho = time.perf_counter()
+    try:
+        from hermescube import handoff as _ho
+
+        if not skip:
+            ho = _ho.auto_snapshot_from_session(
+                hermes_home=hermes_home,
+                messages=messages_snap,
+                agent_id=agent_identity or "",
+                session_id=session_id,
+            )
+            meta_stages["handoff_auto"] = {
+                "opened": ho.get("opened", ho.get("ok") and ho.get("id")),
+                "id": ho.get("id"),
+                "reason": ho.get("reason"),
+            }
+    except Exception as e:
+        meta_stages["handoff_auto_error"] = str(e)
+    stages["handoff_auto_ms"] = (time.perf_counter() - t_ho) * 1000.0
+
     if ctx.auto_extract and not skip:
         prev = provider._session_id
         try:
