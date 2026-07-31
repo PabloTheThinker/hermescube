@@ -3,7 +3,7 @@
 **Date:** 2026-07-31  
 **Version under test:** **0.50.0** (`e9c8271` main)  
 **Repo:** https://github.com/PabloTheThinker/hermescube  
-**Live home:** `$HERMES_HOME` → `/home/ilo/.hermes` (operator Parallax)
+**Live home:** `$HERMES_HOME` (operator machine under test)
 
 This replaces the 0.47-era snapshot for the **library under Hermes** direction (0.50) plus blackbox, checkpoint ark, CLI connect, and security suite.
 
