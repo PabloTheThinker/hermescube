@@ -16,6 +16,20 @@ HermesCube is the **library under Hermes**. Blackbox is the **heart’s provenan
 
 Capture Hermes runs as redacted **FlightRecords**. Hash the event stream. **Prove** natural-language claims against evidence. Optionally **breathe**: inhale flight → prove → exhale seals + relation weave.
 
+## Handoff line (holds if cube breaks)
+
+Agent continuity handoffs dual-write into the blackbox:
+
+- `memories/blackbox/handoff-line.jsonl`
+- `memories/blackbox/handoffs/*.json` (FlightRecord + sha256)
+
+```bash
+hermescube handoff line
+hermescube handoff recover
+```
+
+See [HANDOFF.md](HANDOFF.md).
+
 ## CLI
 
 ```bash
