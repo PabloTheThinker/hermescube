@@ -1,3 +1,8 @@
+## [2026-08-01] — README hero 0.50 (Nous mascot)
+
+### Changed
+- README banner → docs/assets/hermescube-050-readme-hero-nous.jpg (Nous mascot, v0.50)
+
 ## [2026-08-01] — CI green: crash-safe sync flush + pyright
 
 ### Fixed
