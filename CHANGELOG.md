@@ -1,3 +1,9 @@
+## [2026-08-01] — README hero: library hall, title only HERMESCUBE
+
+### Changed
+- docs/assets/hermescube-050-readme-hero-library.jpg — cinematic library direction from Nous gold-cube cast; text lockup is only HERMESCUBE (no version line)
+- README banner points at library hero
+
 ## [2026-08-01] — README hero 0.50 (Nous circle, cinematic)
 
 ### Changed
