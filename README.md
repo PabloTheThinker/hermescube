@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/hermescube-050-readme-hero-nous.jpg" alt="HermesCube 0.50 — library under Hermes" width="100%">
+  <img src="docs/assets/hermescube-050-readme-hero-nous.jpgjpg" alt="HermesCube 0.50 — library under Hermes" width="100%">
 </p>
 
 # HermesCube

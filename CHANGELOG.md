@@ -1,3 +1,8 @@
+## [2026-08-01] — README hero 0.50 (Nous circle, cinematic)
+
+### Changed
+- docs/assets/hermescube-050-readme-hero-nous.jpg — same cast/gold-cube style as 0.47 circle art; version line 0.50 · library under Hermes
+
 ## [2026-08-01] — README hero 0.50 (Nous mascot)
 
 ### Changed
