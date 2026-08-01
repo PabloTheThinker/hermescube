@@ -120,7 +120,7 @@ def create_checkpoint(
     assert_under_home(dest, home, label="checkpoint_dest")
     files_meta: list[dict[str, Any]] = []
 
-    candidates: list[str] = list(DEFAULT_INCLUDE_IDENTITY) + list(DEFAULT_INCLUDE_CUBE)
+    candidates: list[str] = [str(x) for x in (*DEFAULT_INCLUDE_IDENTITY, *DEFAULT_INCLUDE_CUBE)]
     if include_config:
         candidates.append("config.yaml")
     for rel in OPTIONAL_FILES:

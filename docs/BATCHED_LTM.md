@@ -6,7 +6,7 @@
 
 | Trigger | Behavior |
 |---------|----------|
-| Every **10** assistant messages | Flush buffer → cube (`sync_turn_interval`) |
+| Every **N** assistant messages (config; **0** = every durable turn, crash-safe default) | Flush buffer → cube (`sync_turn_interval`) |
 | **Session end** | Always flush (then digest / dream-adjacent work) |
 | **Shutdown** | Always flush |
 | **Dream** | Operates on already-flushed warehouse; session_end flush first |
@@ -21,7 +21,7 @@ Prefetch (read into context) is **separate** and stays capped. This policy is ab
 ```yaml
 plugins:
   hermescube:
-    sync_turn_interval: 10   # 0 = every turn (legacy)
+    sync_turn_interval: 0    # 0 = every durable turn (default, crash-safe); 10 = batch
     sync_buffer_max: 25
 ```
 

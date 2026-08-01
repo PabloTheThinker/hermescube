@@ -57,7 +57,7 @@ DEFAULT_PREFETCH_TOP_K = 10
 DEFAULT_EVOLVE_INTERVAL = 50
 DEFAULT_MEMORY_NUDGE_INTERVAL = 10
 # Batch cube writes — every N assistant turns (0 = every turn, legacy hot path)
-DEFAULT_SYNC_TURN_INTERVAL = 10
+DEFAULT_SYNC_TURN_INTERVAL = 0  # crash-safe: write each durable turn; set >0 via config to batch
 DEFAULT_SYNC_BUFFER_MAX = 25
 DEFAULT_SYNC_WORKERS = 1
 CONSOLIDATION_SIMILARITY_THRESHOLD = 0.85
@@ -173,9 +173,12 @@ def _user_content_for_extract(msg: dict[str, Any]) -> str | None:
 class _SyncQueue:
     """Background sync worker — single-threaded, never blocks the turn."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_before_flush: Any | None = None) -> None:
         self._executor: ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
+        # Optional hook: flush batched durable turns before draining workers.
+        # Tests (and operators) call ``_sync_queue.flush()`` expecting cube writes.
+        self._on_before_flush = on_before_flush
 
     def _get_executor(self) -> ThreadPoolExecutor:
         with self._lock:
@@ -203,6 +206,11 @@ class _SyncQueue:
 
         Returns True if the queue drained within ``timeout``.
         """
+        if self._on_before_flush is not None:
+            try:
+                self._on_before_flush()
+            except Exception as e:
+                logger.debug("sync queue on_before_flush failed: %s", e)
         with self._lock:
             if self._executor is None:
                 return True
@@ -313,7 +321,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
         self._snapshot: _FrozenSnapshot | None = None
 
         # Background sync
-        self._sync_queue = _SyncQueue()
+        self._sync_queue = _SyncQueue(on_before_flush=self.flush_pending_turns)
 
         # Prefetch cache (query hash → results)
         self._prefetch_cache: dict[str, list[tuple[CubeEntry, float]]] = {}
@@ -836,11 +844,11 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
                 "key": "sync_turn_interval",
                 "description": (
                     "Upload durable turns to the cube every N assistant "
-                    "messages (default 10). 0=every turn. Always flushes on "
-                    "session end / dream. Saves context burn and write churn."
+                    "messages (default 0 = every durable turn, crash-safe). "
+                    "Set 10+ to batch. Always flushes on session end / dream."
                 ),
                 "required": False,
-                "default": "10",
+                "default": "0",
             },
             {
                 "key": "sync_buffer_max",
@@ -1509,7 +1517,7 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
     ) -> None:
         """Queue a completed turn; flush to cube on interval / session / force.
 
-        Default ``sync_turn_interval=10``: durable turns buffer until every
+        Default ``sync_turn_interval=0`` (crash-safe): durable turns buffer until every
         Nth assistant message, then batch-upload. Always flushes on
         ``flush_pending_turns`` (session_end, dream). Set interval ``0`` for
         legacy every-turn writes.
@@ -1568,12 +1576,15 @@ class CubeMemoryProvider(_ProviderBase):  # type: ignore[misc,valid-type]
             for p in (
                 "remember this",
                 "remember that",
+                "remember my",
+                "remember:",
                 "save this",
                 "don't forget",
+                "dont forget",
                 "put this in memory",
                 "store this",
             )
-        ):
+        ) or u_low.startswith("remember "):
             force = True
 
         entry_type = self._classify_turn(user_clean, assistant_clean)

@@ -1,3 +1,16 @@
+## [2026-08-01] — CI green: crash-safe sync flush + pyright
+
+### Fixed
+- `_SyncQueue.flush()` now drains `_pending_turns` first (tests + operators that call queue flush)
+- `DEFAULT_SYNC_TURN_INTERVAL` → **0** (crash-safe every durable turn; batch via config)
+- Expanded remember-* force-flush patterns (`remember my`, leading `remember `)
+- Pyright: checkpoint `candidates: list[str]` (literal list assign)
+- Tests: system_prompt doctrine assert; subagent tools include `hermescube_handoff`
+- Soft blackbox live capture skips empty state.db (no sessions)
+
+### Docs
+- `docs/BATCHED_LTM.md` — default 0; N for batching
+
 # Changelog
 
 ## [Unreleased]

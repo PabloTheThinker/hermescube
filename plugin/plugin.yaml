@@ -54,7 +54,7 @@ config:
   memory_nudge_interval:
     description: Remind agent to review memory every N turns (0 to disable)
     type: int
-    default: 10
+    default: 0
   sync_turn_interval:
     description: >-
       Upload durable turns to the cube every N assistant messages (default 10).

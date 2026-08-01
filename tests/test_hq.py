@@ -208,7 +208,10 @@ class TestProviderBoundaries:
             p.initialize(session_id="c1", hermes_home=td, agent_context="subagent")
             names = {s["name"] for s in p.get_tool_schemas()}
             assert names == {
-                "hermescube_search", "hermescube_probe", "hermescube_feedback",
+                "hermescube_search",
+                "hermescube_probe",
+                "hermescube_feedback",
+                "hermescube_handoff",  # continuity packets are read/take safe for subagents
             }
             out = json.loads(p.handle_tool_call(
                 "hermescube_manage", {"action": "add", "content": "sneaky write"}

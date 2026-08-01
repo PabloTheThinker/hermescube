@@ -1138,7 +1138,17 @@ class TestProviderEdgeCases:
             provider.sync_turn("We decided on pytest", "Good.")
             provider._sync_queue.flush()
             block = provider.system_prompt_block()
-            assert "dark mode" in block or "pytest" in block or "Stored:" in block
+            # Manual is operational doctrine (not full turn dump). After flush,
+            # warehouse should report stored entry count / types.
+            assert (
+                "HermesCube" in block
+                or "Warehouse" in block
+                or "entries" in block.lower()
+                or "dark mode" in block
+                or "pytest" in block
+                or "Stored:" in block
+            )
+            assert provider._cube is not None and provider._cube.entry_count >= 1
             provider.shutdown()
 
 

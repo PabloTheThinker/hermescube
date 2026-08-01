@@ -66,11 +66,16 @@ def test_center_api_has_blackbox_organ():
 
 
 def test_flight_capture_live_optional():
-    """Soft: skip if no HERMES state.db."""
+    """Soft: skip if no HERMES state.db or empty session history."""
     home = Path.home() / ".hermes"
     if not (home / "state.db").exists():
         return
     out = center.flight_capture(latest=True, hermes_home=str(home))
+    # Empty homes (no sessions yet) are not a product failure — skip soft.
+    if not out.get("ok"):
+        err = str(out.get("error") or "")
+        if "No sessions" in err or "no sessions" in err.lower():
+            return
     assert out.get("ok") is True
     assert out.get("events", 0) >= 1
     assert out.get("integrity_ok") is True
