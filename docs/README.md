@@ -18,6 +18,7 @@ Maintainers: [PURPOSE.md](../PURPOSE.md) · **[ARCHITECTURE.md](ARCHITECTURE.md)
 | **Hold the line (all organs)** | **[HOLD_THE_LINE.md](HOLD_THE_LINE.md)** |
 | How the warehouse works | [SPEC.md](SPEC.md) · [API_REFERENCE.md](API_REFERENCE.md) · [FRAMEWORK.md](FRAMEWORK.md) |
 | Fit next to Hermes / Hermespace | [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md) · [CUBE_VS_HERMES_AGENT.md](CUBE_VS_HERMES_AGENT.md) |
+| **J-space → production (Hermes + Hermespace)** | **[JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md)** |
 | Governance & space | [CUBOASIS.md](CUBOASIS.md) · [IDEAS_FROM_OMH.md](IDEAS_FROM_OMH.md) |
 | Self-improve under rules | [SELF_EVOLUTION.md](SELF_EVOLUTION.md) · [GROWTH.md](GROWTH.md) |
 | Multi-agent (inter-library loan) | [HIVE.md](HIVE.md) · [HQ.md](HQ.md) · [INTERVIEW.md](INTERVIEW.md) |

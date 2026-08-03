@@ -2,7 +2,7 @@
 
 **Status:** living blueprint (v0.50 — library / Hermes-base core)  
 **Audience:** maintainers, agents, and Hermespace integrators  
-**Companions:** [PURPOSE.md](../PURPOSE.md) · [ABOUT.md](../ABOUT.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md) · [BLACKBOX.md](BLACKBOX.md)
+**Companions:** [PURPOSE.md](../PURPOSE.md) · [ABOUT.md](../ABOUT.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md) · [JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md) · [BLACKBOX.md](BLACKBOX.md)
 
 This document is the **single architecture map** for HermesCube: where it sits as the **library under Hermes**, how every product layer fits, how data flows on a turn, and how the binary warehouse works underneath.
 
@@ -413,7 +413,7 @@ Detail: [CUBEDREAM.md](CUBEDREAM.md).
 | API tier | Module | Version |
 |----------|--------|---------|
 | Heart pump | `space_bridge` | `GENERATOR_API_VERSION = 1.0` |
-| Circulatory center | `center` | `CENTER_API_VERSION = 1.1` |
+| Circulatory center | `center` | `CENTER_API_VERSION = 1.2` |
 
 | Call | When |
 |------|------|
@@ -426,6 +426,21 @@ Load-tiered arterial budgets (Sweller-aligned): low 900 · mid 640 · high 420 �
 
 Authority rule: **Cube is SoT; Space projects.**  
 Detail: [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md).
+
+### J-space research → production
+
+Anthropic’s **Jacobian lens / J-space** (Jul 2026) is a *research* readout of broadcast-like, verbalizable structure in model activations — not an API Hermes can call. Hermespace **operationalizes the FOA desk** (broadcast competition, dual decode, night harvest) in product space; HermesCube is the **heart / generator** behind that desk.
+
+**Production rule of thumb for any Hermes Agent user:**
+
+1. Keep **HermesCube** as always-on deep memory (heart).
+2. Add **Hermespace** when you need a FOA / J-space *workbench* (not for every chat).
+3. Prefer **`hermes gateway`** so Cube + Space lifecycle hooks both fire.
+4. Treat night harvest as **proposals** into Cube / CubeDream — never silent MEMORY.md rewrite.
+5. Scale with **one shared `memory.cube`** and soft-fail Space (Cube alone still works).
+
+Full research → roles → install tiers → ops checklist: **[JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md)**.  
+Upstream Hermespace map: [00-jspace-to-hermespace.md](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-jspace-to-hermespace.md).
 
 ---
 
@@ -510,10 +525,11 @@ Ship purpose-aligned increments. Dual `plugin.yaml` identical. Assessment: [ASSE
 | [CUBOASIS.md](CUBOASIS.md) | Pocket infra |
 | [ANATOMY.md](ANATOMY.md) | Heart × Space organs |
 | [HERMESPACE.md](HERMESPACE.md) | Generator contract |
+| [JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md) | Anthropic J-space → Hermes production |
 | [CUBEDREAM.md](CUBEDREAM.md) | Night cycles |
 | [HIVE.md](HIVE.md) / [HQ.md](HQ.md) | Fleet |
 | [GROWTH.md](GROWTH.md) | Living eras |
 
 ---
 
-*Blueprint version tracks product **0.49** (anatomical center). Update this file when a layer’s contract or authority rule changes.*
+*Blueprint version tracks product **0.50** (library / Hermes-base core). Update this file when a layer’s contract or authority rule changes.*
