@@ -38,7 +38,7 @@ No cloud memory APIs. Your data stays under `$HERMES_HOME/memories/`. Updates ne
 <tr><td><b>Semantic shelves, local</b></td><td>HAR + learned embeddings + entity graphs — meaning over grepping CCTV logs. No embedding SaaS.</td></tr>
 <tr><td><b>Compress over years</b></td><td>Append pages, then bind chapters (crystalize, merge, dream). Context windows are not the archive.</td></tr>
 <tr><td><b>Prove, don’t vibe</b></td><td><a href="docs/BLACKBOX.md">Blackbox</a> captures redacted trajectories and proves claims (“tests pass”) against evidence.</td></tr>
-<tr><td><b>Heart for Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">center</a> — Cube generates FOA blood; Space focuses the turn. Production: <a href="docs/JSPACE_PRODUCTION.md">J-space playbook</a>.</td></tr>
+<tr><td><b>Heart for Hermespace</b></td><td><a href="docs/HERMESPACE.md">Heart</a> + <a href="docs/ANATOMY.md">center</a> — Cube generates FOA blood; Space focuses the turn. Production: <a href="docs/HERMESPACE_PRODUCTION.md">global-workspace research playbook</a>.</td></tr>
 <tr><td><b>Solo library first</b></td><td>Hive / HQ / dream-circles are inter-library loan. Open the building before the consortium.</td></tr>
 </table>
 
@@ -129,7 +129,7 @@ Agent tools (when provider is on):
 | [docs/CHECKPOINT.md](docs/CHECKPOINT.md) | Safe locks — identity ark + cube clone |
 | [docs/SECURITY.md](docs/SECURITY.md) | No leakage · profile isolation · harden |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) | Heart ↔ desk |
-| [docs/JSPACE_PRODUCTION.md](docs/JSPACE_PRODUCTION.md) | J-space → Hermes + Hermespace production |
+| [docs/HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md) | global-workspace research → Hermes + Hermespace production |
 | [docs/ANATOMY.md](docs/ANATOMY.md) | Center organs (incl. blackbox) |
 | [docs/README.md](docs/README.md) | Full index |
 

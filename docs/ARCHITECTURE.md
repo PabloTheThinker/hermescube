@@ -2,7 +2,7 @@
 
 **Status:** living blueprint (v0.50 — library / Hermes-base core)  
 **Audience:** maintainers, agents, and Hermespace integrators  
-**Companions:** [PURPOSE.md](../PURPOSE.md) · [ABOUT.md](../ABOUT.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md) · [JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md) · [BLACKBOX.md](BLACKBOX.md)
+**Companions:** [PURPOSE.md](../PURPOSE.md) · [ABOUT.md](../ABOUT.md) · [CODEMAP.md](CODEMAP.md) · [SPEC.md](SPEC.md) · [ANATOMY.md](ANATOMY.md) · [HERMESPACE.md](HERMESPACE.md) · [HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md) · [BLACKBOX.md](BLACKBOX.md)
 
 This document is the **single architecture map** for HermesCube: where it sits as the **library under Hermes**, how every product layer fits, how data flows on a turn, and how the binary warehouse works underneath.
 
@@ -427,20 +427,20 @@ Load-tiered arterial budgets (Sweller-aligned): low 900 · mid 640 · high 420 �
 Authority rule: **Cube is SoT; Space projects.**  
 Detail: [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md).
 
-### J-space research → production
+### global-workspace research research → production
 
-Anthropic’s **Jacobian lens / J-space** (Jul 2026) is a *research* readout of broadcast-like, verbalizable structure in model activations — not an API Hermes can call. Hermespace **operationalizes the FOA desk** (broadcast competition, dual decode, night harvest) in product space; HermesCube is the **heart / generator** behind that desk.
+Anthropic’s **Jacobian lens / global-workspace research** (Jul 2026) is a *research* readout of broadcast-like, verbalizable structure in model activations — not an API Hermes can call. Hermespace **operationalizes the FOA desk** (broadcast competition, dual decode, night harvest) in product space; HermesCube is the **heart / generator** behind that desk.
 
 **Production rule of thumb for any Hermes Agent user:**
 
 1. Keep **HermesCube** as always-on deep memory (heart).
-2. Add **Hermespace** when you need a FOA / J-space *workbench* (not for every chat).
+2. Add **Hermespace** when you need a FOA / global-workspace research *workbench* (not for every chat).
 3. Prefer **`hermes gateway`** so Cube + Space lifecycle hooks both fire.
 4. Treat night harvest as **proposals** into Cube / CubeDream — never silent MEMORY.md rewrite.
 5. Scale with **one shared `memory.cube`** and soft-fail Space (Cube alone still works).
 
-Full research → roles → install tiers → ops checklist: **[JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md)**.  
-Upstream Hermespace map: [00-jspace-to-hermespace.md](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-jspace-to-hermespace.md).
+Full research → roles → install tiers → ops checklist: **[HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md)**.  
+Upstream Hermespace map: [00-workspace-to-hermespace.md](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-workspace-to-hermespace.md).
 
 ---
 
@@ -501,7 +501,7 @@ Full edit table: [CODEMAP.md](CODEMAP.md).
 
 ## 17. Non-goals
 
-- Second agent brain / J-space weights  
+- Second agent brain / global-workspace research weights  
 - Cloud memory SaaS  
 - Replacing MEMORY.md or Hermespace FOA desk  
 - Auto-rewriting Hermes MEMORY.md from dream (proposals only)  
@@ -525,7 +525,7 @@ Ship purpose-aligned increments. Dual `plugin.yaml` identical. Assessment: [ASSE
 | [CUBOASIS.md](CUBOASIS.md) | Pocket infra |
 | [ANATOMY.md](ANATOMY.md) | Heart × Space organs |
 | [HERMESPACE.md](HERMESPACE.md) | Generator contract |
-| [JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md) | Anthropic J-space → Hermes production |
+| [HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md) | Anthropic global-workspace research → Hermes production |
 | [CUBEDREAM.md](CUBEDREAM.md) | Night cycles |
 | [HIVE.md](HIVE.md) / [HQ.md](HQ.md) | Fleet |
 | [GROWTH.md](GROWTH.md) | Living eras |

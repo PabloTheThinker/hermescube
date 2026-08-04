@@ -92,7 +92,7 @@ Full stack: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full Architecture Blueprint |
 | [docs/BLACKBOX.md](docs/BLACKBOX.md) | Flight recorder |
 | [docs/HERMESPACE.md](docs/HERMESPACE.md) · [ANATOMY.md](docs/ANATOMY.md) | Heart / center |
-| [docs/JSPACE_PRODUCTION.md](docs/JSPACE_PRODUCTION.md) | J-space → Hermes + Hermespace production |
+| [docs/HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md) | global-workspace research → Hermes + Hermespace production |
 | [docs/README.md](docs/README.md) | Full index |
 
 **One sentence:**  

@@ -31,8 +31,8 @@
 
 ## [Unreleased]
 
-### J-space → Hermespace production playbook
-- Docs: [JSPACE_PRODUCTION.md](docs/JSPACE_PRODUCTION.md) — Anthropic Jacobian-lens / GWT research mapped to Hermespace FOA desk + Cube heart
+### Hermespace FOA production playbook
+- Docs: [HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md) — Anthropic Jacobian-lens / GWT research mapped to Hermespace FOA desk + Cube heart
 - Install tiers (desk-only / desk+heart / gateway / fleet), dual-decode + night-harvest ops, honesty non-goals
 - Wired into Architecture Blueprint §13, docs index, ABOUT, PURPOSE, HERMESPACE, CODEMAP
 

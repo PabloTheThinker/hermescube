@@ -1,12 +1,12 @@
-# J-Space → Hermespace → HermesCube — production playbook
+# FOA workspace → Hermespace → HermesCube — production playbook
 
 **For:** anyone running [Hermes Agent](https://github.com/NousResearch/hermes-agent) with [Hermespace](https://github.com/PabloTheThinker/hermespace), optionally powered by **HermesCube** as the durable heart.  
 **Honesty:** harness-level global workspace. No weight access. No consciousness claims.  
-**Companions:** [ARCHITECTURE.md](ARCHITECTURE.md) · [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md) · Hermespace `docs/00-jspace-to-hermespace.md` · `docs/27-jspace-environment.md`
+**Companions:** [ARCHITECTURE.md](ARCHITECTURE.md) · [HERMESPACE.md](HERMESPACE.md) · [ANATOMY.md](ANATOMY.md) · Hermespace `docs/00-workspace-to-hermespace.md` · `docs/27-workspace-environment.md`
 
 ---
 
-## 1. What Anthropic “J-space” actually is
+## 1. What Anthropic “global-workspace research” actually is
 
 Source: Anthropic, Jul 2026 — [*A global workspace in language models*](https://www.anthropic.com/research/global-workspace)  
 Paper: *Verbalizable Representations Form a Global Workspace in Language Models*  
@@ -14,7 +14,7 @@ Open methods: [anthropics/jacobian-lens](https://github.com/anthropics/jacobian-
 
 ### Definition
 
-**J-space** is a small, privileged set of *verbalizable* internal activation patterns in Claude (and other LMs), found with a **Jacobian lens (J-lens)**. Each pattern is linked to a vocabulary word. When it lights up, the model is not necessarily *saying* that word — the concept is **on its mind** (available for report, control, and silent multi-step use).
+**global-workspace research** is a small, privileged set of *verbalizable* internal activation patterns in Claude (and other LMs), found with a **Jacobian lens (J-lens)**. Each pattern is linked to a vocabulary word. When it lights up, the model is not necessarily *saying* that word — the concept is **on its mind** (available for report, control, and silent multi-step use).
 
 It is **not** chain-of-thought text. It is silent, inside weights, and **emerged in training** (not a hand-built module).
 
@@ -22,11 +22,11 @@ It is **not** chain-of-thought text. It is silent, inside weights, and **emerged
 
 | Property | Finding (Claude) |
 |----------|------------------|
-| **Verbal report** | Ask “what are you thinking?” → names J-space contents; causal swaps change the report |
+| **Verbal report** | Ask “what are you thinking?” → names global-workspace research contents; causal swaps change the report |
 | **Directed modulation** | “Hold citrus in mind while copying…” → concepts light up without appearing in output |
-| **Internal / silent reasoning** | Multi-step math / rhyme planning intermediates appear in J-space; swaps redirect answers |
+| **Internal / silent reasoning** | Multi-step math / rhyme planning intermediates appear in global-workspace research; swaps redirect answers |
 | **Flexible reuse** | One “France” representation feeds capital / language / continent / currency tasks |
-| **Selectivity** | Ablate J-space → fluency survives; higher-order multi-step cognition collapses |
+| **Selectivity** | Ablate global-workspace research → fluency survives; higher-order multi-step cognition collapses |
 
 ### Practical uses Anthropic cites
 
@@ -40,25 +40,25 @@ It is **not** chain-of-thought text. It is silent, inside weights, and **emerged
 |------------|------------|
 | Live Claude J-lens on Anthropic APIs | **No** |
 | Fit J-lens on open-weight models (Qwen, etc.) | Yes (GPU + `jacobian-lens`) |
-| Read Hermes Agent’s model weights as J-space | Only if *you* host that model + lens |
+| Read Hermes Agent’s model weights as global-workspace research | Only if *you* host that model + lens |
 
 So for Hermes users, the production move is **externalize the workspace roles** into Hermespace + Cube — same *jobs*, different substrate.
 
 ---
 
-## 2. Hermespace = functional J-space (harness)
+## 2. Hermespace = functional global-workspace research (harness)
 
 Hermespace implements the **five GWT roles as files + API**, not neural access.
 
-| J-space property | Hermespace surface |
+| global-workspace research property | Hermespace surface |
 |------------------|--------------------|
 | Limited capacity (~tens of concepts) | Hub ≤25 · activated ≤12 · FOA ≤4 |
-| Verbal report | `JSpace.report()` · Report field · `hs jspace report` |
+| Verbal report | `Workspace.report()` · Report field · `hs workspace report` |
 | Directed modulation | `hold` / `release` / `inhibit` |
 | Silent reasoning | `reason_step` — model context only (never auto-dumped to user chat) |
 | Flexible broadcast | One hub concept → `broadcast_block` / `pre_llm` inject |
 | Selectivity | `gate.should_inject` — skip trivial acks; load → protect mode |
-| Operator “lens” | Viewport / `hs jspace lens` over hub + silent chain |
+| Operator “lens” | Viewport / `hs workspace lens` over hub + silent chain |
 | Night consolidation | `dream_harvest` → Cube seal → CubeDream / pulse charge |
 
 ```
@@ -148,7 +148,7 @@ Typical VPS pattern:
 ```
 Hermes gateway (Telegram) ──► MemoryManager + hermescube
                          └──► Hermespace plugin pre_llm broadcast
-cron: hs pulse tick        ──► idle_tick + autonomic_tick / jspace_harvest
+cron: hs pulse tick        ──► idle_tick + autonomic_tick / workspace_harvest
 ```
 
 ### Multi-agent / fleet (optional)
@@ -188,9 +188,9 @@ NIGHT / IDLE
 ```python
 # Turn (Hermespace already wires this in hermes_bridge / workbench)
 from hermespace.cube_module import cube_beat
-from hermespace import JSpace
+from hermespace import Workspace
 
-js = JSpace(agent_id="hermes-agent")
+js = Workspace(agent_id="hermes-agent")
 js.hold("auth timeout", salience=0.9)
 js.reason_step("check session TTL before rewriting middleware", salience=0.85)
 beat = cube_beat(
@@ -204,8 +204,8 @@ beat = cube_beat(
 
 ```bash
 # Operator lens (what’s on the desk / silent chain)
-hs jspace report
-hs jspace lens
+hs workspace report
+hs workspace lens
 
 # Idle maintain
 hs workbench idle
@@ -221,12 +221,12 @@ hermescube doctor
 
 | Anthropic experiment | Production Hermespace+Cube control |
 |----------------------|------------------------------------|
-| Report workspace | `JSpace.report` / Report field |
+| Report workspace | `Workspace.report` / Report field |
 | Hold concept while doing other work | `js.hold(...)` + dual decode |
 | Silent math / intermediate steps | `reason_step` (context only) |
 | France→China flexible reuse | One sealed Cube belief / hub concept reused across turns |
 | Ablate workspace → lose multi-step | Under load: protect mode + Cube strip so FOA doesn’t empty |
-| Catch “fake” / eval awareness in J-space | Soft audit in Space; Cube threat/gate blocks credential dumps |
+| Catch “fake” / eval awareness in global-workspace research | Soft audit in Space; Cube threat/gate blocks credential dumps |
 | Night / training reflection | `dream_harvest` + CubeDream + growth diary |
 
 ---
@@ -244,7 +244,7 @@ hermescube doctor
 
 ## 8. Non-goals (keep production honest)
 
-- Claiming Hermespace *is* Claude’s J-space  
+- Claiming Hermespace *is* Claude’s global-workspace research  
 - Reading Anthropic API activations  
 - Dumping silent reasoning into user chat  
 - Replacing Hermes `MEMORY.md` or forking a second durable archive in Space  
@@ -256,14 +256,14 @@ hermescube doctor
 
 | Doc | Role |
 |-----|------|
-| **This playbook** | J-space research → Hermes production |
+| **This playbook** | global-workspace research research → Hermes production |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Whole Cube blueprint |
 | [HERMESPACE.md](HERMESPACE.md) | Heart contract |
 | [ANATOMY.md](ANATOMY.md) | Circulatory organs |
-| Hermespace `00-jspace-to-hermespace.md` | Role mapping |
-| Hermespace `27-jspace-environment.md` | JSpaceEnv / lens / night path |
+| Hermespace `00-workspace-to-hermespace.md` | Role mapping |
+| Hermespace `27-workspace-environment.md` | WorkspaceEnv / lens / night path |
 | Anthropic [global workspace](https://www.anthropic.com/research/global-workspace) | Primary research |
 
 ---
 
-*Track with product HermesCube 0.50+ / Hermespace that exposes `cube_beat` + `JSpace`. Update when Space adapter or center API major bumps.*
+*Track with product HermesCube 0.50+ / Hermespace that exposes `cube_beat` + `Workspace`. Update when Space adapter or center API major bumps.*

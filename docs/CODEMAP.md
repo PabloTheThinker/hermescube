@@ -4,7 +4,7 @@ HermesCube is one Python package (`hermescube/`) plus a thin Hermes plugin (`plu
 Prefer **peeling** new surfaces into focused modules over growing `provider.py`.
 
 **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) is the whole-project blueprint.  
-**J-space production:** [JSPACE_PRODUCTION.md](JSPACE_PRODUCTION.md) — Anthropic research → Hermes + Hermespace ops.  
+**global-workspace research production:** [HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md) — Anthropic research → Hermes + Hermespace ops.  
 This file is the **edit guide** keyed to those layers.
 
 ## Layers (edit here first)
