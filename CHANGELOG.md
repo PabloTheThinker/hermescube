@@ -31,10 +31,9 @@
 
 ## [Unreleased]
 
-### Hermespace FOA production playbook
-- Docs: [HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md) — Anthropic Jacobian-lens / GWT research mapped to Hermespace FOA desk + Cube heart
-- Install tiers (desk-only / desk+heart / gateway / fleet), dual-decode + night-harvest ops, honesty non-goals
-- Wired into Architecture Blueprint §13, docs index, ABOUT, PURPOSE, HERMESPACE, CODEMAP
+### Remove mistaken J-space / Hermespace production playbook
+- Deleted `docs/HERMESPACE_PRODUCTION.md` (and prior `JSPACE_PRODUCTION.md` rename) — Anthropic Jacobian-lens / J-space production doc was added in error
+- Scrubbed playbook links from ABOUT, PURPOSE, README, ARCHITECTURE, CODEMAP, HERMESPACE, docs index
 
 ### Low-friction recall + flow
 - `surface.py` filter on HAR query/prefetch (no DOT/superseded/test handoffs)

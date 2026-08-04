@@ -2,7 +2,7 @@
 
 **One line:** HermesCube is the **library under Hermes** — the local deep-memory **book** and **generator core** of a Hermes base. It works *with* hot MEMORY.md (the desk catalog), not instead of it.
 
-Public pitch: **[ABOUT.md](ABOUT.md)** · Install: **[README.md](README.md)** · Blueprint: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** · Heart: **[docs/HERMESPACE.md](docs/HERMESPACE.md)** · global-workspace research production: **[docs/HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md)** · Provenance: **[docs/BLACKBOX.md](docs/BLACKBOX.md)**.
+Public pitch: **[ABOUT.md](ABOUT.md)** · Install: **[README.md](README.md)** · Blueprint: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** · Heart: **[docs/HERMESPACE.md](docs/HERMESPACE.md)** · Provenance: **[docs/BLACKBOX.md](docs/BLACKBOX.md)**.
 
 ---
 
@@ -56,8 +56,6 @@ Cube without Hermespace is still a complete memory plugin.
 | **Status** | `center_status` / `heart_status` | Library + organ readiness |
 
 **Rule:** `memory.cube` is authoritative for durable memory. Hermespace projections are working surfaces.
-
-Anthropic **global-workspace research** (Jacobian lens / GWT-style FOA) is research instrumentation on activations. Hermespace is the **operator FOA desk** for Hermes Agent; HermesCube is the durable generator behind it. Production playbook: [docs/HERMESPACE_PRODUCTION.md](docs/HERMESPACE_PRODUCTION.md).
 
 ## Solo path vs fleet path
 
