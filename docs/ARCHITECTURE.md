@@ -486,7 +486,8 @@ Full edit table: [CODEMAP.md](CODEMAP.md).
 
 ## 17. Non-goals
 
-- Second agent brain / J-space weights  
+- Second agent brain / closed-model activation weights  
+ 
 - Cloud memory SaaS  
 - Replacing MEMORY.md or Hermespace FOA desk  
 - Auto-rewriting Hermes MEMORY.md from dream (proposals only)  
