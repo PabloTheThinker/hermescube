@@ -150,3 +150,8 @@ Deepen the heart — don’t fork a second archive inside Space:
 2. Prefer wisdom → hubs → query hits under load
 3. `pulse_charge` keeps WorldModel Beliefs fed from Cube
 4. Cuboasis governance + CubeDream stay Cube-native; Space may *display* cards, not reimplement the gate
+
+## Related
+
+- [ANATOMY.md](ANATOMY.md) — circulatory metaphor + APIs
+- Hermespace [`docs/20-hermescube-bridge.md`](https://github.com/PabloTheThinker/hermespace/blob/main/docs/20-hermescube-bridge.md)

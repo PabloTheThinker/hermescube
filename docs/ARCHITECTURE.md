@@ -413,7 +413,7 @@ Detail: [CUBEDREAM.md](CUBEDREAM.md).
 | API tier | Module | Version |
 |----------|--------|---------|
 | Heart pump | `space_bridge` | `GENERATOR_API_VERSION = 1.0` |
-| Circulatory center | `center` | `CENTER_API_VERSION = 1.1` |
+| Circulatory center | `center` | `CENTER_API_VERSION = 1.2` |
 
 | Call | When |
 |------|------|
@@ -486,7 +486,8 @@ Full edit table: [CODEMAP.md](CODEMAP.md).
 
 ## 17. Non-goals
 
-- Second agent brain / J-space weights  
+- Second agent brain / weight-store instrumentation  
+
 - Cloud memory SaaS  
 - Replacing MEMORY.md or Hermespace FOA desk  
 - Auto-rewriting Hermes MEMORY.md from dream (proposals only)  
@@ -516,4 +517,4 @@ Ship purpose-aligned increments. Dual `plugin.yaml` identical. Assessment: [ASSE
 
 ---
 
-*Blueprint version tracks product **0.49** (anatomical center). Update this file when a layer’s contract or authority rule changes.*
+*Blueprint version tracks product **0.50** (library / Hermes-base core). Update this file when a layer’s contract or authority rule changes.*
