@@ -440,7 +440,7 @@ Anthropic’s **Jacobian lens / global-workspace research** (Jul 2026) is a *res
 5. Scale with **one shared `memory.cube`** and soft-fail Space (Cube alone still works).
 
 Full research → roles → install tiers → ops checklist: **[HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md)**.  
-Upstream Hermespace map: [00-workspace-to-hermespace.md](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-workspace-to-hermespace.md).
+Upstream Hermespace map: [00-anthropic-gwt-to-hermespace.md](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-anthropic-gwt-to-hermespace.md).
 
 ---
 

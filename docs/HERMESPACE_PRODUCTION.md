@@ -36,7 +36,7 @@ It is **not** chain-of-thought text. It is silent, inside weights, and **emerged
 | Fit a lens on open-weight models (Qwen, etc.) | Yes (GPU + `jacobian-lens`) |
 | Read Hermes Agent’s model weights this way | Only if *you* host that model + lens |
 
-So for Hermes users, the production move is **externalize the workspace roles** into Hermespace + Cube — same *jobs*, different substrate. Hermespace does **not** use third-party “jspace” product naming.
+So for Hermes users, the production move is **externalize the workspace roles** into Hermespace + Cube — same *jobs*, different substrate.
 
 ---
 
@@ -176,7 +176,6 @@ hermescube doctor
 - Dumping silent reasoning into user chat  
 - Replacing Hermes `MEMORY.md` or forking a second durable archive in Space  
 - Consciousness / sentience product claims  
-- Using third-party “jspace” product naming for Hermespace APIs  
 
 ---
 

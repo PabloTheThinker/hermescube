@@ -155,5 +155,5 @@ Deepen the heart — don’t fork a second archive inside Space:
 
 - [HERMESPACE_PRODUCTION.md](HERMESPACE_PRODUCTION.md) — Anthropic global-workspace research research → Hermes Agent + Hermespace production
 - [ANATOMY.md](ANATOMY.md) — circulatory metaphor + APIs
-- Hermespace [`docs/00-workspace-to-hermespace.md`](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-workspace-to-hermespace.md)
+- Hermespace [`docs/00-anthropic-gwt-to-hermespace.md`](https://github.com/PabloTheThinker/hermespace/blob/main/docs/00-anthropic-gwt-to-hermespace.md)
 - Hermespace [`docs/20-hermescube-bridge.md`](https://github.com/PabloTheThinker/hermespace/blob/main/docs/20-hermescube-bridge.md)
